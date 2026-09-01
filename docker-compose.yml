@@ -3,7 +3,7 @@ services:
   frontend:
     # Pulled from ECR on the server (the t3.micro has 1 GiB RAM and bundling there
     # takes minutes); `docker compose build` still works locally.
-    image: 268054298590.dkr.ecr.ap-southeast-2.amazonaws.com/cmaa-frontend:latest
+    image: 286841103963.dkr.ecr.ap-southeast-2.amazonaws.com/cmaa-frontend:latest
     build: ./frontend
     restart: 'always'
     container_name: cloud-frontend
@@ -20,7 +20,7 @@ services:
       - backend
 
   backend:
-    image: 268054298590.dkr.ecr.ap-southeast-2.amazonaws.com/cmaa-backend:latest
+    image: 286841103963.dkr.ecr.ap-southeast-2.amazonaws.com/cmaa-backend:latest
     build: ./server
     restart: 'always'
     container_name: cloud-backend
