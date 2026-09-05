@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
         python3 python3-pip python3-dev \
-        python2 \
+        python2 curl \
         build-essential libcurl4-openssl-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -23,8 +23,8 @@ RUN pip3 install --no-cache-dir -r requirements.txt \
     && pip3 install --no-cache-dir -r lambda/requirements-lambda.txt
 
 # python2 'requests' for maldroid_main.py's localhost self-calls
-RUN apt-get update && apt-get install -y python-pip \
-    && pip2 install requests==2.7.0 \
+RUN curl -sS https://bootstrap.pypa.io/pip/2.7/get-pip.py | python2 \
+    && pip2 install --no-cache-dir requests==2.7.0 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Handler modules live in lambda/; put it on the path so awslambdaric can
