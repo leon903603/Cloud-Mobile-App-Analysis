@@ -8,6 +8,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Upload } from "@aws-sdk/lib-storage";
 import { Readable } from "stream";
 import fs from "fs";
@@ -96,4 +97,19 @@ export async function objectExists(key: string): Promise<boolean> {
 
 export async function deleteObject(key: string): Promise<void> {
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
+
+export async function getPresignedDownloadUrl(
+  key: string,
+  filename?: string,
+  expiresIn = 300 // 5 minutes default
+): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ResponseContentDisposition: filename
+      ? `attachment; filename="${encodeURIComponent(filename)}"`
+      : undefined,
+  });
+  return getSignedUrl(client, command, { expiresIn });
 }

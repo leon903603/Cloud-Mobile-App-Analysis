@@ -7,6 +7,7 @@
     "@aws-sdk/client-lambda": "^3.1091.0",
     "@aws-sdk/client-s3": "^3.1078.0",
     "@aws-sdk/lib-storage": "^3.1078.0",
+    "@aws-sdk/s3-request-presigner": "^3.1131.0",
     "better-sqlite3": "^12.4.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
