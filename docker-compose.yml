@@ -1,18 +1,15 @@
-version: "3.9"
-
+version: "3.3"
 services:
   redis:
     image: redis:7-alpine
     restart: always
     container_name: android-static-redis
-
   android-static-backend:
     build: .
     restart: always
     container_name: android-static-backend
     ports:
       - "8010:8010"
-
   queue-wrapper:
     build: ./queue_wrapper
     restart: always
@@ -21,10 +18,13 @@ services:
       - "5001:5001"
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - S3_BUCKET=${S3_BUCKET}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     depends_on:
       - redis
       - android-static-backend
-
   celery-worker:
     build: ./queue_wrapper
     restart: always
@@ -32,11 +32,15 @@ services:
     environment:
       - ANDROGUARD_BASE=http://android-static-backend:8010
       - REDIS_URL=redis://redis:6379/0
+      - S3_BUCKET=${S3_BUCKET}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - PDF_API=http://192.168.50.53:15148/api/report
     depends_on:
       - redis
       - android-static-backend
-
 networks:
   default:
-    name: app-sso-network
-    external: true
+    external:
+      name: app-sso-network

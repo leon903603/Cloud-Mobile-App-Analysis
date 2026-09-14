@@ -15,3 +15,5 @@ log.txt
 
 # Runtime artifacts
 *.flag
+.env
+*.bak*
