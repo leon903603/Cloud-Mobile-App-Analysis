@@ -42,9 +42,17 @@ def analyze_apk(self, file_bytes_b64: str, filename: str, file_hash: str, s3_key
     json_resp.raise_for_status()
     log.info("[%s] Step 3/4 — Report retrieved (status=%d, size=%d bytes)", job_id, json_resp.status_code, len(json_resp.content))
     report_data = json_resp.json()
+    clean_name = filename.rsplit('.', 1)[0]
     report_data["file_name"] = filename
-    if "system" in report_data and isinstance(report_data["system"], dict):
-        report_data["system"]["file_name"] = filename
+    report_data["app_name"] = clean_name
+    for section in ("system", "result"):
+        if section in report_data and isinstance(report_data[section], dict):
+            target_dict = report_data[section]
+            target_dict["file_name"] = filename
+            if not target_dict.get("app_name") or target_dict.get("app_name") in ("file", "~)^", "unknown"):
+                target_dict["app_name"] = clean_name
+            target_dict.pop("fileName", None)
+            target_dict.pop("appName", None)
     # Step 4: 預先生成 PDF 報告並直傳 S3
     update(4, 4, "Pre-generating PDF report")
     if s3_key:
