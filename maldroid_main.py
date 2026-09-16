@@ -958,6 +958,23 @@ class Writer:
                 json.dump(data_to_use, outfile)
             print("Created webapp JSON: {}".format(json_filename_webapp))
 
+            # CMAA compatibility: write report to Reports/{sha256}_static.json
+            try:
+                if hasattr(args, 'apk_file') and args.apk_file and os.path.exists(args.apk_file):
+                    md5, sha1, sha256, sha512 = get_hashes_by_filename(args.apk_file)
+                    for r_dir in ["./Reports", os.path.join(os.path.dirname(os.path.abspath(__file__)), "Reports")]:
+                        if not os.path.exists(r_dir):
+                            try:
+                                os.makedirs(r_dir)
+                            except:
+                                pass
+                        cmaa_json_path = os.path.join(r_dir, "{}_static.json".format(sha256))
+                        with open(cmaa_json_path, 'w') as outfile:
+                            json.dump(merge_dict_tw, outfile)
+                        print("Created CMAA JSON report: {}".format(cmaa_json_path))
+            except Exception as e:
+                print("Failed to create CMAA JSON report: {}".format(e))
+
             # Create test.json files for both languages (for web UI buttons)
             # Write to parent directory (Frida/) where webapp.py reads from
             frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

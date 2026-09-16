@@ -223,10 +223,27 @@ def run_androguard_server(port: int, apk_path: str):
                 return jsonify({"error": "No hash parameter provided"}), 400
 
             filename = f"{file_hash}_static.json"
-            file_path = os.path.join("./Reports", filename)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidate_paths = [
+                os.path.join("./Reports", filename),
+                os.path.join(base_dir, "Reports", filename),
+                os.path.join("/app/Frida/maldroid/Reports", filename),
+                os.path.join("/app/Frida/Reports", filename),
+                os.path.join("./Reports", f"{file_hash}.json"),
+                os.path.join("/app/Frida", "test_zh.json"),
+                os.path.join(base_dir, "..", "test_zh.json"),
+                "./test_zh.json",
+                "/test_zh.json"
+            ]
 
-            if not os.path.exists(file_path):
-                return jsonify({"error": "File not found", "file_path": file_path}), 404
+            file_path = None
+            for p in candidate_paths:
+                if os.path.exists(p):
+                    file_path = p
+                    break
+
+            if not file_path:
+                return jsonify({"error": "File not found", "attempted": candidate_paths}), 404
 
             with open(file_path, "r") as f:
                 content = json.load(f)
