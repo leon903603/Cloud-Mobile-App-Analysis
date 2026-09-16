@@ -1,5 +1,5 @@
 #-*- coding: utf-8 -*-
-
+# "This Project Using Pytnon2 "
 from __future__ import division
 from tools.modified.androguard.core.bytecodes import apk
 from tools.modified.androguard.core.bytecodes import dvm
@@ -162,6 +162,32 @@ STR_REGEXP_TYPE_EXCLUDE_CLASSES = "^(Landroid/support/|Lcom/actionbarsherlock/|L
 ENABLE_EXCLUDE_CLASSES = True
 
 #-----------------------------------------------------------------------------------------------------
+# Excluded Labs: Detections that are outdated or prone to false positives
+# Add lab ID to skip the detection; remove to re-enable
+# Format: "lab_xxx" => reason for exclusion
+
+EXCLUDED_LABS = {
+    # --- Outdated (vulnerability already fixed in modern Android) ---
+    #"lab_016",   # Master Key Type I (CVE-2013-4787) - fixed in Android 4.4, 2013 "Updated ! "
+    #"lab_035",   # HttpURLConnection pre-Froyo bug - Android 2.2 (API 8), 2010 : Updated ! -> SSL Ping Check ! 
+    #"lab_036",   # beginTransactionNonExclusive API<11 - Android 3.0, 2011  -> 
+    #"lab_044",   # Fragment injection (CVE-2013-6271) - fixed in Android 4.4, 2013 --> updated Dirty Stream Vulnerability 
+    #"lab_052",   # SQLite Journal (CVE-2011-3901) - fixed in Android 4.0, 2011
+    #"lab_062",   # System sharedUserId + Master Key - depends on lab_016
+    "lab_023",
+    # --- Deprecated API (detection target no longer used) ---
+    #"lab_018",   # ACCESS_MOCK_LOCATION - removed in Android 6.0 (API 23) Updated -> Improper FileProvider Configuration
+    "lab_030",   # ALLOW_ALL_HOSTNAME_VERIFIER - org.apache.http deprecated in API 22
+    "lab_032",   # HttpHost default scheme - org.apache.http deprecated in API 22
+    # --- False positive prone ---
+    "lab_002",   # Security Methods - regex "config|setting" too broad
+    "lab_003",   # Security Classes - regex "config|setting" too broad
+    "lab_043",   # External Storage - Android 10+ Scoped Storage
+    # --- Superseded (functionality fully covered by another lab) ---
+    "lab_066",   # Adb Backup check - 功能已被 lab_073 (4.1.2.3.14 備份資料敏感性資料保護) 完整涵蓋
+}
+
+#-----------------------------------------------------------------------------------------------------
 # For output the static result
 
 report_dict_zhtw = collections.OrderedDict()
@@ -170,8 +196,13 @@ output_pdf_url = " http://140.114.77.172:15148/api/report"
 
 #-----------------------------------------------------------------------------------------------------
 
+
+
+
+#--------
+
 class Writer:
-    def __init__(self):
+    def __init__(self, excluded_labs=None):
         self.__package_information = {}
         self.__cache_output_detail_stream = []
         # Store the result information (key: tag ; value: information_for_each_vector)
@@ -187,6 +218,9 @@ class Writer:
         # Analyze header result (include package_name, md5, sha1, etc.)
         self.__file_io_information_output_list = []
         self.bIsValidThisRound = False
+
+        # Excluded labs list - detections in this set will be skipped
+        self.__excluded_labs = excluded_labs if excluded_labs else set()
 
     def simplifyClassPath(self, class_name):
         if class_name.startswith('L') and class_name.endswith(';'):
@@ -317,13 +351,17 @@ class Writer:
 
         self.__output_dict_vector_result_information[tag] = dict_tmp_information
 
-    def IsValid(self,_Content):
-        bReturnValue = True
-        # #print(_Content.encode('utf-8'))
-        # if(_Content.find("工".decode('utf8')) == -1):
-        #     #print("Can't find!!!")
-        #     bReturnValue = False
-        return bReturnValue
+    def IsValid(self, _Content):
+        # Check if the lab is in the excluded list
+        if self.__excluded_labs:
+            p = re.compile(r'\[(lab_\d+)\]')
+            match = p.search(_Content)
+            if match:
+                lab_id = match.group(1)
+                if lab_id in self.__excluded_labs:
+                    print("[SKIP] {} - excluded by EXCLUDED_LABS".format(lab_id))
+                    return False
+        return True
     def StripContect(self,_Content):
         """
             [Ben]
@@ -713,22 +751,17 @@ class Writer:
         report_dict_zhtw["mast_report"] = collections.OrderedDict()
         # android_static_json_zhtw = open('/home/py/android_static_zhtw.json', 'r')
         
-        # path detection for JSON files
-        if os.path.exists('./Frida/maldroid/android_static_zhtw.json'):
-            android_static_json_zhtw = open('android_static_zhtw.json', 'r')
-        else:
-            android_static_json_zhtw = open('android_static_zhtw.json', 'r')
+        # path detection for JSON files (resolve relative to this script's dir)
+        _maldroid_dir = os.path.dirname(os.path.abspath(__file__))
+        android_static_json_zhtw = open(os.path.join(_maldroid_dir, 'android_static_zhtw.json'), 'r')
         
         android_static_dict_zhtw = json.load(android_static_json_zhtw, object_pairs_hook=collections.OrderedDict)
         # en: json
         report_dict_en["mast_report"] = collections.OrderedDict()
         #android_static_json_en = open('/home/py/android_static_en.json', 'r')
         
-        # path detection for JSON files
-        if os.path.exists('android_static_en.json'):
-            android_static_json_en = open('android_static_en.json', 'r')
-        else:
-            android_static_json_en = open('android_static_en.json', 'r')
+        # path detection for JSON files (resolve relative to this script's dir)
+        android_static_json_en = open(os.path.join(_maldroid_dir, 'android_static_en.json'), 'r')
         android_static_dict_en = json.load(android_static_json_en, object_pairs_hook=collections.OrderedDict)
         
         # Import lab_num
@@ -741,8 +774,6 @@ class Writer:
                 "isDetected": False,
                 "type": ""
             }
-        print("----------Debug Start----------")
-        
         # Detectiong rule
         for k,v in dict_to_json.items():
             # extract the [lab_001]
@@ -782,6 +813,7 @@ class Writer:
                     report_dict_zhtw["mast_report"][lab_tag]["isDetected"] = True
                     report_dict_zhtw["mast_report"][lab_tag]["type"] = v["special_tag"] if "special_tag" in v else []
                     # en
+                    print(v["title"])
                     # report_dict_en["mast_report"][lab_tag]["data"] = [
                     #     {
                     #         "description": v["title"].split("||")[1],
@@ -792,14 +824,14 @@ class Writer:
                         for dataitem in v["vector_details"].split('=>'):
                             report_dict_en["mast_report"][lab_tag]["data"].append(
                                 {
-                                    "description": v["title"].split("||")[0],
+                                    "description": v["title"].split("||")[1],
                                     "details": dataitem
                                 }
                                 )
                     else:
                         report_dict_en["mast_report"][lab_tag]["data"].append(
                             {
-                                "description": v["title"].split("||")[0],
+                                "description": v["title"].split("||")[1],
                                 "details": ''
                             }
                         )
@@ -822,14 +854,35 @@ class Writer:
                             "details": v["vector_details"] if "vector_details" in v else '',
                         }
                     )
-        print("----------Debug End----------")
         for k,v in report_dict_zhtw["mast_report"].items():
             if v["isDetected"] == True:
                 android_static_dict_zhtw[k]["desc"] = v["data"][0]["description"]
         for k,v in report_dict_en["mast_report"].items():
             if v["isDetected"] == True:
                 android_static_dict_en[k]["desc"] = v["data"][0]["description"]
+
+        # Ensure required fields exist with default values
+        required_fields = {
+            "md5": "unknown",
+            "sha256": "unknown",
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "file_name": "unknown",
+            "app_name": "unknown",
+            "app_version": "unknown",
+            "package_version_code": "0",
+            "min_sdk": "0",
+            "target_sdk": "0",
+            "url_list": []
+        }
+
+        for key, default_value in required_fields.items():
+            if key not in report_dict_zhtw:
+                report_dict_zhtw[key] = default_value
+            if key not in report_dict_en:
+                report_dict_en[key] = default_value
+
         merge_dict_tw = {}
+        merge_dict_tw["lang"] = "zh-TW"
         merge_dict_tw["system"] = "android"
         merge_dict_tw["rule"] = android_static_dict_zhtw
         merge_dict_tw["result"] = report_dict_zhtw
@@ -842,52 +895,97 @@ class Writer:
         merge_dict_en["result"] = report_dict_en
         # https://www.cnblogs.com/jay54520/p/8717166.html
         #analysis_result_json_zhtw = json.dumps(report_dict_zhtw, indent=4, ensure_ascii=False)
-        #analysis_result_json_en = json.dumps(report_dict_en, indent=4, ensure_ascii=False) 
+        #analysis_result_json_en = json.dumps(report_dict_en, indent=4, ensure_ascii=False)
         return  merge_dict_tw, merge_dict_en
 
     def generate_pdf(self, args, merge_dict_tw, merge_dict_en):
-        
+
         import requests as req
         global output_pdf_url
         from collections import OrderedDict
         try:
-            # Create static_analysis_result directory if it doesn't exist
-            if not os.path.exists('static_analysis_result'):
-                os.makedirs('static_analysis_result')
-            
+            # Resolve output dir relative to the Frida directory (not the CWD,
+            # which is '/' when launched by webapp.py) so webapp.py can find it.
+            _frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            result_dir = os.path.join(_frida_dir, 'static_analysis_result')
+            if not os.path.exists(result_dir):
+                os.makedirs(result_dir)
+
             # Get package name from APK
-            package_name = "com.example.staticlabapp"  # Default fallback
+            package_name = "unknown_app"  # Default fallback
             try:
-                # Try to get package name from APK analysis
-                if hasattr(self, 'a') and self.a:
-                    package_name = self.a.get_package()
+                # Prefer the package name resolved during analysis (global), then
+                # self.a, so the report filename matches webapp's {packageName}.json
+                if 'DYLANPACKAGENAME' in globals() and DYLANPACKAGENAME and DYLANPACKAGENAME.strip():
+                    package_name = DYLANPACKAGENAME
+                elif hasattr(self, 'a') and self.a:
+                    pkg = self.a.get_package()
+                    # Check if package name is not empty
+                    if pkg and pkg.strip():
+                        package_name = pkg
             except:
                 pass
-            
-            # Create JSON file with package name
-            output_dir = "./Reports"
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-            md5, sha1, sha256, sha512 = get_hashes_by_filename(args.apk_file)
-            json_filename = os.path.join(output_dir, "{}_static.json".format(sha256))
-            with open(json_filename, 'w') as outfile:
-                json.dump(merge_dict_tw, outfile)
-            print("Created JSON report: {}".format(json_filename))
-            
-            # Also create test.json for compatibility
-            with open('test.json','w') as outfile:
-                json.dump(merge_dict_en,outfile)
-            with open('test.json','r') as infile:
-                test = json.load(infile,object_pairs_hook=OrderedDict)
-            # res = req.post(output_pdf_url, json=test, timeout=5)
-            # res = req.post(output_pdf_url, json=merge_dict_tw, timeout=5)
-            # with open(str(inserted_app_id)+ "_" + str(args.username) + '.pdf', 'wb') as f:
-            #     f.write(res.content)
 
-            # en
-            # res = req.post(output_pdf_url, json=merge_dict_en, timeout=5)
-            # with open(str(inserted_app_id)+ "_" + str(args.username) + '_en.pdf', 'wb') as f:
+            # Select data based on language parameter
+            lang = args.lang if hasattr(args, 'lang') else 'en'
+
+            # Normalize language code (zh -> zh-TW)
+            if lang == 'zh':
+                lang = 'zh-TW'
+
+            if lang == 'zh-TW':
+                data_to_use = merge_dict_tw
+                lang_suffix = "_zh"
+                print("[INFO] Using Traditional Chinese (zh-TW) report")
+            else:
+                data_to_use = merge_dict_en
+                lang_suffix = "_en"
+                print("[INFO] Using English (en) report")
+
+            # Use codecs for Python 2.7 compatibility (open() doesn't support encoding parameter)
+            import codecs
+
+            # Create JSON file with package name and language suffix (for reference)
+            json_filename_lang = os.path.join(result_dir, "{}{}.json".format(package_name, lang_suffix))
+            with open(json_filename_lang, 'w') as outfile:
+                json.dump(data_to_use, outfile)
+            print("Created JSON report: {}".format(json_filename_lang))
+
+            # IMPORTANT: Also create JSON without language suffix for webapp.py compatibility
+            # webapp.py expects: {packageName}.json (without _en or _zh suffix)
+            json_filename_webapp = os.path.join(result_dir, "{}.json".format(package_name))
+            with open(json_filename_webapp, 'w') as outfile:
+                json.dump(data_to_use, outfile)
+            print("Created webapp JSON: {}".format(json_filename_webapp))
+
+            # Create test.json files for both languages (for web UI buttons)
+            # Write to parent directory (Frida/) where webapp.py reads from
+            frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+            # English version (default for backward compatibility)
+            test_json_path = os.path.join(frida_dir, 'test.json')
+            with codecs.open(test_json_path, 'w', encoding='utf-8') as outfile:
+                json.dump(merge_dict_en, outfile, ensure_ascii=False, indent=2)
+            print("Created test.json (English): {}".format(test_json_path))
+
+            # Chinese version
+            test_zh_json_path = os.path.join(frida_dir, 'test_zh.json')
+            with codecs.open(test_zh_json_path, 'w', encoding='utf-8') as outfile:
+                json.dump(merge_dict_tw, outfile, ensure_ascii=False, indent=2)
+            print("Created test_zh.json (Chinese): {}".format(test_zh_json_path))
+
+            # Load the selected language for further processing
+            load_path = test_json_path if lang == 'en' else test_zh_json_path
+            with codecs.open(load_path, 'r', encoding='utf-8') as infile:
+                test = json.load(infile, object_pairs_hook=OrderedDict)
+
+            # Generate PDF (uncomment to enable)
+            # res = req.post(output_pdf_url, json=data_to_use, timeout=5)
+            # pdf_filename = "{}_{}_{}.pdf".format(package_name, args.username, lang_suffix)
+            # with open(pdf_filename, 'wb') as f:
             #     f.write(res.content)
+            # print("Generated PDF: {}".format(pdf_filename))
+
             return True
         except Exception as e:
             print(e)
@@ -1423,6 +1521,17 @@ def parseArgument():
         "username",
         required=True
     )
+    # [Language] Report language selection
+    parser.add_argument(
+        "-l",
+        "--lang",
+        help=
+        "Report language: 'zh-TW' for Traditional Chinese, 'en' for English (default: en)",
+        type=str,
+        required=False,
+        choices=['zh-TW', 'zh', 'en'],
+        default='en'
+    )
     # When you want to use "report_output_dir", remember to use "os.path.join(args.report_output_dir, [filename])"
     parser.add_argument(
         "-o",
@@ -1434,6 +1543,9 @@ def parseArgument():
 
     args = parser.parse_args()
     return args
+
+
+        
 
 
 # ------------------------------------------------------------------------
@@ -1467,6 +1579,17 @@ def get_androguard(endpoint, params=None):
     except Exception as e:
         print("An error occurred:", str(e))
         return None
+
+   
+def lab_results_to_dict(lab_result):
+    """Flatten a lab result's 'results' list-of-dicts into a single dict."""
+
+    d = {}
+    if lab_result and "results" in lab_result:
+        for item in lab_result["results"]:
+            if isinstance(item, dict):
+                d.update(item)
+    return d
 
 
 def __analyze(writer, args):
@@ -1558,9 +1681,12 @@ def __analyze(writer, args):
     DYLANPACKAGENAME = package_name
 
     if isNullOrEmptyString(package_name, True):
-        raise ExpectedException(
+        # Log warning but continue with default package name instead of throwing exception
+        package_name = "unknown_app"
+        writer.writeInf_ForceNoPrint(
             "package_name_empty",
-            "Package name is empty (File: " + apk_Path + ").")
+            "Package name is empty (File: " + apk_Path + "). Using default: unknown_app")
+        print("[package_name_empty] Package name is empty (File: " + apk_Path + ").")
 
     writer.writeInf("platform", "Android", "Platform")
     writer.writeInf("package_name", str(package_name), "Package Name")
@@ -1676,15 +1802,6 @@ def __analyze(writer, args):
     else:
         print("Failed to get files from androguard server, using empty list")
         allfiles = []
-
-    packages_result = get_androguard('/search_packages')
-    if packages_result and isinstance(packages_result, dict) and 'packages' in packages_result:
-        allpackages = packages_result['packages']
-        #print("Retrieved {} packages from androguard server".format(len(allpackages)))
-        #print("allpackages: {}".format(allpackages))
-    else:
-        print("Failed to get packages from androguard server, using empty list")
-        allpackages = []
 
 
 
@@ -1813,49 +1930,84 @@ def __analyze(writer, args):
     # ------------------------------------------------------------------------
     # Androguard server communication (using global get_androguard function)
     # ------------------------------------------------------------------------
-    # [lab_001] - SSL Connection Checking
-    # pre-run to avoid all the urls are in exclusion list but the results are shown
-    allurls_strip_non_duplicated_final_prerun_count = 0
-    for url in allurls_strip_non_duplicated_final:
-        dict_class_to_method_mapping = efficientStringSearchEngine.get_search_result_dict_key_classname_value_methodlist_by_match_id(url)
-        if filteringEngine.is_all_of_key_class_in_dict_not_in_exclusion(dict_class_to_method_mapping):
-            allurls_strip_non_duplicated_final_prerun_count = allurls_strip_non_duplicated_final_prerun_count + 1
+    # [lab_001] - SSL / Cleartext HTTP Traffic Detection (migrated to androguard_server)
+    # 三層架構: AndroidManifest usesCleartextTraffic + Network Security Config + smali source->sink
+    result_lab001 = get_androguard('/lab_001')
 
-    if allurls_strip_non_duplicated_final_prerun_count != 0: 
+    if result_lab001 and isinstance(result_lab001, dict) and result_lab001.get('has_finding'):
+        verdict_001     = result_lab001.get('verdict', 'WARNING')
+        findings_001    = result_lab001.get('findings', [])
+        orphan_001      = result_lab001.get('orphan_urls', [])
+        nsc             = result_lab001.get('nsc_summary', {})
+        manifest_attr   = result_lab001.get('manifest_attr_value')
+        target_sdk      = result_lab001.get('target_sdk', 0)
+        effective_allow = result_lab001.get('effective_cleartext_allowed', True)
+        all_http        = result_lab001.get('all_http_urls', [])
+
+        if verdict_001 == 'CRITICAL':
+            level_001 = LEVEL_CRITICAL
+        elif verdict_001 == 'WARNING':
+            level_001 = LEVEL_WARNING
+        else:
+            level_001 = LEVEL_INFO
+
         writer.startWriter(
-            "SSL_URLS_NOT_IN_HTTPS", LEVEL_CRITICAL,
-            u"[lab_001][OWASP-V1.3,V1.4,V4.3,V4.7,V5.1,V5.2][工-4.1.2.4.1][MAST-4.2.6] SSL Connection 檢查",
-            u"發現到 URL 沒有使用 SSL (Total:" + \
-            str(allurls_strip_non_duplicated_final_prerun_count) + "):" + "||" + \
-            u"The URL was found but without using SSL. (Total:" + \
-            str(allurls_strip_non_duplicated_final_prerun_count) + "):",
-            ["SSL_Security"])
+            "LAB_001_CLEARTEXT_TRAFFIC", level_001,
+            u"[AS-lab001][MAS-4.1.2.4.1][MASVS-NETWORK-1][CWE-319] SSL Connection / Cleartext Traffic 檢查",
+            u"偵測到 App 可能透過 cleartext (HTTP) 進行網路傳輸,違反 MAS-4.1.2.4.1。"
+            u"本檢查分三層: (1) AndroidManifest 的 android:usesCleartextTraffic 設定;"
+            u"(2) res/xml network_security_config 的 base-config / domain-config;"
+            u"(3) Smali bytecode 的 source -> sink 同 method 配對(http URL 字串 + WebView.loadUrl / "
+            u"HttpURLConnection / OkHttp / Volley 等網路 sink)。"
+            u"CRITICAL: http URL 確實流入網路 sink; WARNING: 找到 http URL 但同 method 無 sink; "
+            u"INFO: manifest 已禁止 cleartext 但 code 仍含 http URL。"
+            u" Ref: https://developer.android.com/training/articles/security-config"
+            + "||" +
+            u"App may transmit data over cleartext HTTP, violating MAS-4.1.2.4.1. Three layers checked: "
+            u"(1) AndroidManifest android:usesCleartextTraffic, (2) res/xml network_security_config "
+            u"(base-config / domain-config), (3) smali source->sink pairing of http URL strings with "
+            u"network sinks (WebView.loadUrl / HttpURLConnection / OkHttp / Volley). "
+            u"CRITICAL: http URL flows to a network sink; WARNING: http URL found without co-located sink; "
+            u"INFO: manifest disables cleartext but http URLs still in code."
+            u" Ref: https://developer.android.com/training/articles/security-config",
+            ["SSL_Security", "Cleartext"])
 
-        for url in allurls_strip_non_duplicated_final:
+        writer.write(u"[Manifest] usesCleartextTraffic=%s  targetSdk=%s  effective_allowed=%s" % (
+            manifest_attr if manifest_attr is not None else "not set",
+            target_sdk, effective_allow))
 
-            dict_class_to_method_mapping = efficientStringSearchEngine.get_search_result_dict_key_classname_value_methodlist_by_match_id(
-                url)
-            if not filteringEngine.is_all_of_key_class_in_dict_not_in_exclusion(
-                    dict_class_to_method_mapping):
-                continue
+        if nsc.get('present'):
+            writer.write(u"[NSC] base_cleartext=%s  domain_configs=%d" % (
+                nsc.get('base_cleartext'), len(nsc.get('domain_configs', []))))
+            for dc in nsc.get('domain_configs', []):
+                writer.write(u"  domain_config cleartext=%s  domains=%s" % (
+                    dc.get('cleartext'), ", ".join(dc.get('domains', []))))
 
-            writer.write(url)
+        if findings_001:
+            writer.write(u"[CRITICAL findings: %d]" % len(findings_001))
+            for f in findings_001:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  url=%s  sinks=%s" % (
+                    cls, f.get('method', ''), f.get('url', ''),
+                    ",".join(f.get('sinks', []))))
 
-            try:
-                if dict_class_to_method_mapping:  # Found the corresponding url in the code
-                    for _, result_method_list in dict_class_to_method_mapping.items():
-                        for result_method in result_method_list:  # strip duplicated item
-                            if filteringEngine.is_class_name_not_in_exclusion(
-                                    result_method.get_class_name()):
-                                source_classes_and_functions = (
-                                    result_method.get_class_name() + "->" +
-                                    result_method.get_name() +
-                                    result_method.get_descriptor())
-                                writer.write(
-                                    "    => " + source_classes_and_functions)
+        if orphan_001:
+            writer.write(u"[WARNING orphan http URLs: %d (no sink in same method)]" % len(orphan_001))
+            for o in orphan_001[:20]:
+                cls = o.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  url=%s" % (
+                    cls, o.get('method', ''), o.get('url', '')))
+            if len(orphan_001) > 20:
+                writer.write(u"  ... and %d more" % (len(orphan_001) - 20))
 
-            except KeyError:
-                pass
+        # keep PDF report's url_list in sync with server-detected http URLs
+        if all_http:
+            report_dict_zhtw["url_list"] = all_http
+            report_dict_en["url_list"]   = all_http
 
     # Testing androguard server 
     # find_method_params = {
@@ -1878,10 +2030,11 @@ def __analyze(writer, args):
     list_security_related_methods = []
     
     # Use AndroguardServer response 
-    if result and isinstance(result, list):
+    if result and isinstance(result, dict):
+        methods = result.get('results', [])
         print("Processing AndroguardServer response...")
-        print("Number of methods found: {}".format(len(result)))
-        for method_info in result:
+        print("Number of methods found: {}".format(result.get('count', 0)))
+        for method_info in methods:
             list_security_related_methods.append(method_info)
     else:
         print("No AndroguardServer response available, skipping security methods analysis")
@@ -1890,7 +2043,7 @@ def __analyze(writer, args):
         print("Lab002: Security_Methods Found")
         writer.startWriter(
             "Security_Methods", LEVEL_NOTICE,
-            u"[lab_002][OWASP-V1.9,V1.10,V3.4][MAST-4.2.3][工-9.9.9] 安全相關 Methods 檢查",
+            u"[AS-lab002][OWASP-V1.9,V1.10,V3.4][MAST-4.2.3][工-9.9.9] 安全相關 Methods 檢查",
             u"找到安全相關 method 名稱" + "||" + u"Find the security-related method name")
         
         for method in list_security_related_methods:
@@ -1906,11 +2059,11 @@ def __analyze(writer, args):
     list_security_related_classes = []
     
     # Use AndroguardServer response for classes
-    if result_classes and isinstance(result_classes, list):
+    if result_classes and isinstance(result_classes, dict):
+        classes = result_classes.get('results', [])
         print("Processing AndroguardServer LAB03 response...")
-        print("Number of classes found: {}".format(len(result_classes)))
-        print("result_classes: {}".format(result_classes))
-        for class_info in result_classes:
+        print("Number of classes found: {}".format(result_classes.get('count', 0)))
+        for class_info in classes:
             list_security_related_classes.append(class_info)
             print("class_info: {}".format(class_info))
 
@@ -1919,7 +2072,7 @@ def __analyze(writer, args):
         print("list_security_related_classes: {}".format(list_security_related_classes))
         writer.startWriter(
             "Security_Classes", LEVEL_NOTICE,
-            u"[lab_003][OWASP-V1.9,V1.10,V3.4][MAST-4.2.3][工-9.9.9] 安全相關 Classes 檢查",
+            u"[AS-lab003][OWASP-V1.9,V1.10,V3.4][MAST-4.2.3][工-9.9.9] 安全相關 Classes 檢查",
             u"找到安全相關 class 的名稱:" + "||" + u"Find the security-related class name")
 
         for class_info in list_security_related_classes:
@@ -1934,7 +2087,7 @@ def __analyze(writer, args):
     if billing in all_permissions:
         writer.startWriter(
             "com.android.vending.BILLING", LEVEL_INFO,
-            u"[lab_004][OWASP-V6.1][MAST-4.2.1][工-4.1.3.1] 存取權限 'com.android.vending.BILLING' ",
+            u"[AS-lab004][OWASP-V6.1][MAST-4.2.1][工-4.1.3.1] 存取權限 'com.android.vending.BILLING' ",
             u"只在付費app中出現。" + "||" + u"Only appears in paid apps.")
 
     pkg_billing = vmx.get_tainted_packages().search_packages(
@@ -1947,7 +2100,7 @@ def __analyze(writer, args):
     if pkg_billing:
         writer.startWriter(
             "method getPurchases()", LEVEL_INFO,
-            u"[lab_004][OWASP-V6.1][MAST-4.2.1][工-4.1.3.1] 發現 package 'Lcom/android/vending/billing/IInAppBillingService' ",
+            u"[AS-lab004][OWASP-V6.1][MAST-4.2.1][工-4.1.3.1] 發現 package 'Lcom/android/vending/billing/IInAppBillingService' ",
             u"此 app 有 google play 的內部付費購買功能。" + "||" + u"This app has google play's internal paid purchase feature.")
         writer.show_Paths(d, path_purchases)
 
@@ -1959,7 +2112,7 @@ def __analyze(writer, args):
     if contact in all_permissions:
         writer.startWriter(
             "READ_CONTACTS", LEVEL_NOTICE,
-            "[lab_005][Bank-001][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_CONTACTS",
+            "[AS-lab005][Bank-001][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_CONTACTS",
             u"存取權限 'android.permission.READ_CONTACTS'，需要存取通訊錄之 app 才會出現" + "||" + u"Access permission 'android.permission.READ_CONTACTS', which will only appear for apps that need to access the address book")
         writer.write("Permission detected: " + contact)
 
@@ -1970,7 +2123,7 @@ def __analyze(writer, args):
     if calllog in all_permissions:
         writer.startWriter(
             "READ_CALL_LOG", LEVEL_NOTICE,
-            "[lab_006][Bank-002][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_CALL_LOG",
+            "[AS-lab006][Bank-002][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_CALL_LOG",
             u"存取權限 'android.permission.READ_CALL_LOG'，需要存取通聯紀錄之 app 才會出現" + "||" + u"Access permission 'android.permission.READ_CALL_LOG', which will only appear if the app needs to access the contact log")
         writer.write("Permission detected: " + calllog)
     
@@ -1981,7 +2134,7 @@ def __analyze(writer, args):
     if gpslocation in all_permissions:
         writer.startWriter(
             "ACCESS_FINE_LOCATION", LEVEL_NOTICE,
-            "[lab_007][Bank-003][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.ACCESS_FINE_LOCATION",
+            "[AS-lab007][Bank-003][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.ACCESS_FINE_LOCATION",
             u"存取權限 'android.permission.ACCESS_FINE_LOCATION'，需要存取 GPS 之 app 才會出現" + "||" + u"Access permission 'android.permission.ACCESS_FINE_LOCATION', which will only appear if the app needs to access the GPS")
         writer.write("Permission detected: " + gpslocation)
     
@@ -2004,7 +2157,7 @@ def __analyze(writer, args):
     if gps_method_found:
         writer.startWriter(
             "SENSITIVE_gps", LEVEL_NOTICE,
-            u"[lab_008][OWASP-V2.2][MAST-4.2.2][工-9.9.9] 傳送 GPS 訊息的 code",
+            u"[AS-lab008][OWASP-V2.2][MAST-4.2.2][工-9.9.9] 傳送 GPS 訊息的 code",
             u"此 app 有傳送 GPS 訊息的程式碼 (LocationManager.requestLocationUpdates):" + "||" + u"This app has code for sending GPS messages (LocationManager.requestLocationUpdates):"
         )
         writer.write("GPS method detected: LocationManager.requestLocationUpdates")
@@ -2016,7 +2169,7 @@ def __analyze(writer, args):
     if sms in all_permissions:
         writer.startWriter(
             "READ_SMS", LEVEL_NOTICE,
-            u"[lab_009][Bank-004][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_SMS",
+            u"[AS-lab009][Bank-004][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_SMS",
             u"存取權限 'android.permission.READ_SMS'，需要存取 SMS 之 app 才會出現" + "||" + u"Access permission 'android.permission.READ_SMS', which will appear only for apps that need to access SMS")
         writer.write("Permission detected: " + sms)
 
@@ -2027,7 +2180,7 @@ def __analyze(writer, args):
     if record in all_permissions:
         writer.startWriter(
             "RECORD_AUDIO", LEVEL_NOTICE,
-            u"[lab_010][OWASP-V6.1][MAST-4.2.1][Bank-005][工-9.9.9] android.permission.RECORD_AUDIO",
+            u"[AS-lab010][OWASP-V6.1][MAST-4.2.1][Bank-005][工-9.9.9] android.permission.RECORD_AUDIO",
             u"存取權限 'android.permission.RECORD_AUDIO'，需要 Record 之 app 才會出現" + "||" + u"Access permission 'android.permission.RECORD_AUDIO', need Record's app to appear")
         writer.write("Permission detected: " + record)
 
@@ -2043,7 +2196,7 @@ def __analyze(writer, args):
         print("allmuri: {}".format(allmuri))
         print("LAB_011: Found {} media URI strings".format(len(allmuri)))
         writer.startWriter("URi", LEVEL_NOTICE,
-                           u"[lab_011][Bank-006] 具有 media 的 URI 字串",
+                           u"[AS-lab011][Bank-006] 具有 media 的 URI 字串",
                            u"此 app 有 media 的 URI 字串" + "||" + u"This app has the URI string for media")
     for oneuri in allmuri:
         writer.write(oneuri + "\t")
@@ -2057,7 +2210,7 @@ def __analyze(writer, args):
             alluri.append(line)
     if alluri:
         writer.startWriter("URi", LEVEL_NOTICE, 
-                           u"[lab_012][Bank-007] 具有 URI 字串",
+                           u"[AS-lab012][Bank-007] 具有 URI 字串",
                            u"此 app 有 URI 字串" + "||" + u"This app has the URI string")
         for oneuri in alluri:
             writer.write(oneuri + "\t")
@@ -2074,7 +2227,7 @@ def __analyze(writer, args):
 
     if allurl:
         writer.startWriter("URL", LEVEL_NOTICE, 
-                           u"[lab_013][Bank-008] 具有 URL 字串",
+                           u"[AS-lab013][Bank-008] 具有 URL 字串",
                            u"此 app 有 URL 字串" + "||" + u"This app has the URL string")
     for oneurl in allurl:
         writer.write(oneurl + "\t")
@@ -2089,7 +2242,7 @@ def __analyze(writer, args):
 
     if allip:
         writer.startWriter("IP found", LEVEL_NOTICE,
-                           u"[lab_014][Bank-009] 具有 IP 字串",
+                           u"[AS-lab014][Bank-009] 具有 IP 字串",
                            u"此 app 有 IP 字串" + "||" + u"This app has the IP string")
     for oneip in allip:
         writer.write(oneip + "\t")
@@ -2104,33 +2257,37 @@ def __analyze(writer, args):
 
     if allemail:
         writer.startWriter("E-mail found", LEVEL_NOTICE,
-                           u"[lab_015] 具有 E-mail 字串",
+                           u"[AS-lab015] 具有 E-mail 字串",
                            u"此 app 有 E-mail 字串" + "||" + u"This app has the E-mail string")
     # Avoid PDf crash
     # for oneemail in allemail:
     #     writer.write(oneemail + "\t")
 
     #-----------------------------------------------------------------------------------
-    # [lab_016] - Master Key Type I (Master Key Vulnerability checking):
 
-    classes_dex_count = get_androguard('/lab16')
-    if classes_dex_count and isinstance(classes_dex_count, dict) and 'count' in classes_dex_count:
-        dexes_count = classes_dex_count['count']
-        print("dexes_count: {}".format(dexes_count))
-    else:
-        print("Failed to get classes.dex count from androguard server, using 0")
-        dexes_count = 0
+    # [lab_016] CVE-2023-4863 libwebp VP8LBuildHuffmanTable Heap Overflow
+    # Scan native .so files in the APK for vulnerable libwebp strings
 
-    if dexes_count > 1:
-        isMasterKeyVulnerability = True
+    lab016Result = get_androguard('/lab_016')
 
-    if isMasterKeyVulnerability:
+    if lab016Result and lab016Result.get('has_vulnerability') == True:
+        print("lab_016 VULNERABLE - CVE-2023-4863 detected")
+        vulnerable_files = [r['file'] for r in lab016Result.get('results', []) if r.get('status') == 'VULNERABLE']
+        matched_strings = []
+        for r in lab016Result.get('results', []):
+            if r.get('status') == 'VULNERABLE':
+                matched_strings.extend(r.get('matched_strings', []))
+        matched_strings = list(set(matched_strings))
+
         writer.startWriter(
-            "MASTER_KEY", LEVEL_CRITICAL,
-            u"[lab_016][OWASP-V7.1][CVE-2013-4787][工-4.1.5.1.2][MAST-4.2.6] Master Key Type I 漏洞",
-            u"此 APK 含有 Master Key Type I 漏洞" + "||" + "This APK contains a Master Key Type I vulnerability",
-            None, 
-            u"CVE-2013-4787")
+            "CVE_2023_4863_LIBWEBP", LEVEL_CRITICAL,
+            u"[AS-lab016] CVE-2023-4863 libwebp Heap Overflow 檢測",
+            u"此 app 的 native library 中偵測到含有 CVE-2023-4863 漏洞的 libwebp。攻擊者可透過惡意 WebP 圖片觸發 VP8LBuildHuffmanTable heap overflow，導致任意程式碼執行。建議更新 libwebp 至 1.3.2 以上版本。\n 參考: https://nvd.nist.gov/vuln/detail/CVE-2023-4863 " + "||" + \
+            u"Vulnerable libwebp native library detected (CVE-2023-4863). An attacker can trigger a VP8LBuildHuffmanTable heap overflow via a crafted WebP image, leading to arbitrary code execution. Update libwebp to version 1.3.2 or later.\n refer to: https://nvd.nist.gov/vuln/detail/CVE-2023-4863",
+            ["CVE-2023-4863", "libwebp", "HeapOverflow", "NativeLibrary"])
+        writer.write(u"Affected files: " + ", ".join(vulnerable_files) + u"\nMatched strings: " + ", ".join(matched_strings))
+    else:
+        print("lab_016 pass - No CVE-2023-4863 vulnerability found")
 
     #------------------------------------------------------------------------------------------------------
     # [lab_017] - DEBUGGABLE checking:
@@ -2139,14 +2296,14 @@ def __analyze(writer, args):
     if is_debug_open:
         writer.startWriter(
             "DEBUGGABLE", LEVEL_CRITICAL,
-            u"[lab_017][OWASP-V7.3,V7.4][MAST-4.2.5][M4] Android Debug Mode 檢查",
+            u"[AS-lab017][OWASP-V7.3,V7.4][MAST-4.2.5][M4] Android Debug Mode 檢查",
             u"DEBUG 模式在 AndroidManifest.xml 中是打開的 (android:debuggable=\"true\")。這是非常危險的，攻擊者可以藉由 LOGCAT 偵測 Debug 訊息。如果它是已釋出 app 請將 Debug 模式關閉。" + "||" + u"DEBUG mode turned on in AndroidManifest.xml (android:debuggable=\"true\"). This is very dangerous, as attackers can use LOGCAT to detect debug messages. If it is a released app, please turn off Debug mode.",
             ["Debug"])
 
     # else:
     #     writer.startWriter(
     #         u"DEBUGGABLE", LEVEL_INFO,
-    #         "[lab_017][OWASP-V7.3,V7.4][MAST-4.2.5][M4] Android Debug Mode 檢查",
+    #         "[AS-lab017][OWASP-V7.3,V7.4][MAST-4.2.5][M4] Android Debug Mode 檢查",
     #         u"DEBUG 模式在 AndroidManifest.xml 中是關閉的 (android:debuggable=\"false\")。",
     #         ["Debug"])
 
@@ -2223,22 +2380,41 @@ def __analyze(writer, args):
     #         ["Debug", "Hacker"])
 
     #----------------------------------------------------------------------------------
-    # [lab_018] - android_permission (ACCESS_MOCK_LOCATION):
+    # [lab_018] - FileProvider 不當設定檢測 (Improper FileProvider Configuration)
 
-    ACCESS_MOCK_LOCATION = 'android.permission.ACCESS_MOCK_LOCATION'
-    print("all_permissions: {}".format(all_permissions))
-    if ACCESS_MOCK_LOCATION in all_permissions:
-        print("lab_018 found ACCESS_MOCK_LOCATION")
+    lab018Result = get_androguard('/lab_018')
+
+    if lab018Result and lab018Result.get('has_vulnerability') == True:
+        print("Lab18 VULNERABLE - Improper FileProvider configuration detected")
+
+        vulnerabilities = lab018Result.get('results', [])
+
+        # Script 
+        issues_summary = []
+        for vuln in vulnerabilities:
+            issues_summary.append("[{0}] {1}: {2}".format(vuln['severity'], vuln['file'], vuln['issue']))
+
         writer.startWriter(
-            "USE_PERMISSION_ACCESS_MOCK_LOCATION", LEVEL_CRITICAL,
-            u"[lab_018] 不必要的權限檢查",
-            u"權限 'android.permission.ACCESS_MOCK_LOCATION' 應該只存在在模擬器環境中。如果這是一個已釋出的 app，請將這個權限移除。" + "||" + u"The permission 'android.permission.ACCESS_MOCK_LOCATION' should only exist in the emulator environment. If this is a released app, please remove this permission."
-        )
-    # else:
-    #     writer.startWriter(
-    #         u"USE_PERMISSION_ACCESS_MOCK_LOCATION", LEVEL_INFO,
-    #         u"[lab_018] 不必要的權限檢查",
-    #         u"權限 'android.permission.ACCESS_MOCK_LOCATION' 有被正確地設定。")
+            "FILEPROVIDER_MISCONFIGURATION", LEVEL_CRITICAL,
+            u"[AS-lab018][OWASP MASVS-STORAGE] FileProvider 不當設定",
+            u"偵測到 FileProvider 不當設定，可能導致檔案或目錄意外曝露。包含:\n" +
+            u"\n".join(issues_summary) +
+            u"\n\n建議:\n1. 不使用 <root-path>\n2. 避免分享廣泛路徑 (. 或 /)\n3. 謹慎使用 <external-path>" +
+            "||" +
+            u"Improper FileProvider configuration detected, may expose files/directories. Issues found:\n" +
+            u"\n".join(issues_summary) +
+            u"\n\nRecommendations:\n1. Don't use <root-path>\n2. Avoid broad path sharing (. or /)\n3. Use <external-path> carefully",
+            ["FileProvider", "Storage", "Configuration"])
+
+        # 顯示詳細資訊
+        for vuln in vulnerabilities:
+            writer.write("File: {0}\nIssue: {1}\nSeverity: {2}\nDescription: {3}\n".format(
+                vuln['file'], vuln['issue'], vuln['severity'], vuln['description']))
+    else:
+        print("Lab18 pass - No FileProvider misconfiguration found")
+    # #         u"USE_PERMISSION_ACCESS_MOCK_LOCATION", LEVEL_INFO,
+    # #         u"[AS-lab018] 不必要的權限檢查",
+    # #         u"權限 'android.permission.ACCESS_MOCK_LOCATION' 有被正確地設定。")
 
     #----------------------------------------------------------------------------------
     # [lab_019] - : permissionNameOfWrongPermissionGroup:
@@ -2247,7 +2423,7 @@ def __analyze(writer, args):
     if permissionNameOfWrongPermissionGroup:  # If the list is not empty
         writer.startWriter(
             u"PERMISSION_GROUP_EMPTY_VALUE", LEVEL_CRITICAL,
-            u"[lab_019][OWASP-V6.1][MAST-4.2.1] AndroidManifest PermissionGroup Checking",
+            u"[AS-lab019][OWASP-V6.1][MAST-4.2.1] AndroidManifest PermissionGroup Checking",
             u"設定 'permissionGroup' 屬性為空白值將會讓權限的定義變得無效而且其它 app 都不能使用。" + "||" + u"Setting the 'permissionGroup' attribute to a blank value will make the permission definition invalid and unavailable to other apps.")
 
         for name in permissionNameOfWrongPermissionGroup:
@@ -2255,7 +2431,7 @@ def __analyze(writer, args):
     # else:
     #     writer.startWriter(
     #         u"PERMISSION_GROUP_EMPTY_VALUE", LEVEL_INFO,
-    #         "[lab_019][OWASP-V6.1][MAST-4.2.1] AndroidManifest PermissionGroup Checking",
+    #         "[AS-lab019][OWASP-V6.1][MAST-4.2.1] AndroidManifest PermissionGroup Checking",
     #         u"PermissionGroup 在 AndroidManifest 的 permission tag 中有正確地設定。")
 
     #----------------------------------------------------------------------------------
@@ -2285,7 +2461,7 @@ def __analyze(writer, args):
         if list_user_permission_critical_manufacturer:
             writer.startWriter(
                 u"USE_PERMISSION_SYSTEM_APP", LEVEL_CRITICAL,
-                u"[lab_020][OWASP-V6.1][MAST-4.2.1] AndroidManifest 使用權限確認 ",
+                u"[AS-lab020][OWASP-V6.1][MAST-4.2.1] AndroidManifest 使用權限確認 ",
                 u"此 app 只能被手機製造商或 Google 簽名放在 '/system/app' 下並且釋出。如果不是，這可能是支惡意的 app" + "||" + u"This app can only be signed by the phone manufacturer or Google under '/system/app' and released. If not, this may be a malicious app"
             )
 
@@ -2296,7 +2472,7 @@ def __analyze(writer, args):
         if list_user_permission_critical:
             writer.startWriter(
                 u"USE_PERMISSION_CRITICAL", LEVEL_CRITICAL,
-                u"[lab_020][OWASP-V6.1][MAST-4.2.1] AndroidManifest 使用權限確認",
+                u"[AS-lab020][OWASP-V6.1][MAST-4.2.1] AndroidManifest 使用權限確認",
                 u"這 app 要求很高的權限，請小心使用" + "||" + "This app requires very high privileges, so please use it carefully")
 
             for permission in list_user_permission_critical:
@@ -2305,7 +2481,7 @@ def __analyze(writer, args):
     # else:
     #     writer.startWriter(
     #         u"USE_PERMISSION_SYSTEM_APP", LEVEL_INFO,
-    #         u"[lab_020][OWASP-V6.1][MAST-4.2.1][LAB-008] AndroidManifest 使用權限確認",
+    #         u"[AS-lab020][OWASP-V6.1][MAST-4.2.1][LAB-008] AndroidManifest 使用權限確認",
     #         u"沒有系統等級的使用權限。")
 
     #----------------------------------------------------------------------------------
@@ -2406,7 +2582,7 @@ def __analyze(writer, args):
         if 'android.permission.INTERNET' not in all_permissions:
             writer.startWriter(
                 u"USE_PERMISSION_INTERNET", LEVEL_CRITICAL,
-                u"[lab_021][OWASP-V5.2][MAST-4.2.3] 網路存取檢查",
+                u"[AS-lab021][OWASP-V5.2][MAST-4.2.3] 網路存取檢查",
                 u"此 app 有存取網路的程式碼，但在 AndroidManifest 中卻沒有 'android.permission.INTERNET' 的使用權限" + "||" + u"This app has code to access the network, but there is no 'android.permission.INTERNET' permission in AndroidManifest"
             )
 
@@ -2433,107 +2609,53 @@ def __analyze(writer, args):
 
     # else:
     #     writer.startWriter(u"USE_PERMISSION_INTERNET", LEVEL_INFO,
-    #                        u"[lab_021][OWASP-V5.2][MAST-4.2.3] 網路存取檢查",
+    #                        u"[AS-lab021][OWASP-V5.2][MAST-4.2.3] 網路存取檢查",
     #                        u"沒有發現與網路存取相關的程式碼。")
 
     # ------------------------------------------------------------------------
-    # [lab_022] - Base64 String decoding:
+    # [lab_022] - Base64-encoded sensitive content detection (migrated to androguard_server)
+    # 只報「解碼後是 http URL / secret pattern / 敏感關鍵字」的 Base64
+    result_lab022 = get_androguard('/lab_022')
 
-    organized_base64_mapping = []
-    # print("base64_mapping: {}".format(base64_mapping))
+    if result_lab022 and isinstance(result_lab022, dict) and result_lab022.get('has_finding'):
+        verdict_022  = result_lab022.get('verdict', 'WARNING')
+        critical_022 = result_lab022.get('critical', [])
 
-    for decoded_string, original_string in base64_mapping.items():
-
-        #search_result = get_androguard('/search', {'q': original_string})
-        search_result = None # Avoid PDf crash 
-        if search_result and isinstance(search_result, dict) and 'results' in search_result:
-            all_search_results = search_result['results']
-            print("all_search_results: {}".format(all_search_results))
-            organized_base64_mapping.append((decoded_string, original_string, all_search_results))
+        if verdict_022 == 'CRITICAL':
+            level_022 = LEVEL_CRITICAL
+        elif verdict_022 == 'WARNING':
+            level_022 = LEVEL_WARNING
         else:
-            print("Failed to get search results from androguard server, using empty list")
-            all_search_results = []
-        
-
-        # dict_class_to_method_mapping = efficientStringSearchEngine.get_search_result_dict_key_classname_value_methodlist_by_match_id(
-        #     original_string)
-        # if filteringEngine.is_all_of_key_class_in_dict_not_in_exclusion(
-        #         dict_class_to_method_mapping):
-        #     """
-        #             All of same string found are inside the excluded packages.
-        #             Only the strings found the original class will be added.
-        #     """
-        #     organized_base64_mapping.append(
-        #         (decoded_string, original_string,
-        #          dict_class_to_method_mapping))
-
-    # The result is from the upper code section
-    if organized_base64_mapping:
-
-        list_base64_decoded_urls = {}
+            level_022 = LEVEL_INFO
 
         writer.startWriter(
-            u"HACKER_BASE64_STRING_DECODE", LEVEL_CRITICAL,
-            u"[lab_022][MAST-4.2.6][M3][CVE-2015-3200] 使用 Base64 編碼方式",
-            u"找到使用 Base64 編碼的字串 ，總共有:" + str(len(organized_base64_mapping)) + u"，我們不保證所有的字串都是使用 Base64 編碼同時也不會顯示解碼過的 binary 檔案:" + "||" + \
-            u"Find the string that uses Base64 encoding, totaling :" + str(len(organized_base64_mapping)) + u", we do not guarantee that all strings are encoded using Base64 and do not display decoded binary files:",
-            ["Hacker"])
+            "LAB_022_BASE64_SENSITIVE", level_022,
+            u"[AS-lab022][MAS-4.1.2.3.8][MASVS-STORAGE-2][CWE-312] Base64 編碼敏感資料檢查",
+            u"偵測 Base64 編碼字串中隱藏的敏感資料。Base64 本身不是漏洞 (圖片、JWT、"
+            u"二進位資源都會用),只報『解碼後是真實風險內容』的 Base64: "
+            u"CRITICAL (解碼後是 cleartext http:// URL 或 AWS/Google API/JWT secret pattern); "
+            u"WARNING (解碼後含 password/api_key/token 等敏感關鍵字)。"
+            u"概念上是 lab_074 (明文 secret 偵測) 的 Base64 編碼版本。"
+            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+            + "||" +
+            u"Detects sensitive data hidden inside Base64-encoded strings. Base64 itself is "
+            u"not a vulnerability (icons, JWT, binary resources all use it); only reports Base64 "
+            u"whose DECODED content matches real risk patterns: CRITICAL (decoded cleartext http:// "
+            u"URL or known secret patterns - AWS/Google API/JWT); WARNING (decoded contains sensitive "
+            u"keywords - password/api_key/token). Conceptually the Base64 counterpart of lab_074."
+            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/",
+            ["Base64", "Hardcoded"])
 
-        for decoded_string, original_string, method_mapping_list in organized_base64_mapping:
-            writer.write(decoded_string)
-            writer.write("    ->The original encoded string:" + original_string)
-
-            if method_mapping_list:
-                for method_info in method_mapping_list:
-                    class_name = method_info.get('class', '')
-                    method_name = method_info.get('method', '')
-                    string_value = method_info.get('string', '')
-                    
-                    source_classes_and_functions = class_name + "->" + method_name
-                    writer.write("    ->From class: " + source_classes_and_functions)
-
-            if "http://" in decoded_string:
-                list_base64_decoded_urls[decoded_string] = original_string
-
-        if list_base64_decoded_urls:
-
-            writer.startWriter(
-                u"HACKER_BASE64_URL_DECODE", LEVEL_CRITICAL,
-                u"[lab_022][MAST-4.2.6][M3][CVE-2015-3200] 使用 Base64 編碼方式",
-                u"在所有 Base64 編碼過的 HTTP URL 的字串都沒有使用安全傳輸協議(總共有: " + str(len(list_base64_decoded_urls)) + u")" + "||" + \
-                u"In all Base64 encoded HTTP URLs the string does not use the secure transport protocol (total:" + str(len(list_base64_decoded_urls)) + u")",
-                ["SSL_Security", "Hacker"])
-
-            for decoded_string, original_string in list_base64_decoded_urls.items(
-            ):
-
-                dict_class_to_method_mapping = efficientStringSearchEngine.get_search_result_dict_key_classname_value_methodlist_by_match_id(
-                    original_string)
-
-                # All of the same string found are inside the excluded packages
-                if not filteringEngine.is_all_of_key_class_in_dict_not_in_exclusion(
-                        dict_class_to_method_mapping):
-                    continue
-
-                writer.write(decoded_string)
-                writer.write("    ->The original encoded string:" + original_string)
-
-                if dict_class_to_method_mapping:
-                    for class_name, result_method_list in dict_class_to_method_mapping.items(
-                    ):
-                        for result_method in result_method_list:
-                            source_classes_and_functions = (
-                                result_method.get_class_name() + "->" +
-                                result_method.get_name() +
-                                result_method.get_descriptor())
-                            writer.write("    ->From class: " +
-                                         source_classes_and_functions)
-
-    # else:
-    #     writer.startWriter(
-    #         u"HACKER_BASE64_STRING_DECODE", LEVEL_INFO,
-    #         u"[lab_022][MAST-4.2.6][M3][CVE-2015-3200] 使用 Base64 編碼方式",
-    #         u"沒有發現使用 Base64 編碼的字串或 URL", ["Hacker"])
+        # Only output CRITICAL findings — keep report compact
+        if critical_022:
+            writer.write(u"[CRITICAL: %d]" % len(critical_022))
+            for f in critical_022:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  reason=%s  decoded=%s" % (
+                    cls, f.get('method', ''), f.get('reason', ''),
+                    f.get('decoded', '')))
 
     # ------------------------------------------------------------------------
     # [lab_023] - WebView addJavascriptInterface checking:
@@ -2553,7 +2675,7 @@ def __analyze(writer, args):
     
     # if path_WebView_addJavascriptInterface:
     # response: {"method_found": True}
-    if result.get("method_found"):
+    if result and result.get("method_found"):
         output_string = u"""找到 WebView \"addJavascriptInterface\" 漏洞，這個方法可以讓 JavaScript 去操縱手機應用程式，這是一個很強大的功能，但對於 API 等級在 JELLY_BEAN (4.2) 以下的系統也代表著具有很大的安全風險，因為 JavaScript 會使用反射(reflection)去訪問物件的公共域(public field)，若網頁包含不可信任的內容，在 WebView 使用可能會造成攻擊者藉由執行植入的 Javascript 程式碼操控手機應用程式。
  
 相關文章 : 
@@ -2574,7 +2696,7 @@ Please modify the following code:"""
 
         writer.startWriter(
             u"WEBVIEW_RCE", LEVEL_CRITICAL,
-            u"[lab_023][OWASP-V6.5,V6.8][MAST-4.2.3][工-4.1.5.1.2][CVE-2013-4710] WebView addJavascriptInterface RCE 漏洞檢查",
+            u"[AS-lab023][OWASP-V6.5,V6.8][MAST-4.2.3][工-4.1.5.1.2][CVE-2013-4710] WebView addJavascriptInterface RCE 漏洞檢查",
             output_string + "||" + output_string_en, [u"WebView", u"遠端程式碼執行"], u"CVE-2013-4710")
         # writer.show_Paths(d, path_WebView_addJavascriptInterface)
 
@@ -2582,7 +2704,7 @@ Please modify the following code:"""
 
     #     writer.startWriter(
     #         u"WEBVIEW_RCE", LEVEL_INFO,
-    #         u"[lab_023][OWASP-V6.5,V6.8][MAST-4.2.3][工4.1.5.1.2][CVE-2013-4710]WebView addJavascriptInterface RCE 漏洞檢查",
+    #         u"[AS-lab023][OWASP-V6.5,V6.8][MAST-4.2.3][工4.1.5.1.2][CVE-2013-4710]WebView addJavascriptInterface RCE 漏洞檢查",
     #         u"沒有發現 WebView addJavascriptInterface 漏洞。",
     #         [u"WebView", u"Remote Code Execution"], u"CVE-2013-4710")
 
@@ -2622,7 +2744,7 @@ Please modify the following code:"""
         pass
         # writer.startWriter(
         #     "HACKER_KEYSTORE_NO_PWD", LEVEL_INFO,
-        #     u"[lab_024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
+        #     u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
         #     u"忽略檢查金鑰檔案，因為金鑰被密碼保護或是並沒有使用到金鑰。", ["KeyStore", "Hacker"])
 
     else:
@@ -2630,7 +2752,7 @@ Please modify the following code:"""
 
             writer.startWriter(
                 "HACKER_KEYSTORE_SSL_PINNING", LEVEL_CRITICAL,
-                u"[lab_024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
+                u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
                 u"以下的金鑰檔案似乎是使用 \"byte array\" 或 \"hard-coded cert info\" 來時做 SSL 的憑證綁定 (總共: "+ str(len(list_no_pwd_probably_ssl_pinning_keystore)) +u")，請手動檢查:" + "||" + \
                 u"The following key files seem to use \"byte array\" or \"hard-coded cert info\" when doing SSL certificate binding (total: "+ str(len(list_no_pwd_probably_ssl_pinning_keystore)) +u"), Please check manually:", 
                 ["KeyStore", "Hacker"])
@@ -2642,7 +2764,7 @@ Please modify the following code:"""
 
             writer.startWriter(
                 "HACKER_KEYSTORE_NO_PWD", LEVEL_CRITICAL,
-                u"[lab_024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
+                u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
                 u"以下的金鑰檔案似乎沒有被密碼保護住 (總共: " + str(len(list_no_pwd_keystore)) + u")，請手動檢查:" + "||" + \
                 u"The following key files do not seem to be password protected (total: " + str(len(list_no_pwd_keystore)) + u"), Please check manually:",
                 ["KeyStore", "Hacker"])
@@ -2654,7 +2776,7 @@ Please modify the following code:"""
 
             writer.startWriter(
                 "HACKER_KEYSTORE_SSL_PINNING2", LEVEL_NOTICE,
-                u"[lab_024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護資訊",
+                u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護資訊",
                 u"以下的金鑰檔案似乎被密碼保護並且有使用 SSL 的憑證綁定(總共: " + str(len(list_protected_keystore)) + u")，你可以使用 \"Portecle\" 的工具來管理金鑰檔案的憑證:" + "||" + \
                 u"The following key files appear to be password protected and have certificates bound using SSL (total: " + str(len(list_protected_keystore)) + u"), you can use the tool \"Portecle\" to manage the credentials of the key files:",
                 ["KeyStore", "Hacker"])
@@ -2687,7 +2809,7 @@ Please modify the following code:"""
     if list_keystore_file_name or list_possible_keystore_file_name:
         if list_keystore_file_name:
             writer.startWriter("HACKER_KEYSTORE_LOCATION1", LEVEL_NOTICE,
-                               u"[lab_025] 存取網路檢查金鑰檔案位置", 
+                               u"[AS-lab025] 存取網路檢查金鑰檔案位置", 
                                u"BKS 金鑰檔案:" + "||" + "BKS Key File:",
                                ["KeyStore", "Hacker"])
             for i in list_keystore_file_name:
@@ -2695,14 +2817,14 @@ Please modify the following code:"""
 
         if list_possible_keystore_file_name:
             writer.startWriter("HACKER_KEYSTORE_LOCATION2", LEVEL_NOTICE,
-                               u"[lab_025] 可能金鑰檔案位置", 
+                               u"[AS-lab025] 可能金鑰檔案位置", 
                                u"BKS 可能的金鑰檔案:" + "||" + "BKS possible key file:",
                                ["KeyStore", "Hacker"])
             for i in list_possible_keystore_file_name:
                 writer.write(i)
     # else:
     #     writer.startWriter(
-    #         "HACKER_KEYSTORE_LOCATION1", LEVEL_INFO, u"[lab_025] 金鑰檔案位置",
+    #         "HACKER_KEYSTORE_LOCATION1", LEVEL_INFO, u"[AS-lab025] 金鑰檔案位置",
     #         u"沒有找到任何可能的 BKS 金鑰檔案或是金鑰檔案的證書 (注意: 這並不代表此 app 沒有使用任何的金鑰檔案):",
     #         ["KeyStore", "Hacker"])
 
@@ -2765,7 +2887,7 @@ Please modify the following code:"""
     if list_PackageInfo_signatures:
         writer.startWriter(
             "HACKER_SIGNATURE_CHECK", LEVEL_NOTICE,
-            u"[lab_026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
+            u"[AS-lab026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
             u"此 app 在程式裡有檢查 package 的簽名，這可以檢查 app 是否被攻擊者駭入" + "||" + \
             u"This app has a signature in the program to check the package, which can check if the app was hacked by the attacker",
             ["Signature", "Hacker"])
@@ -2774,7 +2896,7 @@ Please modify the following code:"""
     # else:
     #     writer.startWriter(
     #         "HACKER_SIGNATURE_CHECK", LEVEL_INFO,
-    #         u"[lab_026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
+    #         u"[AS-lab026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
     #         u"沒有偵測到此 app 在程式中有檢查 package 的簽名", ["Signature", "Hacker"])
 
     # ------------------------------------------------------------------------
@@ -2828,14 +2950,14 @@ Please modify the following code:"""
        
         writer.startWriter(
             "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_NOTICE,
-            u"[lab_027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
+            u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
             u"""此 app 有防止螢幕擷取的設定，範例:getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);這可以讓開發者用來保護 app""" + "||" + \
             u"""This app has settings to prevent screen capture, example: getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE); this allows the developer to use to protect the app""",
             ["Hacker"])
     # else:
     #     writer.startWriter(
     #         "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_INFO,
-    #         u"[lab_027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
+    #         u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
     #         u"沒有偵測到這個 app 有防止螢幕擷取的設定", ["Hacker"])
 
     # ------------------------------------------------------------------------
@@ -2850,42 +2972,64 @@ Please modify the following code:"""
 		    invoke-virtual {v1, v2}, Ljava/lang/Runtime;->exec(Ljava/lang/String;)Ljava/lang/Process;
 	"""
 
-    list_Runtime_exec = []
-
     exec_result = get_androguard('/lab_28')
-    if exec_result:
-        list_Runtime_exec = exec_result['results']
-    else:
-        list_Runtime_exec = []
 
+    if exec_result and isinstance(exec_result, dict) and exec_result.get('has_finding'):
+        verdict_028  = exec_result.get('verdict', 'WARNING')
+        critical_028 = exec_result.get('critical', [])
+        warning_028  = exec_result.get('warning', [])
+        info_028     = exec_result.get('info', [])
 
-    # path_Runtime_exec = vmx.get_tainted_packages(
-    # ).search_class_methods_exact_match(
-    #     "Ljava/lang/Runtime;", "exec",
-    #     "(Ljava/lang/String;)Ljava/lang/Process;")
-    # path_Runtime_exec = filteringEngine.filter_list_of_paths(
-    #     d, path_Runtime_exec)
+        if verdict_028 == 'CRITICAL':
+            level_028 = LEVEL_CRITICAL
+        elif verdict_028 == 'WARNING':
+            level_028 = LEVEL_WARNING
+        else:
+            level_028 = LEVEL_INFO
 
-    # for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-    #         d, path_Runtime_exec):
-    #     if i.getResult()[1] is None:
-    #         continue
-    #     if i.getResult()[1] == "su":
-    #         list_Runtime_exec.append(i.getPath())
+        writer.startWriter(
+            "LAB_028_RUNTIME_EXEC", level_028,
+            u"[AS-lab028][MAS-4.1.5.1.1][MASVS-CODE-4][CWE-78] Runtime.exec / ProcessBuilder 指令執行檢查",
+            u"偵測到 App 使用 Runtime.getRuntime().exec() 或 new ProcessBuilder() 執行外部指令。"
+            u"本檢查抓出每個呼叫的命令字串並分級: "
+            u"CRITICAL (命令為變數 -> Command Injection 風險), "
+            u"WARNING (硬編碼命令但非 root detection -> 需人工 review), "
+            u"INFO (硬編碼命令屬於 root detection 範圍如 su / which su / busybox 等 -> 屬合法防護機制)。"
+            u" Ref: https://cwe.mitre.org/data/definitions/78.html"
+            + "||" +
+            u"App uses Runtime.getRuntime().exec() or new ProcessBuilder() to run external commands. "
+            u"Findings are classified into: CRITICAL (dynamic command argument -> command injection risk), "
+            u"WARNING (hardcoded command, not root-detection -> manual review needed), "
+            u"INFO (hardcoded root-detection commands like su / which su / busybox -> legitimate defense)."
+            u" Ref: https://cwe.mitre.org/data/definitions/78.html",
+            ["Command", "Injection"])
 
-    if list_Runtime_exec:
-        print("detected LAB_028", list_Runtime_exec)
-        
-        try:
-            writer.startWriter("COMMAND", LEVEL_CRITICAL, u"[MAST-4.2.3][LAB-012]Runtime指令檢查", u"這個app使用有危險的function'Runtime.getRuntime().exec(\"...\")'.\n請確認這些code不會造成危害", ["Command"])
-            # for runtime_call in list_Runtime_exec:
-            #     if isinstance(runtime_call, dict) and 'class_name' in runtime_call and 'method_name' in runtime_call:
-            #         writer.write(runtime_call['class_name'] + " " + runtime_call['method_name'])
-            #     else:
-            writer.write("mroe")            
-        except Exception as e:
-            print("error", e)
-        print("detected LAB_028", list_Runtime_exec)
+        if critical_028:
+            writer.write(u"[CRITICAL: dynamic command argument: %d]" % len(critical_028))
+            for f in critical_028:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  cmd=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('command', '')))
+
+        if warning_028:
+            writer.write(u"[WARNING: hardcoded command needs review: %d]" % len(warning_028))
+            for f in warning_028:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  cmd=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('command', '')))
+
+        if info_028:
+            writer.write(u"[INFO: root-detection commands: %d]" % len(info_028))
+            for f in info_028:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  cmd=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('command', '')))
     # if list_Runtime_exec :
     #  writer.startWriter("COMMAND_SU", LEVEL_CRITICAL, u"[MAST-4.2.3][LAB-012]Runtime Critical Command Checking(Runtime指令檢查)", u"Requesting for \"root\" permission code sections 'Runtime.getRuntime().exec(\"su\")' found (Critical but maybe false positive)[發現需要root權限的code區段Runtime.getRuntime().exec(\"su\")' (可能具有危險)]:", ["Command"])
 
@@ -2979,7 +3123,7 @@ Use google chrome to navigate:
 """
         writer.startWriter(
             "SSL_CN1", LEVEL_CRITICAL,
-            u"[lab_029][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL 實作檢查 (在自定義的classes檢驗 Host Name)",
+            u"[AS-lab029][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL 實作檢查 (在自定義的classes檢驗 Host Name)",
             output_string + "||" + output_string_en, ["SSL_Security"])
 
         for method in list_HOSTNAME_INNER_VERIFIER:
@@ -2994,7 +3138,7 @@ Use google chrome to navigate:
     # else:
     #     writer.startWriter(
     #         "SSL_CN1", LEVEL_INFO,
-    #         u"[lab_029][OWASP-V6.3][MAST-4.2.6][工4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL 實作檢查 (在自定義的classes檢驗 Host Name)",
+    #         u"[AS-lab029][OWASP-V6.3][MAST-4.2.6][工4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL 實作檢查 (在自定義的classes檢驗 Host Name)",
     #         "Self-defined HOSTNAME VERIFIER checking OK.", ["SSL_Security"])
 
     # -------------------------------------------------------
@@ -3048,7 +3192,7 @@ Use google chrome to navigate:
 
         writer.startWriter(
             "SSL_CN2", LEVEL_CRITICAL,
-            u"[lab_030][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL實作檢查(辨識Host Name)",
+            u"[AS-lab030][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL實作檢查(辨識Host Name)",
             output_string + "||" + output_string_en, ["SSL_Security"])
 
         if filtered_ALLOW_ALL_HOSTNAME_VERIFIER_paths:
@@ -3072,17 +3216,14 @@ Use google chrome to navigate:
     # else:
     #     writer.startWriter(
     #         "SSL_CN2", LEVEL_INFO,
-    #         u"[lab_030][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL實作檢查(辨識Host Name)",
+    #         u"[AS-lab030][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL實作檢查(辨識Host Name)",
     #         u"漏洞\"ALLOW_ALL_HOSTNAME_VERIFIER\" field 設定 或 \"AllowAllHostnameVerifier\" class instance 沒有發現.",
     #         ["SSL_Security"])
 
     # -------------------------------------------------------
     # [lab_031] - SSL getInsecure
 
-    list_getInsecure = []
-    '''Search Landroid/net/SSLCertificateSocketFactory getInsecure'''
-    '''SSLSessionCache     SSLSocketFactory '''
-    
+
     result = get_androguard('/lab031')
     path_getInsecure = result['results']
     # path_getInsecure = vmx.get_tainted_packages(
@@ -3098,7 +3239,7 @@ Use google chrome to navigate:
 
         writer.startWriter(
             "SSL_CN3", LEVEL_CRITICAL,
-            u"[lab_031][OWASP-V1.3,V1.4,V5.1,V5.2][MAST-4.2.6][工4.1.5.1.1][M5] SSL實作檢查 (不安全的 component)",
+            u"[AS-lab031][OWASP-V1.3,V1.4,V5.1,V5.2][MAST-4.2.6][工4.1.5.1.1][M5] SSL實作檢查 (不安全的 component)",
             output_string + "||" + output_string_en, ["SSL_Security"])
         writer.write("Found!:")
         for i in path_getInsecure:
@@ -3109,7 +3250,7 @@ Use google chrome to navigate:
     # else:
     #     writer.startWriter(
     #         "SSL_CN3", LEVEL_INFO,
-    #         u"[lab_031][OWASP-V1.3,V1.4,V5.1,V5.2][MAST-4.2.6][工-4.1.5.1.2][M5] SSL實作檢查 (不安全的 component)",
+    #         u"[AS-lab031][OWASP-V1.3,V1.4,V5.1,V5.2][MAST-4.2.6][工-4.1.5.1.2][M5] SSL實作檢查 (不安全的 component)",
     #         u"沒有偵測到使用不安全方法\"getInsecure\"的SSLSocketFactory.", ["SSL_Security"])
 
     # -------------------------------------------------------
@@ -3144,7 +3285,7 @@ Use google chrome to navigate:
     if list_HttpHost_scheme_http:
         writer.startWriter(
             u"SSL_預設_SCHEME_NAME", LEVEL_CRITICAL,
-            u"[lab_032][MAST-4.2.6][工-4.1.2.4.1][M5] SSL實作檢查(HttpHost)",
+            u"[AS-lab032][MAST-4.2.6][工-4.1.2.4.1][M5] SSL實作檢查(HttpHost)",
             u"這個app使用\"HTTPHost\",但預設的scheme是\"http\" 或者 \"HttpHost.DEFAULT_SCHEME_NAME(http)\.請改成\"https\":" + "||" + \
             u"This app uses \"HTTPHost\", but the default scheme is \"http\" or \"HttpHost.DEFAULT_SCHEME_NAME(http)\. Please change it to \"https\":", 
             ["SSL_Security"])
@@ -3153,7 +3294,7 @@ Use google chrome to navigate:
             writer.show_Path(d, i)
     # else:
     #     writer.startWriter(u"SSL_預設_SCHEME_NAME", LEVEL_INFO,
-    #                        u"[lab_032][MAST-4.2.6][工-4.1.2.4.1][M5] SSL實作檢查(HttpHost)",
+    #                        u"[AS-lab032][MAST-4.2.6][工-4.1.2.4.1][M5] SSL實作檢查(HttpHost)",
     #                        u"HttpHost 預設_SCHEME_NAME  檢查: 正確",
     #                        ["SSL_Security"])
 
@@ -3185,7 +3326,7 @@ Use google chrome to navigate:
     if list_webviewClient:
         writer.startWriter(
             "SSL_WEBVIEW", LEVEL_CRITICAL,
-            u"[lab_033][OWASP-V6.5][MAST-4.2.6][工-4.1.4.2.4, 4.2.2.1.2][M3] SSL 實作檢查(WebViewClient for WebView)",
+            u"[AS-lab033][OWASP-V6.5][MAST-4.2.6][工-4.1.4.2.4, 4.2.2.1.2][M3] SSL 實作檢查(WebViewClient for WebView)",
             u"""不要在有繼承"WebViewClient"的methods使用 "handler.proceed();" , 即使SSL證書是無效的他仍然可能會讓連線成立 (中間人攻擊漏洞).
 相關文獻: 
 (1)OWASP Mobile Top 10 doc: https://www.owasp.org/index.php/Mobile_Top_10_2014-M3
@@ -3209,215 +3350,169 @@ Vulnerable Codes:""", ["SSL_Security"])
     # else:
     #     writer.startWriter(
     #         "SSL_WEBVIEW", LEVEL_INFO,
-    #         u"[lab_033][OWASP-V6.5][MAST-4.2.6][工-4.1.4.2.4, 4.2.2.1.2][M3] SSL實作檢查 (WebViewClient for WebView)",
+    #         u"[AS-lab033][OWASP-V6.5][MAST-4.2.6][工-4.1.4.2.4, 4.2.2.1.2][M3] SSL實作檢查 (WebViewClient for WebView)",
     #         u"沒有察覺到 \"WebViewClient\"(可能遭到中間人攻擊)的漏洞.", ["SSL_Security"])
 
     # -------------------------------------------------------
-    # [lab_034] - WebView setJavaScriptEnabled - Potential XSS:
-    """
-		Java Example code:
-	    	webView1 = (WebView)findViewById(R.id.webView1);
-			webView1.setWebViewClient(new ExtendedWebView());
-			WebSettings webSettings = webView1.getSettings();
-			webSettings.setJavaScriptEnabled(true);
+    # [lab_034] - WebView security configuration audit (migrated to androguard_server)
+    # 從「看到 JS enable 就標」進化為「真實危險配置才標」: 3 條規則
+    result_lab034 = get_androguard('/lab_034')
 
-	    Smali Example code:
-			const/4 v1, 0x1
-    		invoke-virtual {v0, v1}, Landroid/webkit/WebSettings;->setJavaScriptEnabled(Z)V
-	"""
+    if result_lab034 and isinstance(result_lab034, dict) and result_lab034.get('has_finding'):
+        verdict_034  = result_lab034.get('verdict', 'WARNING')
+        critical_034 = result_lab034.get('critical', [])
 
-    list_setJavaScriptEnabled_XSS = []
-    path_setJavaScriptEnabled_XSS = vmx.get_tainted_packages(
-    ).search_class_methods_exact_match("Landroid/webkit/WebSettings;",
-                                       "setJavaScriptEnabled", "(Z)V")
-    path_setJavaScriptEnabled_XSS = filteringEngine.filter_list_of_paths(
-        d, path_setJavaScriptEnabled_XSS)
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-            d, path_setJavaScriptEnabled_XSS):
-        if i.getResult()[1] is None:
-            continue
-        if i.getResult()[1] == 0x1:
-            list_setJavaScriptEnabled_XSS.append(i.getPath())
+        if verdict_034 == 'CRITICAL':
+            level_034 = LEVEL_CRITICAL
+        elif verdict_034 == 'WARNING':
+            level_034 = LEVEL_WARNING
+        else:
+            level_034 = LEVEL_INFO
 
-    if list_setJavaScriptEnabled_XSS:
         writer.startWriter(
-            "WEBVIEW_JS_ENABLED", LEVEL_WARNING,
-            u"[lab_034][OWASP-V6.5,V6.8][MAST-4.2.3][工-4.1.5.4.2] WebView 可能的 XSS 攻擊檢查",
-            u"找到 \"setJavaScriptEnabled(true)\" in WebView, 這有可能遭受XSS的攻擊，請小心的檢查網頁的程式碼和輸出有沒有錯誤:" + "||" + \
-            u"Found \"setJavaScriptEnabled(true)\" in WebView, this may be subject to XSS attack, please check the web code and output carefully for any errors:",
-            ["WebView"])
-        print('----------Debug Len---------')
-        print(len(list_setJavaScriptEnabled_XSS))
-        print('----------Debug Len---------')
-        for i in list_setJavaScriptEnabled_XSS:
-            writer.show_Path(d, i)
-    # else:
-    #     writer.startWriter(
-    #         "WEBVIEW_JS_ENABLED", LEVEL_INFO,
-    #         u"[lab_034][OWASP-V6.5,V6.8][MAST-4.2.3][工-4.1.5.4.2] WebView 可能的 XSS 攻擊檢查",
-    #         u"沒有偵測到\"setJavaScriptEnabled(true)\" in WebView.", ["WebView"])
+            "LAB_034_WEBVIEW_CONFIG", level_034,
+            u"[AS-lab034][MAS-4.1.5.4.2][MASVS-PLATFORM-2][CWE-79] WebView 安全配置檢查",
+            u"稽核 WebView 安全配置,聚焦三種真實風險: "
+            u"CRITICAL (setAllowFileAccessFromFileURLs(true) -> JS 可讀本地檔案); "
+            u"CRITICAL (setAllowUniversalAccessFromFileURLs(true) -> JS 繞 Same-Origin Policy); "
+            u"WARNING (setJavaScriptEnabled(true) + loadUrl(變數) 同 method -> 可能載入不可信內容 XSS)。"
+            u"單獨 setJavaScriptEnabled(true) 或 loadUrl(常數) 不報以避免噪音。"
+            u" Ref: https://developer.android.com/reference/android/webkit/WebSettings"
+            + "||" +
+            u"Audits WebView security configuration. Focuses on three real WebView risks: "
+            u"CRITICAL (setAllowFileAccessFromFileURLs(true) -> JS reads local files); "
+            u"CRITICAL (setAllowUniversalAccessFromFileURLs(true) -> JS bypasses Same-Origin Policy); "
+            u"WARNING (setJavaScriptEnabled(true) + loadUrl(variable) in same method -> XSS via untrusted URL). "
+            u"setJavaScriptEnabled(true) alone or loadUrl(constant) alone are NOT reported to avoid noise."
+            u" Ref: https://developer.android.com/reference/android/webkit/WebSettings",
+            ["WebView", "XSS"])
+
+        # Only output CRITICAL findings — keep report compact
+        if critical_034:
+            writer.write(u"[CRITICAL: %d]" % len(critical_034))
+            for f in critical_034:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  reason=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('reason', '')))
 
     # ------------------------------------------------------------------------
-    # [lab_035] - HttpURLConnection bug checking:
-    """
-		Example Java code:
-			private void disableConnectionReuseIfNecessary() {
-				// Work around pre-Froyo bugs in HTTP connection reuse.
-				if (Integer.parseInt(Build.VERSION.SDK) < Build.VERSION_CODES.FROYO) {
-					System.setProperty("http.keepAlive", "false");
-				}
-			}
+    # [lab_035] - Check Certificate Pinning:
 
-		Example Bytecode code:
-			const-string v0, "http.keepAlive"
-			const-string v1, "false"
-			invoke-static {v0, v1}, Ljava/lang/System;->setProperty(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    lab_035Response = get_androguard('/lab035')
 
-	"""
-
-    if (int_min_sdk is not None) and (int_min_sdk <= 8):
-
-        pkg_HttpURLConnection = vmx.get_tainted_packages().search_packages(
-            "Ljava/net/HttpURLConnection;")
-        pkg_HttpURLConnection = filteringEngine.filter_list_of_paths(
-            d, pkg_HttpURLConnection)
-
-        # Check only when using the HttpURLConnection
-        if pkg_HttpURLConnection:
-
-            list_pre_Froyo_HttpURLConnection = []
-            path_pre_Froyo_HttpURLConnection = vmx.get_tainted_packages(
-            ).search_class_methods_exact_match(
-                "Ljava/lang/System;", "setProperty",
-                "(Ljava/lang/String; Ljava/lang/String;)Ljava/lang/String;")
-            path_pre_Froyo_HttpURLConnection = filteringEngine.filter_list_of_paths(
-                d, path_pre_Froyo_HttpURLConnection)
-
-            has_http_keepAlive_Name = False
-            has_http_keepAlive_Value = False
-
-            for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-                    d, path_pre_Froyo_HttpURLConnection):
-                if (i.getResult()[0] == "http.keepAlive"):
-                    has_http_keepAlive_Name = True
-                    list_pre_Froyo_HttpURLConnection.append(
-                        i.getPath())  # Only list the "false" one
-                    if (i.getResult()[1] == "false"):
-                        has_http_keepAlive_Value = True
-                        break
-
-            if has_http_keepAlive_Name:
-                if has_http_keepAlive_Value:
-                    pass
-                    # writer.startWriter(
-                    #     "HTTPURLCONNECTION_BUG", LEVEL_INFO,
-                    #     u"[lab_035][MAST-4.2.3][工-4.1.5.1.1] HttpURLConnection Android Bug 檢查",
-                    #     u"系統為了 \"HttpURLConnection\"設定的屬性 \"http.keepAlive\"正確"
-                    # )
-                else:
-                    output_string = u"""你應該要設性系統的屬性"http.keepAlive"為"false"
-你正在使用"HttpURLConnection". 在Android 2.2 (Froyo)以前的版本, "HttpURLConnection"有一些錯誤. 
-尤其是在一個可讀取的InputStream呼叫 close() 有可能會汙然connection pool. 要解決這個問題只能使connection pooling失去作用:
-請參考以下的資料:
- (1)http://developer.android.com/reference/java/net/HttpURLConnection.html
- (2)http://android-developers.blogspot.tw/2011/09/androids-http-clients.html"""
-                    output_string_en = u"""You should set the system attribute "http.keepAlive" to "false"
-You are using "HttpURLConnection". In versions of Android prior to 2.2 (Froyo), "HttpURLConnection" has some bugs. 
-In particular, calling close() on a readable InputStream may pollute the connection pool. The only way to solve this problem is to disable connection pooling:
-Please refer to the following information:
- (1)http://developer.android.com/reference/java/net/HttpURLConnection.html
- (2)http://android-developers.blogspot.tw/2011/09/androids-http-clients.html"""
-                    writer.startWriter(
-                        "HTTPURLCONNECTION_BUG", LEVEL_NOTICE,
-                        u"[lab_035][MAST-4.2.3][工-4.1.5.1.1] HttpURLConnection Android Bug 檢查",
-                        output_string + "||" + output_string_en)
-
-                    # Notice: list_pre_Froyo_HttpURLConnection
-                    writer.show_Paths(d, list_pre_Froyo_HttpURLConnection)
-            else:
-                output_string = u"""你正在使用"HttpURLConnection". 在Android 2.2 (Froyo)以前的版本, "HttpURLConnection"有一些錯誤. 
-尤其是在一個可讀取的InputStream呼叫 close() 有可能會汙然connection pool. 要解決這個問題只能使connection pooling失去作用:
-請參考以下的資料:
- (1)http://developer.android.com/reference/java/net/HttpURLConnection.html
- (2)http://android-developers.blogspot.tw/2011/09/androids-http-clients.html"""
-                output_string_en = u"""You are using "HttpURLConnection". In versions of Android prior to 2.2 (Froyo), "HttpURLConnection" has some bugs. 
-In particular, calling close() on a readable InputStream may pollute the connection pool. The only way to solve this problem is to disable connection pooling:
-Please refer to the following information:
- (1)http://developer.android.com/reference/java/net/HttpURLConnection.html
- (2)http://android-developers.blogspot.tw/2011/09/androids-http-clients.html"""
-
-                writer.startWriter(
-                    "HTTPURLCONNECTION_BUG", LEVEL_NOTICE,
-                    u"[lab_035][MAST-4.2.3][工-4.1.5.1.1] HttpURLConnection Android Bug 檢查",
-                    output_string + "||" + output_string_en)
-                # Make it optional to list library
-                # Notice: pkg_HttpURLConnection
-                writer.show_Paths(d, pkg_HttpURLConnection)
-
-    #     else:
-    #         writer.startWriter(
-    #             "HTTPURLCONNECTION_BUG", LEVEL_INFO,
-    #             u"[lab_035][MAST-4.2.3][工-4.1.5.1.1] HttpURLConnection Android Bug 檢查",
-    #             u"忽略檢查 \"http.keepAlive\" 因為沒有使用\"HttpURLConnection\".")
-
-    # else:
-    #     writer.startWriter(
-    #         "HTTPURLCONNECTION_BUG", LEVEL_INFO,
-    #         u"[lab_035][MAST-4.2.3][工-4.1.5.1.1] HttpURLConnection Android Bug 檢查",
-    #         u"忽略檢查 \"http.keepAlive\" 因為沒有使用\"HttpURLConnection\" 而且min_Sdk > 8."
-    #     )
-
+    if lab_035Response and lab_035Response.get('has_finding') == True:
+        print("lab_035 pass - Certificate Pinning implementation found")
+    else:
+        print("lab_035 DETECTED - Certificate Pinning is missing (security concern)")
+        writer.startWriter(
+            "CERTIFICATE_PINNING_MISSING", LEVEL_WARNING,
+            u"[AS-lab035] Certificate Pinning 憑證固定缺失檢測 (靜態分析)",
+            u"[靜態分析限制說明]\n" + \
+            u"此分析結果基於靜態程式碼檢測,無法偵測以下情況:\n" + \
+            u"- 程式碼混淆後的實作\n" + \
+            u"- 動態載入的憑證固定邏輯\n" + \
+            u"- 自訂或第三方框架的特殊實作方式\n" + \
+            u"- Native code (JNI) 層級的實作\n" + \
+            u"建議搭配動態分析 (如 Frida hook SSLContext/TrustManager) 進行驗證。\n\n" + \
+            u"[檢測結果]\n" + \
+            u"未偵測到常見的 Certificate Pinning 實作。缺少憑證固定可能使應用程式容易受到中間人攻擊 (Man-in-the-Middle Attack)。\n\n" + \
+            u"[建議實作方式]\n" + \
+            u"1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n" + \
+            u"2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n" + \
+            u"[參考資料]\n" + \
+            u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
+            u"- https://developer.android.com/training/articles/security-config\n" + \
+            u" || " + \
+            u"[Static Analysis Limitations]\n" + \
+            u"This analysis is based on static code detection and cannot detect:\n" + \
+            u"- Implementations hidden by code obfuscation\n" + \
+            u"- Dynamically loaded certificate pinning logic\n" + \
+            u"- Custom or third-party framework implementations\n" + \
+            u"- Native code (JNI) level implementations\n" + \
+            u"It is recommended to verify with dynamic analysis (e.g., Frida hooking SSLContext/TrustManager).\n\n" + \
+            u"[Detection Result]\n" + \
+            u"No common Certificate Pinning implementation detected. The absence of certificate pinning may make the application vulnerable to Man-in-the-Middle (MITM) attacks.\n\n" + \
+            u"[Recommended Implementations]\n" + \
+            u"1. Use Network Security Config (Android 7.0+): Create network_security_config.xml in res/xml/ and configure <pin-set>\n" + \
+            u"2. Code-based implementation: Such as OkHttp's CertificatePinner or custom TrustManager\n\n" + \
+            u"[References]\n" + \
+            u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
+            u"- https://developer.android.com/training/articles/security-config",
+            ["CertificatePinning", "NetworkSecurity", "MITM-Risk", "StaticAnalysis"])
+  
     # ------------------------------------------------------------------------
-    # [lab_036] - SQLiteDatabase - beginTransactionNonExclusive() checking:
+    # [lab_036] - Intent Redirection vulnerability detection
 
-    if (int_min_sdk is not None) and (int_min_sdk < 11):
-        path_SQLiteDatabase_beginTransactionNonExclusive = vmx.get_tainted_packages(
-        ).search_class_methods_exact_match(
-            "Landroid/database/sqlite/SQLiteDatabase;",
-            "beginTransactionNonExclusive", "()V")
-        path_SQLiteDatabase_beginTransactionNonExclusive = filteringEngine.filter_list_of_paths(
-            d, path_SQLiteDatabase_beginTransactionNonExclusive)
+    result_intent_redirection = get_androguard('/lab036')
 
-        if path_SQLiteDatabase_beginTransactionNonExclusive:
-            output_string = StringHandler()
-            output_string.append(
-                u"我們查覺你正在使用 \"beginTransactionNonExclusive\" 在你的 \"SQLiteDatabase\" 但你的 minSdk 只支援到 "
-                + str(int_min_sdk) + ".")
-            output_string.append(
-                u"\"beginTransactionNonExclusive\" 不支援API < 11. 請確定你使用 \"beginTransaction\" 在android更早的版本"
-            )
-            output_string.append(
-                u"相關文獻: http://developer.android.com/reference/android/database/sqlite/SQLiteDatabase.html#beginTransactionNonExclusive()"
-            )
-            output_string_en = StringHandler()
-            output_string_en.append(
-                u"We see that you are using \"beginTransactionNonExclusive\" in your \"SQLiteDatabase\" but your minSdk only supports up to "
-                + str(int_min_sdk) + ".")
-            output_string_en.append(
-                u"\"beginTransactionNonExclusive\" does not support API < 11. Make sure you use \"beginTransaction\" in earlier versions of android"
-            )
-            output_string_en.append(
-                u"Related Documents: http://developer.android.com/reference/android/database/sqlite/SQLiteDatabase.html#beginTransactionNonExclusive()"
-            )
+    if result_intent_redirection and isinstance(result_intent_redirection, dict):
+        has_finding = result_intent_redirection.get('has_finding', False)
+        results = result_intent_redirection.get('results', [])
+
+        if has_finding:
             writer.startWriter(
-                "DB_DEPRECATED_USE1", LEVEL_CRITICAL,
-                u"[lab_036][MAST-4.2.3] SQLiteDatabase Transaction Deprecated 檢查",
-                output_string.get() + "||" + output_string_en.get(), ["Database"])
+                "INTENT_REDIRECTION", LEVEL_CRITICAL,
+                u"[AS-lab036][OWASP-M1][CWE-927] Intent Redirection 意圖重定向漏洞",
+                u"[靜態分析限制說明]\n"
+                u"此結果為靜態分析偵測，存在誤報可能，建議人工進一步確認。\n"
+                u"靜態分析無法判斷以下情況:\n"
+                u"- getParcelableExtra() 取得的物件是否真的是 Intent\n"
+                u"- 程式碼中是否已有隱含的驗證邏輯（如 try-catch、條件判斷）\n"
+                u"- 混淆後的呼叫鏈是否已包含白名單過濾\n"
+                u"建議搭配動態分析（如 Frida hook startActivity）進行驗證。\n\n"
+                u"[偵測結果]\n"
+                u"偵測到 Exported Activity 可能存在 Intent Redirection 漏洞。\n"
+                u"該 Activity 接收外部傳入的 Intent，並可能直接使用該 Intent 啟動其他元件，未見明確的目標元件驗證。\n\n"
+                u"漏洞說明:\n"
+                u"1. Activity 設定為 exported=true，可被外部應用程式呼叫\n"
+                u"2. 透過 getParcelableExtra() 取得外部傳入的 Intent 物件\n"
+                u"3. 直接呼叫 startActivity()/startService()/sendBroadcast()，未見驗證目標元件\n\n"
+                u"攻擊情境:\n"
+                u"若確認無驗證，攻擊者可傳入惡意 Intent，啟動應用程式的私有 Activity，繞過存取控制，"
+                u"或存取不應對外公開的功能。\n\n"
+                u"修復建議:\n"
+                u"- 驗證 Intent 的目標元件是否在允許清單中\n"
+                u"- 避免直接轉發外部傳入的 Intent\n"
+                u"- 改用明確的參數傳遞，由應用程式自行決定跳轉目標\n\n"
+                u"參考資料:\n"
+                u"https://developer.android.com/privacy-and-security/risks/intent-redirection?hl=zh-tw \n"
+                + "||" +
+                u"[Static Analysis Limitations]\n"
+                u"This result is from static analysis and may contain false positives. Manual review is recommended.\n"
+                u"Static analysis cannot determine:\n"
+                u"- Whether the object from getParcelableExtra() is actually used as an Intent\n"
+                u"- Whether implicit validation logic exists (e.g., try-catch, conditional checks)\n"
+                u"- Whether obfuscated call chains already include allowlist filtering\n"
+                u"It is recommended to verify with dynamic analysis (e.g., Frida hook on startActivity).\n\n"
+                u"[Detection Result]\n"
+                u"Potential Intent Redirection vulnerability detected in an exported Activity.\n"
+                u"The Activity receives an externally supplied Intent and may directly use it to launch components "
+                u"without explicit target component validation.\n\n"
+                u"Vulnerability Details:\n"
+                u"1. Activity is set as exported=true, accessible by external applications\n"
+                u"2. Retrieves Intent object from external input via getParcelableExtra()\n"
+                u"3. Calls startActivity()/startService()/sendBroadcast() without evident target validation\n\n"
+                u"Attack Scenario:\n"
+                u"If no validation is confirmed, an attacker can pass a malicious Intent to launch private Activities, "
+                u"bypass access controls, or access functionality not intended for external use.\n\n"
+                u"Remediation:\n"
+                u"- Validate that the Intent's target component is in an allowlist\n"
+                u"- Avoid directly forwarding externally received Intents\n"
+                u"- Use explicit parameter passing and let the application decide the navigation target\n\n"
+                u"References:\n"
+                u"- https://developer.android.com/privacy-and-security/risks/intent-redirection?hl=zh-tw",
+                ["Hacker", "Implicit_Intent"])
 
-            writer.show_Paths(d,
-                              path_SQLiteDatabase_beginTransactionNonExclusive)
-    #     else:
-    #         writer.startWriter(
-    #             "DB_DEPRECATED_USE1", LEVEL_INFO,
-    #             u"[lab_036][MAST-4.2.3] SQLiteDatabase Transaction Deprecated 檢查",
-    #             u"忽略檢查 \"SQLiteDatabase:beginTransactionNonExclusive\" you're not using it.",
-    #             ["Database"])
-    # else:
-    #     writer.startWriter(
-    #         "DB_DEPRECATED_USE1", LEVEL_INFO,
-    #         u"[lab_036][MAST-4.2.3] SQLiteDatabase Transaction Deprecated 檢查",
-    #         u"忽略檢查 \"SQLiteDatabase:beginTransactionNonExclusive\" 因為你的 minSdk設定 >= 11.",
-    #         ["Database"])
+            for result_item in results:
+                writer.write(u"\n[" + result_item.get('severity', 'UNKNOWN') + u"] " + result_item.get('issue', ''))
+                if 'affected_methods' in result_item:
+                    writer.write(u"Affected methods:")
+                    for method_info in result_item['affected_methods']:
+                        dangerous = u", ".join(method_info.get('dangerous_methods', []))
+                        writer.write(u"  " + method_info['class'] + u"->" + method_info['method'] +
+                                     (u"  [Dangerous call: " + dangerous + u"]" if dangerous else u""))
 
     # ------------------------------------------------------------------------
     # [lab_037] - Get a list of 'PathP' objects that are vulnerabilities
@@ -3501,7 +3596,7 @@ Please refer to the following information:
 
         writer.startWriter(
             "MODE_WORLD_READABLE_OR_MODE_WORLD_WRITEABLE", LEVEL_CRITICAL,
-            u"[lab_037][OWASP-V2.2,V2.8][MAST-4.2.7][工-4.1.2.5.3][M4] APP sandbox權限檢查",
+            u"[AS-lab037][OWASP-V2.2,V2.8][MAST-4.2.7][工-4.1.2.5.3][M4] APP sandbox權限檢查",
             u"發現\"MODE_WORLD_READABLE\" or \"MODE_WORLD_WRITEABLE\" 安全問題 (請檢視: https://www.owasp.org/index.php/Mobile_Top_10_2014-M2):" + "||" + \
             u"\"MODE_WORLD_READABLE\" or \"MODE_WORLD_WRITEABLE\" security problem found (please check: https://www.owasp.org/index.php/Mobile_Top_10_2014-M2):"   
         )
@@ -3535,7 +3630,7 @@ Please refer to the following information:
     # else:
     #     writer.startWriter(
     #         "MODE_WORLD_READABLE_OR_MODE_WORLD_WRITEABLE", LEVEL_INFO,
-    #         u"[lab_037][OWASP-V2.2,V2.8][MAST-4.2.7][工-4.1.2.5.3][M4] APP sandbox權限檢查",
+    #         u"[AS-lab037][OWASP-V2.2,V2.8][MAST-4.2.7][工-4.1.2.5.3][M4] APP sandbox權限檢查",
     #         u"沒有\"MODE_WORLD_READABLE\" or \"MODE_WORLD_WRITEABLE\" 被發現在'openOrCreateDatabase' or 'openOrCreateDatabase2' or 'getDir' or 'getSharedPreferences' or 'openFileOutput'中"
     #     )
 
@@ -3579,12 +3674,9 @@ Please refer to the following information:
     list_NDK_library_classname_to_ndkso_mapping2 = []
     result = get_androguard('/lab038')
     list_NDK_library_classname_to_ndkso_mapping2 = result['results']
-    print(list_NDK_library_classname_to_ndkso_mapping2)
-    print('----------Debug list_NDK_library_classname_to_ndkso_mapping---------')
     if list_NDK_library_classname_to_ndkso_mapping2:
-        print('----------Debug list_NDK_library_classname_to_ndkso_mapping---------')
         writer.startWriter("NATIVE_LIBS_LOADING", LEVEL_NOTICE,
-                           u"[lab_038][MAST-4.2.5] 原生函式庫載入程式碼檢查",
+                           u"[AS-lab038][MAST-4.2.5] 原生函式庫載入程式碼檢查",
                            u"發現有載入原生的函式庫程式碼(System.loadLibrary(...)):" + "||" + u"Found native library code loaded (System.loadLibrary(...)) :")
         writer.write("Found!:")
         for i in list_NDK_library_classname_to_ndkso_mapping2:
@@ -3592,7 +3684,7 @@ Please refer to the following information:
             #writer.show_Path(d, path)
     # else:
     #     writer.startWriter("NATIVE_LIBS_LOADING", LEVEL_INFO,
-    #                        u"[lab_038][MAST-4.2.5][LAB-014] 原生函式庫載入程式碼檢查",
+    #                        u"[AS-lab038][MAST-4.2.5][LAB-014] 原生函式庫載入程式碼檢查",
     #                        u"沒有發現載入原生的函式庫")
 
     dic_native_methods = {}
@@ -3619,7 +3711,7 @@ Please refer to the following information:
 
             writer.startWriter(
                 "NATIVE_METHODS", LEVEL_NOTICE,
-                u"[lab_038][OWASP-V1.1][MAST-4.2.5] Native Methods 檢查",
+                u"[AS-lab038][OWASP-V1.1][MAST-4.2.5] Native Methods 檢查",
                 u"發現原生的methods:" + "||" + u"Discover the native methods:")
 
             for class_name, method_names in dic_native_methods_sorted.items():
@@ -3640,134 +3732,33 @@ Please refer to the following information:
     #     if args.extra == 2:  # The output may be too verbose, so make it an option
     #         writer.startWriter(
     #             "NATIVE_METHODS", LEVEL_INFO,
-    #             u"[lab_038][OWASP-V1.1][MAST-4.2.5][LAB-014]Native Methods 檢查",
+    #             u"[AS-lab038][OWASP-V1.1][MAST-4.2.5][LAB-014]Native Methods 檢查",
     #             u"沒有發現原生的method")
 
     # ------------------------------------------------------------------------
-    # [lab_039] - Framework Detection: Bangcle 
-    # [lab_040] - Encryption Framework - Ijiami
-    # [lab_041] - Framework - MonoDroid
+    # [lab_042] - Unified Packer Detection
+    # (replaces lab_039 Bangcle + lab_040 iJiami + lab_042 DexClassLoader)
+    # Note: MonoDroid (lab_041) removed — it's a cross-platform framework, not a packer
 
-    is_using_Framework_Bangcle = False
-    is_using_Framework_ijiami = False
-    is_using_Framework_MonoDroid = False
+    result_042 = get_androguard('/lab_042')
+    if result_042 and isinstance(result_042, dict):
+        packers_042    = result_042.get('packers', [])
+        frameworks_042 = result_042.get('frameworks', [])
 
-    lab_039_result = get_androguard('/lab_039')
-   
-    # Convert list of dicts to a single dict for easier access
-    results_dict = {}
-    if lab_039_result and "results" in lab_039_result:
-        for item in lab_039_result["results"]:
-            if isinstance(item, dict):
-                results_dict.update(item)
-    
-    if results_dict.get("libsecexe.so") == True and results_dict.get("ApplicationWrapper") == True:
-        is_using_Framework_Bangcle = True
-    if results_dict.get("getACall") == True:
-        is_using_Framework_Bangcle = True
-    # Display only when using the Framework (Notice: This vector depends on "List all native method")
-    if list_NDK_library_classname_to_ndkso_mapping2:
-        print('----------Debug list_NDK_library_classname_to_ndkso_mapping2---------')
-        android_name_in_application_tag = a.get_android_name_in_application_tag(
-        )
-        list_NDK_library_classname_to_ndkso_mapping_only_ndk_location = dump_NDK_library_classname_to_ndkso_mapping_ndk_location_list(
-            list_NDK_library_classname_to_ndkso_mapping)
-
-        #----------------------------------------------------
-        # LAb 39
-        # if ("libsecexe.so" in
-        #         list_NDK_library_classname_to_ndkso_mapping_only_ndk_location):
-        #     if (android_name_in_application_tag ==
-        #             "com.secapk.wrapper.ApplicationWrapper"):
-        #         is_using_Framework_Bangcle = True
-        #     else:
-        #         path_secapk = vmx.get_tainted_packages(
-        #         ).search_class_methods_exact_match(
-        #             "Lcom/secapk/wrapper/ACall;", "getACall",
-        #             "()Lcom/secapk/wrapper/ACall;")
-        #         if path_secapk:
-        #             is_using_Framework_Bangcle = True
-
-        #----------------------------------------------------
-
-        # LAb 40 
-        lab_040_result = get_androguard('/lab_040')
-        
-        # Convert list of dicts to a single dict for easier access
-        lab_040_dict = {}
-        if lab_040_result and "results" in lab_040_result:
-            for item in lab_040_result["results"]:
-                if isinstance(item, dict):
-                    lab_040_dict.update(item)
-        
-        if (lab_040_dict.get("libexec.so") == True and 
-            lab_040_dict.get("libexecmain.so") == True and
-            lab_040_dict.get("NativeApplication") == True and
-            lab_040_dict.get("load") == True):
-            is_using_Framework_ijiami = True
-
-        #----------------------------------------------------
-
-        #LAb 41 
-        lab_041_result = get_androguard('/lab_041')
-        
-        # Convert list of dicts to a single dict for easier access
-        lab_041_dict = {}
-        if lab_041_result and "results" in lab_041_result:
-            for item in lab_041_result["results"]:
-                if isinstance(item, dict):
-                    lab_041_dict.update(item)
-        
-        if (lab_041_dict.get("libmonodroid.so") == True and 
-            lab_041_dict.get("mono_application") == True):
-            is_using_Framework_MonoDroid = True
-
-        if is_using_Framework_Bangcle:
-            print('----------Debug is_using_Framework_Bangcle Pass ---------')
+        # --- 加殼/框架報告（統一使用 AS-lab042 tag）---
+        if packers_042:
+            packer_names = ', '.join(p.get('name', '') for p in packers_042)
             writer.startWriter(
-                "FRAMEWORK_BANGCLE", LEVEL_NOTICE,
-                "[lab_039][MAST-4.2.5] Encryption Framework - Bangcle",
-                u"這個app在使用Bangcle Encryption Framework (http://www.bangcle.com/). 請給我們沒有加密過的apk檔讓我們能完整的檢查" + "||" + u"This app is using Bangcle Encryption Framework (http://www.bangcle.com/). Please give us the unencrypted apk file so that we can check it completely",
+                "PACKER_DETECTION", LEVEL_NOTICE,
+                u"[AS-lab042][MAST-5.2.5] 加殼/框架偵測 - %s" % packer_names,
+                u"偵測到加殼框架，靜態分析結果可能不完整，建議提供未加殼的 APK 以利完整檢測:"
+                + "||"
+                + u"Packer detected. Static analysis results may be incomplete. Please provide the unpacked APK for full analysis:",
                 ["Framework"])
-        if is_using_Framework_ijiami:
-            print('----------Debug is_using_Framework_ijiami Pass ---------')
-            writer.startWriter(
-                "FRAMEWORK_IJIAMI", LEVEL_NOTICE,
-                "[lab_040][MAST-4.2.5] Encryption Framework - Ijiami",
-                u"這個app在使用 Ijiami Encryption Framework (http://www.ijiami.cn/). 請給我們沒有加密過的apk檔讓我們能完整的檢查." + "||" + u"This app is using Ijiami Encryption Framework (http://www.ijiami.cn/). Please give us the unencrypted apk file so that we can check it in full.",
-                ["Framework"])
-
-    if is_using_Framework_MonoDroid:
-        print('----------Debug is_using_Framework_MonoDroid Pass ---------')
-        writer.startWriter(
-            "FRAMEWORK_MONODROID", LEVEL_NOTICE,
-            "[lab_041][MAST-4.2.5] Framework - MonoDroid",
-            u"這個app在使用 MonoDroid Framework (http://xamarin.com/android)." + "||" + u"This app is using the MonoDroid Framework (http://xamarin.com/android).",
-            ["Framework"])
-
-    # else:
-    #     writer.startWriter(
-    #         "FRAMEWORK_MONODROID", LEVEL_INFO,
-    #         "[MAST-4.2.5][LAB-017]Framework - MonoDroid",
-    #         u"這個app沒有使用 MonoDroid Framework (http://xamarin.com/android).",
-    #         ["Framework"])
-
-    # ------------------------------------------------------------------------
-    # [lab_042] - Detect dynamic code loading 
-
-    # paths_DexClassLoader = vmx.get_tainted_packages().search_methods(
-    #     "Ldalvik/system/DexClassLoader;", ".", ".")
-    # paths_DexClassLoader = filteringEngine.filter_list_of_paths(
-    #     d, paths_DexClassLoader)
-    # if paths_DexClassLoader:
-    #     writer.startWriter(u"動態載入的程式碼", LEVEL_WARNING,
-    #                        u"[lab_042][OWASP-V1.2][MAST-4.2.5] 動態載入的程式碼",
-    #                        u"發現動態載入的程式碼(DexClassLoader):" + "||" + u"Discovery of dynamically loaded code (DexClassLoader):")
-    #     writer.show_Paths(d, paths_DexClassLoader)
-    # # else:
-    #     writer.startWriter(u"動態載入的程式碼", LEVEL_INFO,
-    #                        u"[lab_042][OWASP-V1.2][MAST-4.2.5] 動態載入的程式碼",
-    #                        u"沒有發現動態載入的程式碼(DexClassLoader)")
+            for packer in packers_042:
+                pname = packer.get('name', '')
+                evidence = ', '.join(packer.get('evidence', []))
+                writer.write(u"  [%s]  evidence: %s" % (pname, evidence))
 
     # ------------------------------------------------------------------------
     # [lab_043] - Get External Storage Directory access invoke
@@ -3781,145 +3772,93 @@ Please refer to the following information:
     if paths_ExternalStorageAccess:
         writer.startWriter(
             u"外部空間儲存", LEVEL_WARNING,
-            u"[lab_043][OWASP-V2.1,V2.5,V2.6,V2.10][MAST-4.2.7][工-4.1.2.3.7] 外部空間儲存",
+            u"[AS-lab043][OWASP-V2.1,V2.5,V2.6,V2.10][MAST-4.2.7][工-4.1.2.3.7] 外部空間儲存",
             u"發現在外部空間儲存檔案 (記得不要將重要檔案存在外部空間):" + "||" + u"You will find files stored in external space (remember not to store important files in external space):")
         writer.show_Paths(d, paths_ExternalStorageAccess)
     # else:
     #     writer.startWriter(
     #         u"外部空間儲存", LEVEL_INFO,
-    #         u"[lab_043][OWASP-V2.1,V2.5,V2.6,V2.10][MAST-4.2.7][工-4.1.2.3.7] 外部空間儲存",
+    #         u"[AS-lab043][OWASP-V2.1,V2.5,V2.6,V2.10][MAST-4.2.7][工-4.1.2.3.7] 外部空間儲存",
     #         u"未發現外部空間儲存")
 
     # ------------------------------------------------------------------------
-    # [lab_044](writer) - Android Fragment Vulnerability (prior to Android 4.4)
+    # [lab_044] - Dirty Steam Attack Detection
 
-    prog = re.compile("Landroid/support/v(\d*)/app/Fragment;")
-    REGEXP_EXCLUDE_CLASSESd_fragment_class = re.compile(
-        "(Landroid/support/)|(Lcom/actionbarsherlock/)")
-    list_Fragment = []
-    has_any_fragment = False
-    for cls in d.get_classes():
-        if (cls.get_superclassname() == "Landroid/app/Fragment;"
-            ) or prog.match(cls.get_superclassname()):
-            if not REGEXP_EXCLUDE_CLASSESd_fragment_class.match(
-                    cls.get_name()):
-                # Exclude the classes from library itself to make the finding more precise and to check the user really use fragment, not just include the libs
-                has_any_fragment = True
-                list_Fragment.append(cls.get_name())
+    result_dirty_steam = get_androguard('/lab_044')
 
-    list_Fragment_vulnerability_NonMethod_classes = []
-    list_Fragment_vulnerability_Method_OnlyReturnTrue_methods = []
-    list_Fragment_vulnerability_Method_NoIfOrSwitch_methods = []
+    if result_dirty_steam and isinstance(result_dirty_steam, dict):
+        has_finding = result_dirty_steam.get('has_finding', False)
+        vulnerable_activities = result_dirty_steam.get('vulnerable_activities', [])
+        results = result_dirty_steam.get('results', [])
 
-    list_Fragment = filteringEngine.filter_list_of_classes(list_Fragment)
+        if has_finding:
+            writer.startWriter(
+                "DIRTY_STEAM", LEVEL_CRITICAL,
+                u"[AS-lab044][OWASP-M7][CWE-73] Dirty Steam 路徑穿越攻擊漏洞",
+                u"發現潛在 Dirty Steam 攻擊漏洞! 應用程式接收外部檔案但未驗證檔案名稱，攻擊者可使用路徑穿越 (../) 寫入任意位置的檔案。\n\n"
+                u"漏洞說明:\n"
+                u"1. 應用程式透過 ACTION_SEND/SEND_MULTIPLE 接收來自其他 app 的檔案\n"
+                u"2. 使用 ContentResolver.query() 查詢 _display_name 但未驗證\n"
+                u"3. 直接使用檔案名稱建立本地檔案，可能導致路徑穿越攻擊\n\n"
+                u"修復建議:\n"
+                u"- 移除路徑分隔符號: filename.replaceAll(\"[/\\\\\\\\]\", \"\")\n"
+                u"- 移除路徑穿越字元: filename.replaceAll(\"\\\\.\\\\.\", \"\")\n"
+                u"- 只使用檔案名稱: new File(filename).getName()\n\n"
+                u"參考資料:\n"
+                u"- https://i.blackhat.com/Asia-23/AS-23-Valsamaras-Dirty-Stream-Attack-Turning-Android.pdf\n"
+                u"- https://cwe.mitre.org/data/definitions/73.html"
+                + "||" +
+                u"Dirty Steam attack vulnerability detected! The application receives external files without validating filenames. Attackers can use path traversal (../) to write files to arbitrary locations.\n\n"
+                u"Vulnerability Details:\n"
+                u"1. Application receives files from other apps via ACTION_SEND/SEND_MULTIPLE\n"
+                u"2. Uses ContentResolver.query() to get _display_name without validation\n"
+                u"3. Directly uses filename for local file operations, allowing path traversal attacks\n\n"
+                u"Remediation:\n"
+                u"- Remove path separators: filename.replaceAll(\"[/\\\\\\\\]\", \"\")\n"
+                u"- Remove path traversal: filename.replaceAll(\"\\\\.\\\\.\", \"\")\n"
+                u"- Use basename only: new File(filename).getName()\n\n"
+                u"References:\n"
+                u"- https://i.blackhat.com/Asia-23/AS-23-Valsamaras-Dirty-Stream-Attack-Turning-Android.pdf\n"
+                u"- https://cwe.mitre.org/data/definitions/73.html",
+                ["Hacker", "SSL_Security"])
 
-    if list_Fragment:
-        for cls in d.get_classes():
-            if (cls.get_superclassname(
-            ) == "Landroid/preference/PreferenceActivity;") or (
-                    cls.get_superclassname() ==
-                    "Lcom/actionbarsherlock/app/SherlockPreferenceActivity;"):
-                boolHas_isValidFragment = False
-                method_isValidFragment = None
-                for method in cls.get_methods():
-                    if (method.get_name() == "isValidFragment") and (
-                            method.get_descriptor() == "(Ljava/lang/String;)Z"
-                    ):
-                        boolHas_isValidFragment = True
-                        method_isValidFragment = method
-                        break
-                if boolHas_isValidFragment:
-                    register_analyzer = analysis.RegisterAnalyzerVM_ImmediateValue(
-                        method_isValidFragment.get_instructions())
-                    if register_analyzer.get_ins_return_boolean_value():
-                        list_Fragment_vulnerability_Method_OnlyReturnTrue_methods.append(
-                            method_isValidFragment)
-                    else:
-                        # do not have "if" or "switch" op in instructions of method
-                        if not register_analyzer.has_if_or_switch_instructions(
-                        ):
-                            list_Fragment_vulnerability_Method_NoIfOrSwitch_methods.append(
-                                method_isValidFragment)
-                else:
-                    list_Fragment_vulnerability_NonMethod_classes.append(
-                        cls.get_name())
+            # Show vulnerable activities that accept external files
+            if vulnerable_activities:
+                writer.write("\n接收外部檔案的 Activity (ACTION_SEND/SEND_MULTIPLE):")
+                writer.write("Activities receiving external files (ACTION_SEND/SEND_MULTIPLE):")
+                for activity_info in vulnerable_activities:
+                    writer.write("  - " + activity_info['activity'] + " (" + activity_info['action'] + ")")
 
-    list_Fragment_vulnerability_NonMethod_classes = filteringEngine.filter_list_of_classes(
-        list_Fragment_vulnerability_NonMethod_classes)
-    list_Fragment_vulnerability_Method_OnlyReturnTrue_methods = filteringEngine.filter_list_of_methods(
-        list_Fragment_vulnerability_Method_OnlyReturnTrue_methods)
-    list_Fragment_vulnerability_Method_NoIfOrSwitch_methods = filteringEngine.filter_list_of_methods(
-        list_Fragment_vulnerability_Method_NoIfOrSwitch_methods)
+            # Show detailed analysis results
+            for result_item in results:
+                writer.write("\n[" + result_item.get('severity', 'UNKNOWN') + "] " + result_item.get('issue', ''))
+                writer.write(result_item.get('description', ''))
 
-    if list_Fragment_vulnerability_NonMethod_classes or list_Fragment_vulnerability_Method_OnlyReturnTrue_methods or list_Fragment_vulnerability_Method_NoIfOrSwitch_methods:
+                if 'recommendation' in result_item:
+                    writer.write("建議 (Recommendation): " + result_item['recommendation'])
 
-        output_string = u"""'Fragment' 或者 'Fragment for ActionbarSherlock'在Android 4.4 版本(API 19)前有漏洞存在. 
-請檢查: 
-(1)http://developer.android.com/reference/android/os/Build.VERSION_CODES.html#KITKAT 
-(2)http://developer.android.com/reference/android/preference/PreferenceActivity.html#isValidFragment(java.lang.String) 
-(3)http://stackoverflow.com/questions/19973034/isvalidfragment-android-api-19 
-(4)http://securityintelligence.com/new-vulnerability-android-framework-fragment-injection/ 
-(5)http://securityintelligence.com/wp-content/uploads/2013/12/android-collapses-into-fragments.pdf 
-(6)https://cureblog.de/2013/11/cve-2013-6271-remove-device-locks-from-android-phone/ """
+                if 'affected_methods' in result_item:
+                    writer.write("\n受影響的方法 (Affected methods):")
+                    for method_info in result_item['affected_methods']:
+                        writer.write("  " + method_info['class'] + "->" + method_info['method'])
+                        if method_info.get('has_file_operation'):
+                            writer.write("    [!] 包含檔案操作 (Contains file operations)")
 
-        output_string_en = u"""'Fragment' or 'Fragment for ActionbarSherlock' is vulnerable until Android version 4.4 (API 19).
-Please check.
+        elif vulnerable_activities:
+            # Has ACTION_SEND but no ContentResolver usage detected
+            writer.startWriter(
+                "DIRTY_STEAM", LEVEL_NOTICE,
+                u"[AS-lab044][OWASP-M7][CWE-73] Dirty Steam 潛在風險檢測",
+                u"應用程式接收外部檔案 (ACTION_SEND/SEND_MULTIPLE)，但未檢測到使用 ContentResolver 查詢檔案名稱。\n"
+                u"建議檢查: 如果處理外部檔案，請確保驗證檔案名稱。"
+                + "||" +
+                u"Application receives external files (ACTION_SEND/SEND_MULTIPLE), but no ContentResolver usage detected.\n"
+                u"Recommendation: If handling external files, ensure filename validation.",
+                ["Hacker", "SSL_Security"])
 
-(1)http://developer.android.com/reference/android/os/Build.VERSION_CODES.html#KITKAT 
-(2)http://developer.android.com/reference/android/preference/PreferenceActivity.html#isValidFragment(java.lang.String) 
-(3)http://stackoverflow.com/questions/19973034/isvalidfragment-android-api-19 
-(4)http://securityintelligence.com/new-vulnerability-android-framework-fragment-injection/ 
-(5)http://securityintelligence.com/wp-content/uploads/2013/12/android-collapses-into-fragments.pdf 
-(6)https://cureblog.de/2013/11/cve-2013-6271-remove-device-locks-from-android-phone/ """
-
-        writer.startWriter(u"FRAGMENT_注入", LEVEL_CRITICAL,
-                           u"[lab_044][MAST-4.2.2][工-4.1.5.1.2] Fragment漏洞檢查",
-                           output_string + "||" + output_string_en, None, "BID 64208, CVE-2013-6271")
-
-        if list_Fragment_vulnerability_NonMethod_classes:
-            if int_target_sdk >= 19:
-                # You must override. Otherwise, it always throws Exception
-                writer.write(
-                    "你必須擴充 'isValidFragment' method 到每個 \"PreferenceActivity\" class 去避免 Exception 發生在 Android 4.4:"
-                )
-                # Notice: Each element in the list is NOT method, but String
-                for i in list_Fragment_vulnerability_NonMethod_classes:
-                    writer.write("    " + i)
-            else:
-                # You must override. Otherwise, it always throws Exception
-                writer.write(
-                    "這些 \"PreferenceActivity\" classes 可能有漏洞因為他沒有擴充 'isValidFragment' method (如果你沒有載入任何fragment在PreferenceActivity裡,請仍然擴充'isValidFragment' method 並且只回傳 \"false\" 去保護你的app在未來的改變) :"
-                )
-                # Notice: Each element in the list is NOT method, but String
-                for i in list_Fragment_vulnerability_NonMethod_classes:
-                    writer.write("    " + i)
-
-        if list_Fragment_vulnerability_Method_OnlyReturnTrue_methods:
-            writer.write(
-                "你擴充了 'isValidFragment' 並且只返回 \"true\" 在這些classes中. 你應該使用 \"if\" 去檢查是否 fragment 是有效的:"
-            )
-            writer.write(
-                "(範例 code: http://stackoverflow.com/questions/19973034/isvalidfragment-android-api-19/20139823#20139823)"
-            )
-            for method in list_Fragment_vulnerability_Method_OnlyReturnTrue_methods:
-                writer.write("    " + method.easy_print())
-
-        if list_Fragment_vulnerability_Method_NoIfOrSwitch_methods:
-            writer.write("請確認你檢查了有效的 fragment 在擴充的 'isValidFragment' method 內:")
-            for method in list_Fragment_vulnerability_Method_NoIfOrSwitch_methods:
-                writer.write("    " + method.easy_print())
-
-        if list_Fragment:
-            writer.write("所有可能有漏洞的 \"fragment\":")
-            for i in list_Fragment:
-                writer.write("    " + i)
-
-    # else:
-    #     writer.startWriter(
-    #         u"FRAGMENT_注入", LEVEL_INFO,
-    #         u"[MAST-4.2.2][工-4.1.5.1.2]Fragment漏洞檢查",
-    #         u"沒有發現 \"Fragment\" 動態載入至 \"PreferenceActivity\" 或者 \"SherlockPreferenceActivity\"的漏洞",
-    #         None, "BID 64208, CVE-2013-6271")
+            writer.write("\n接收外部檔案的 Activity:")
+            for activity_info in vulnerable_activities:
+                writer.write("  - " + activity_info['activity'] + " (" + activity_info['action'] + ")")
 
     # ------------------------------------------------------------------------
     # [lab_045] - Find all "dangerous" permission
@@ -3941,7 +3880,7 @@ Please check.
     if dangerous_custom_permissions:
         writer.startWriter(
             "PERMISSION_DANGEROUS", LEVEL_CRITICAL,
-            u"[lab_045][OWASP-V6.1][MAST-4.2.1][工-4.1.2.5.3] AndroidManifest ProtectionLevel為dangerous 的權限檢查",
+            u"[AS-lab045][OWASP-V6.1][MAST-4.2.1][工-4.1.2.5.3] AndroidManifest ProtectionLevel為dangerous 的權限檢查",
             u"""上述的class的保護等級(ProtectionLevel)是Dangerous, 讓其他app可以存取此權限 (AndroidManifest.xml). 
 這個app應該宣告權限為 "android:protectionLevel" of "signature" 或者"signatureOrSystem" 讓其他app不能從此app註冊及接收訊息. 
 宣告android:protectionLevel="signature" 讓其他app需要有相通的證書簽名才能夠存取此app. 
@@ -3967,7 +3906,7 @@ Please change the following permissions:
     # else:
     #     writer.startWriter(
     #         "PERMISSION_DANGEROUS", LEVEL_INFO,
-    #         u"[lab_045][OWASP-V6.1][MAST-4.2.1][工-4.1.2.5.3] AndroidManifest ProtectionLevel 為 dangerous 的權限檢查",
+    #         u"[AS-lab045][OWASP-V6.1][MAST-4.2.1][工-4.1.2.5.3] AndroidManifest ProtectionLevel 為 dangerous 的權限檢查",
     #         u"沒有發現 \"dangerous\"protection level 的權限(AndroidManifest.xml).")
 
     # ------------------------------------------------------------------------
@@ -3981,7 +3920,7 @@ Please change the following permissions:
     if normal_or_default_custom_permissions:
         writer.startWriter(
             "PERMISSION_NORMAL", LEVEL_WARNING,
-            "[lab_046][OWASP-V6.1][MAST-4.2.1][工-4.1.2.5.3] AndroidManifest Normal ProtectionLevel of Permission Checking",
+            "[AS-lab046][OWASP-V6.1][MAST-4.2.1][工-4.1.2.5.3] AndroidManifest Normal ProtectionLevel of Permission Checking",
             u"""上述的class的保護等級(ProtectionLevel)是Dangerous, 讓其他app可以存取此權限 (AndroidManifest.xml). 
 這個app應該宣告權限為 "android:protectionLevel" of "signature" 或者"signatureOrSystem" 讓其他app不能從此app註冊及接收訊息. 
 宣告android:protectionLevel="signature" 讓其他app需要有相通的證書簽名才能夠存取此app. 
@@ -4028,7 +3967,7 @@ Please change the following permissions:
     if list_lost_exported_components:
         writer.startWriter(
             "PERMISSION_NO_PREFIX_EXPORTED", LEVEL_CRITICAL,
-            u"[lab_047][OWASP-V1.5,V6.4][工-4.1.2.5.3, 4.1.5.1.1][CVE-2013-6272][M4] AndroidManifest Exported Lost Prefix 檢查",
+            u"[AS-lab047][OWASP-V1.5,V6.4][工-4.1.2.5.3, 4.1.5.1.1][CVE-2013-6272][M4] AndroidManifest Exported Lost Prefix 檢查",
             u"""找到exported components 忘記在最前面加"android:" (AndroidManifest.xml). 
   相關的資料 : (1)http://blog.curesec.com/article/blog/35.html               
                (2)http://blogs.360.cn/360mobile/2014/07/08/cve-2013-6272/""" + "||" + \
@@ -4043,7 +3982,7 @@ Please change the following permissions:
     # else:
     #     writer.startWriter(
     #         "PERMISSION_NO_PREFIX_EXPORTED", LEVEL_INFO,
-    #         u"[lab_047][OWASP-V1.5,V6.4][工-4.1.2.5.3, 4.1.5.1.1][CVE-2013-6272][M4] AndroidManifest Exported Lost Prefix 檢查",
+    #         u"[AS-lab047][OWASP-V1.5,V6.4][工-4.1.2.5.3, 4.1.5.1.1][CVE-2013-6272][M4] AndroidManifest Exported Lost Prefix 檢查",
     #         u"沒有exported components 忘記在前面加\"android:\" ", None,
     #         "CVE-2013-6272")
 
@@ -4233,7 +4172,7 @@ Please change the following permissions:
         if list_alerting_exposing_components_NonGoogle:
             writer.startWriter(
                 "PERMISSION_EXPORTED", LEVEL_WARNING,
-                u"[lab_048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4] AndroidManifest Exported Components 檢查",
+                u"[AS-lab048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4] AndroidManifest Exported Components 檢查",
                 u"""找到"exported"的組件(components)(除了 Launcher之外)用來接收外面應用程式的action(AndroidManifest.xml). 
 這些組件可以被其他app使用，你應該增加[exported="false"]的屬性以防被其他人使用. 
 你也可以在 "android:permission" 這個屬性之中使用 "signature" 或者 更高的保護權限去保護他.""" + "||" + \
@@ -4248,7 +4187,7 @@ You can also protect it with "signature" or higher protection privilege in the "
         # if list_alerting_exposing_components_Google:
         #     writer.startWriter(
         #         "PERMISSION_EXPORTED_GOOGLE", LEVEL_NOTICE,
-        #         u"[lab_048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4] AndroidManifest Exported Components 檢查 2",
+        #         u"[AS-lab048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4] AndroidManifest Exported Components 檢查 2",
         #         u"找到\"exported\"的組件(components)(除了 Launcher之外)用來接收外面應用程式的action(AndroidManifest.xml):"
         #     )
 
@@ -4257,7 +4196,7 @@ You can also protect it with "signature" or higher protection privilege in the "
     # else:
     #     writer.startWriter(
     #         "PERMISSION_EXPORTED", LEVEL_INFO,
-    #         u"[lab_048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4]AndroidManifest Exported Components 檢查",
+    #         u"[AS-lab048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4]AndroidManifest Exported Components 檢查",
     #         u"沒有找到\"exported\"的組件(components)(除了 Launcher之外)用來接收外面應用程式的action(AndroidManifest.xml)."
     #     )
 
@@ -4332,7 +4271,7 @@ You can also protect it with "signature" or higher protection privilege in the "
 
             writer.startWriter(
                 "PERMISSION_PROVIDER_IMPLICIT_EXPORTED", LEVEL_CRITICAL,
-                u"[lab_049][OWASP-V4.9,V6.4][MAST-4.2.1][工-4.1.2.5.3][M4] AndroidManifest ContentProvider Exported 檢查",
+                u"[AS-lab049][OWASP-V4.9,V6.4][MAST-4.2.1][工-4.1.2.5.3][M4] AndroidManifest ContentProvider Exported 檢查",
                 u"""我們強烈建議你詳細指明"exported"這個屬性(AndroidManifest.xml).
   對 Android"android:targetSdkVersion" < 17,exported的值對於ContentProvider來說預設是"true".
   對 Android"android:targetSdkVersion" >= 17,exported的值對於ContentProvider來說預設是"false".
@@ -4366,7 +4305,7 @@ Example of a vulnerable ContentProvider:
 
             writer.startWriter(
                 "PERMISSION_PROVIDER_EXPLICIT_EXPORTED", LEVEL_CRITICAL,
-                u"[lab_049][OWASP-V4.9,V6.4][工-4.1.2.5.3][M4] AndroidManifest ContentProvider Exported 檢查",
+                u"[AS-lab049][OWASP-V4.9,V6.4][工-4.1.2.5.3][M4] AndroidManifest ContentProvider Exported 檢查",
                 u"""找到"exported"的Content provider讓其他app可以存取他(AndroidManifest.xml). 你應該修改屬性到[exported="false"] 或者將保護權限設為 "signature" .
 有漏洞的 ContentProvider範例: 
   (1)https://www.nowsecure.com/mobile-security/ebay-android-content-provider-injection-vulnerability.html
@@ -4421,7 +4360,7 @@ Example of a vulnerable ContentProvider:
         if list_wrong_intent_filter_settings:
             writer.startWriter(
                 "PERMISSION_INTENT_FILTER_MISCONFIG", LEVEL_WARNING,
-                u"[lab_050][OWASP-V6.2][MAST-4.2.2] AndroidManifest \"intent-filter\" 設定檢查",
+                u"[AS-lab050][OWASP-V6.2][MAST-4.2.2] AndroidManifest \"intent-filter\" 設定檢查",
                 u"""在"intent-filter" 裡的這些components配置錯誤 (AndroidManifest.xml). 
  配置 "intent-filter" 不應該有 "android:exported" 或 "android:enabled" 屬性. 
  參考: http://developer.android.com/guide/topics/manifest/intent-filter-element.html
@@ -4434,7 +4373,7 @@ Example of a vulnerable ContentProvider:
         if list_no_actions_in_intent_filter:
             writer.startWriter(
                 "PERMISSION_INTENT_FILTER_MISCONFIG", LEVEL_CRITICAL,
-                u"[lab_050][OWASP-V6.2][MAST-4.2.2] AndroidManifest \"intent-filter\" 設定檢查",
+                u"[AS-lab050][OWASP-V6.2][MAST-4.2.2] AndroidManifest \"intent-filter\" 設定檢查",
                 u"""在"intent-filter" 裡的這些components配置錯誤 (AndroidManifest.xml).
  配置 "intent-filter" 應該至少要有一個 "action".
  參考: http://developer.android.com/guide/topics/manifest/intent-filter-element.html
@@ -4450,7 +4389,7 @@ Example of a vulnerable ContentProvider:
     if list_implicit_service_components:
         writer.startWriter(
             "PERMISSION_IMPLICIT_SERVICE", LEVEL_CRITICAL,
-            u"[lab_051][OWASP-V2.1][MAST-4.2.7] Implicit Service Checking",
+            u"[AS-lab051][OWASP-V2.1][MAST-4.2.7] Implicit Service Checking",
             u"""為了保護app的安全， 在開始啟動service時總是使用explicit intent 而且不要對你的service使用 intent filters . 使用 implicit intent去啟動service 是一個安全的保障因為你不能確切的知道service會對intent回應什麼,而且使用者不能在service開啟時看見.
 相關文獻:http://developer.android.com/guide/components/intents-filters.html#Types""" + "||" +  u"""To protect the security of the app, always use explicit intent when starting the service and don't use intent filters on your service. Using implicit intent to start the service is a security measure because you don't know exactly what the service will respond to the intent and the user can't see it when the service is opened.
 Related documents:http://developer.android.com/guide/components/intents-filters.html#Types""" ,
@@ -4462,7 +4401,7 @@ Related documents:http://developer.android.com/guide/components/intents-filters.
     # else:
     #     writer.startWriter(
     #         "PERMISSION_IMPLICIT_SERVICE", LEVEL_INFO,
-    #         u"[lab_051][OWASP-V2.1][MAST-4.2.7] Implicit Service Checking",
+    #         u"[AS-lab051][OWASP-V2.1][MAST-4.2.7] Implicit Service Checking",
     #         "No dangerous implicit service.", ["Implicit_Intent"])
 
     # ------------------------------------------------------------------------
@@ -4475,7 +4414,7 @@ Related documents:http://developer.android.com/guide/components/intents-filters.
         if int_min_sdk < 15:
             writer.startWriter(
                 "DB_SQLITE_JOURNAL", LEVEL_NOTICE,
-                u"[lab_052][OWASP-V2.1][MAST-4.2.7][工-4.1.5.1.1][CVE-2011-3901]Android SQLite 資料庫漏洞檢查",
+                u"[AS-lab052][OWASP-V2.1][MAST-4.2.7][工-4.1.5.1.1][CVE-2011-3901]Android SQLite 資料庫漏洞檢查",
                 u"""這個app在使用 Android SQLite databases.
 在 Android 4.0 版本前, Android 有 SQLite Journal Information Disclosure 的危險.
 這唯一的解決方法就是使用者要升級到 Android > 4.0 無法自行解決(但是你可以使用"SQLCipher"或其他涵式庫加密你的資料庫和日誌).
@@ -4489,7 +4428,7 @@ Proof-Of-Concept reference:
         else:
             writer.startWriter(
                 "DB_SQLITE_JOURNAL", LEVEL_NOTICE,
-                u"[lab_052][OWASP-V2.1][MAST-4.2.7][工-4.1.5.1.1][CVE-2011-3901]Android SQLite 資料庫漏洞檢查",
+                u"[AS-lab052][OWASP-V2.1][MAST-4.2.7][工-4.1.5.1.1][CVE-2011-3901]Android SQLite 資料庫漏洞檢查",
                 u"這個app在使用Android SQLite databases 但是他沒有遭受 SQLite Journal Information Disclosure 的危險." + "||" +
                 u"This app is using Android SQLite databases but he is not at risk of SQLite Journal Information Disclosure.",
                 ["Database"], "CVE-2011-3901")
@@ -4500,7 +4439,7 @@ Proof-Of-Concept reference:
     if isUsingSQLCipher:
         writer.startWriter(
             "DB_SQLCIPHER", LEVEL_NOTICE,
-            u"[lab_053][OWASP-V2.1][MAST-4.2.7][工-4.1.2.3.6][M2] Android SQLite 資料庫加密 (SQLCipher)",
+            u"[AS-lab053][OWASP-V2.1][MAST-4.2.7][工-4.1.2.3.6][M2] Android SQLite 資料庫加密 (SQLCipher)",
             u"這個app在使用SQLCipher(http://sqlcipher.net/) 來加密或解密資料庫." + "||" + u"This app is using SQLCipher(http://sqlcipher.net/) to encrypt or decrypt the database.",
             ["Database"])
 
@@ -4545,7 +4484,7 @@ Proof-Of-Concept reference:
     if has_SSE_databases:
          writer.startWriter(
             "DB_SEE", LEVEL_NOTICE,
-            u"[lab_054][OWASP-V2.1][MAST-4.2.7][工-4.1.2.3.6][M2] Android SQLite 資料庫加密 (SQLite Encryption Extension (SEE))",
+            u"[AS-lab054][OWASP-V2.1][MAST-4.2.7][工-4.1.2.3.6][M2] Android SQLite 資料庫加密 (SQLite Encryption Extension (SEE))",
             u"這個app在使用SQLite Encryption Extension (SEE) on Android (http://www.sqlite.org/android) 來加密或解密資料庫." + "||" + u"This app is using SQLite Encryption Extension (SEE) on Android (http://www.sqlite.org/android) to encrypt or decrypt the database.",
             ["Database"])
 
@@ -4557,11 +4496,11 @@ Proof-Of-Concept reference:
     if result_sqlite_encryption_androguard and isinstance(result_sqlite_encryption_androguard, dict):
         pragma_key_strings = result_sqlite_encryption_androguard.get('pragma_key_strings', [])
         pragma_key_methods = result_sqlite_encryption_androguard.get('pragma_key_methods', [])
-        total_findings = result_sqlite_encryption_androguard.get('total_findings', 0)
+        total_findings = result_sqlite_encryption_androguard.get('count', 0)
         
         if total_findings > 0:
             writer.startWriter("HACKER_DB_KEY", LEVEL_NOTICE,
-                               u"[lab_055][MAST-4.2.7] 金鑰用來加密 Android SQLite 資料庫",
+                               u"[AS-lab055][MAST-4.2.7] 金鑰用來加密 Android SQLite 資料庫",
                                u"發現在使用對稱金鑰(PRAGMA key) 來加密 SQLite 資料庫. \n相關的程式碼:" + "||" + u"Found using PRAGMA key to encrypt SQLite database. \n related code:",
                                ["Database", "Hacker"])
             
@@ -4596,7 +4535,7 @@ Proof-Of-Concept reference:
     if result_possibly_root_total:
         writer.startWriter(
             "COMMAND_MAYBE_SYSTEM", LEVEL_NOTICE,
-            "[lab_056][OWASP-V6.10] Executing \"root\" or System Privilege Checking",
+            "[AS-lab056][OWASP-V6.10] Executing \"root\" or System Privilege Checking",
             u"這個app可能在檢查管理者權限、掛載filesystem的指令或是監看系統:" + "||" + u"The app may be checking administrator privileges, mounting filesystem commands or monitoring the system:", 
             ["Command"])
 
@@ -4628,71 +4567,80 @@ Proof-Of-Concept reference:
                              method.get_name() + method.get_descriptor())
 
     # ------------------------------------------------------------------------
-    # [lab_057] - Android getting IMEI, Android_ID, UUID problem
+    # [lab_057] - Sensitive device / subscriber identifier reads (migrated to androguard_server)
+    # 擴充: 不只 getDeviceId，補 getImei / getMeid / getSubscriberId(IMSI) /
+    # getLine1Number(門號) / getSimSerialNumber(SIM 序號)
+    result_lab057 = get_androguard('/lab_057')
 
-    path_Device_id = vmx.get_tainted_packages(
-    ).search_class_methods_exact_match("Landroid/telephony/TelephonyManager;",
-                                       "getDeviceId", "()Ljava/lang/String;")
-    path_Device_id = filteringEngine.filter_list_of_paths(d, path_Device_id)
+    if result_lab057 and isinstance(result_lab057, dict) and result_lab057.get('has_finding'):
+        warning_057 = result_lab057.get('warning', [])
 
-    if path_Device_id:
         writer.startWriter(
             "SENSITIVE_DEVICE_ID", LEVEL_WARNING,
-            u"[lab_057][MAST-4.2.2] 獲取 IMEI and Device ID",
-            u"""這個app有程式碼獲取device id(IMEI)，但是使用"TelephonyManager.getDeviceId()"有一些問題.
-1.沒有電話: 只能使用Wifi的裝置或是音樂撥放器就沒有電話這種硬體，因此也不用這種獨特的識別碼.
-2.堅持性: 如果裝置有此特性,即使裝置清除所有的資料或是還原成出廠狀態，也無法將它清除，在這種狀況app應該將他看待為同一裝置.
-3.特權:他需要 READ_PHONE_STATE 這個權力, 如果你不使用或需要電話的話這會是個麻煩.
-4.Bugs: 我們有看過一些案例在實作中有問題會回傳垃圾資訊，像是 zeros or 星號.
-如果你想要獲得一個獨一無二的裝置識別碼，我們建議你使用"Installation" framework 如以下文章所示.
-請參考: http://android-developers.blogspot.tw/2011/03/identifying-app-installations.html
-""" + "||" + u"""This app has code to get device id(IMEI), but there are some problems with using "TelephonyManager.getDeviceId()".
-1. No phone: Wifi-only devices or music players do not have phone hardware, so this unique identifier is not needed.
-2. Persistence: If the device has this feature, even if the device clears all the data or restores it to the factory state, it can not be cleared, in this case the app should be regarded as the same device.
-3. Privilege: He needs READ_PHONE_STATE this power, if you do not use or need the phone then this will be a problem.
-Bugs: We have seen some cases where there are problems in the implementation that send back spam, like zeros or asterisks.
-If you want to get a unique device identifier, we suggest you use the "Installation" framework as shown in the following article.
-Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-installations.html
-""", 
-["Sensitive_Information"])
+            u"[AS-lab057][MAST-4.2.2] 獲取裝置/用戶識別碼 (IMEI/IMSI/門號)",
+            u"此 app 透過 TelephonyManager 讀取硬體/用戶識別碼: "
+            u"getDeviceId()/getImei() -> IMEI、getMeid() -> MEID、"
+            u"getSubscriberId() -> IMSI (SIM 用戶身分,裝置重置後仍可追蹤同一用戶)、"
+            u"getLine1Number() -> 手機門號、getSimSerialNumber() -> SIM 序號。"
+            u"這些都是不可重置或高度敏感的識別碼,Android 10+ 已限制需特權權限才能讀取,"
+            u"常被間諜軟體用於裝置指紋與用戶追蹤。建議改用可重置的 "
+            u"Firebase Installation ID / App Set ID / UUID。"
+            u" Ref: https://developer.android.com/identity/user-data-ids"
+            + "||" +
+            u"This app reads hardware / subscriber identifiers via TelephonyManager: "
+            u"getDeviceId()/getImei() -> IMEI, getMeid() -> MEID, "
+            u"getSubscriberId() -> IMSI (SIM subscriber id; tracks the same user even after device reset), "
+            u"getLine1Number() -> phone number, getSimSerialNumber() -> SIM serial. "
+            u"These are non-resettable / highly sensitive identifiers; Android 10+ restricts them to "
+            u"privileged apps and they are commonly abused by spyware for device fingerprinting. "
+            u"Prefer resettable IDs such as Firebase Installation ID / App Set ID / UUID."
+            u" Ref: https://developer.android.com/identity/user-data-ids",
+            ["Sensitive_Information"])
 
-        writer.show_Paths(d, path_Device_id)
+        if warning_057:
+            writer.write(u"[WARNING: %d]" % len(warning_057))
+            for f in warning_057:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  reason=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('reason', '')))
 
     # ------------------------------------------------------------------------
-    # [lab_058] - Android "android_id"
+    # [lab_058] - Settings.Secure.ANDROID_ID read (migrated to androguard_server)
+    # const-string lookback 確認參數為 "android_id"，與 lab_057 同模式統一裝置指紋類
+    result_lab058 = get_androguard('/lab_058')
 
-    path_android_id = vmx.get_tainted_packages(
-    ).search_class_methods_exact_match(
-        "Landroid/provider/Settings$Secure;", "getString",
-        "(Landroid/content/ContentResolver; Ljava/lang/String;)Ljava/lang/String;"
-    )
-    path_android_id = filteringEngine.filter_list_of_paths(d, path_android_id)
+    if result_lab058 and isinstance(result_lab058, dict) and result_lab058.get('has_finding'):
+        warning_058 = result_lab058.get('warning', [])
 
-    list_android_id = []
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-            d, path_android_id):
-        if i.getResult()[1] is None:
-            continue
-        if i.getResult()[1] == "android_id":
-            list_android_id.append(i.getPath())
+        writer.startWriter(
+            "SENSITIVE_SECURE_ANDROID_ID", LEVEL_WARNING,
+            u"[AS-lab058][MAST-4.2.2] 讀取 Settings.Secure.ANDROID_ID",
+            u"此 app 讀取 Settings.Secure.ANDROID_ID。"
+            u"ANDROID_ID 是一組裝置層級的識別碼,常被用於裝置指紋與用戶追蹤。"
+            u"它在「恢復原廠設定」後才會改變,且早期不同廠牌裝置可能回傳相同值,"
+            u"不適合當作可靠或可重置的識別碼。建議改用可重置的 "
+            u"Firebase Installation ID / App Set ID / UUID。"
+            u" Ref: https://developer.android.com/identity/user-data-ids"
+            + "||" +
+            u"This app reads Settings.Secure.ANDROID_ID. ANDROID_ID is a "
+            u"device-scoped identifier commonly used for device fingerprinting "
+            u"and user tracking. It only changes on a factory reset and some "
+            u"older devices return the same value across handsets, so it is not "
+            u"a reliable or resettable identifier. Prefer a resettable id such "
+            u"as the Firebase Installation ID / App Set ID / UUID."
+            u" Ref: https://developer.android.com/identity/user-data-ids",
+            ["Sensitive_Information"])
 
-    if list_android_id:
-        writer.startWriter("SENSITIVE_SECURE_ANDROID_ID", LEVEL_WARNING,
-                           u"[lab_058][MAST-4.2.2] Getting ANDROID_ID",
-                           u"""這個app嘗試獲得64位元的號碼 "Settings.Secure.ANDROID_ID".
-ANDROID_ID 是一個獲得獨特的裝置辨識碼的好選擇. 但是他還是有一些缺陷:首先他不是100%的可靠在 Android 2.2 (Froyo)版本之前.
-另外還有一個廣泛觀察到的錯誤，大部分知名的手機製造商都有出現，就是他們都會給相同的 ANDROID_ID.
-如果你想要獲得一個獨一無二的裝置識別碼，我們建議你使用"Installation" framework 如以下文章所示.
-請參考: http://android-developers.blogspot.tw/2011/03/identifying-app-installations.html
-""" + "||" + u"""This app tries to get the 64-bit number "Settings.Secure.ANDROID_ID".
-ANDROID_ID is a good choice to get a unique device identifier. But it still has some drawbacks: first of all it is not 100% reliable before Android 2.2 (Froyo) version.
-There is also a widely observed bug that occurs in most of the well-known phone manufacturers, which is that they all give the same ANDROID_ID.
-If you want to get a unique device identifier, we recommend you to use the "Installation" framework as shown in the following article.
-Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-installations.html
-""", ["Sensitive_Information"])
-
-        for path in list_android_id:
-            writer.show_Path(d, path)
+        if warning_058:
+            writer.write(u"[WARNING: %d]" % len(warning_058))
+            for f in warning_058:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  reason=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('reason', '')))
 
     # ------------------------------------------------------------------------
     # [lab_059] - Checking sending SMS code
@@ -4722,48 +4670,236 @@ Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-i
     if path_sms_sending:
         writer.startWriter(
             "SENSITIVE_SMS", LEVEL_WARNING,
-            u"[lab_059][OWASP-V5.5] 傳送SMS訊息的code",
+            u"[AS-lab059][OWASP-V5.5] 傳送SMS訊息的code",
             u"這app有傳送SMS訊息的code (sendDataMessage, sendMultipartTextMessage or sendTextMessage):" + "||" + u"This app has the code to send SMS messages (sendDataMessage, sendMultipartTextMessage or sendTextMessage):"
         )
         writer.show_Paths(d, path_sms_sending)
     
     # ------------------------------------------------------------------------
-    # [lab_060] - encryption /MD5/DES/AES/ by Zen
-    list_path_encryption = []
-    path_encryption = vmx.get_tainted_packages(
-    ).search_class_methods_exact_match(
-        "Ljavax/crypto/Cipher;", "getInstance",
-        "(Ljava/lang/String;)Ljavax/crypto/Cipher;")
-    path_encryption = filteringEngine.filter_list_of_paths(d, path_encryption)
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-            d, path_encryption):
-        if (i.getResult()[0] == "DES" or i.getResult()[0] == "AES"):
-            list_path_encryption.append(i.getPath())
+    # [lab_060] - Weak Cipher detection (Cipher only, hash moved to lab_079)
+    # 解析 transformation 字串 (alg/mode/padding), 按真實風險分級
+    def _fmt_cls(c):
+        if c.startswith('L') and c.endswith(';'):
+            return c[1:-1].replace('/', '.')
+        return c
 
-    list_path_MD5 = []
-    path_MD5 = vmx.get_tainted_packages().search_class_methods_exact_match(
-        "Ljava/security/MessageDigest;", "getInstance",
-        "(Ljava/lang/String;)Ljava/security/MessageDigest;")
-    path_MD5 = filteringEngine.filter_list_of_paths(d, path_MD5)
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-            d, path_MD5):
-        if (i.getResult()[0] == "MD5"):
-            list_path_MD5.append(i.getPath())
+    result_lab060 = get_androguard('/lab_060')
 
-    if list_path_encryption or list_path_MD5:
+    if result_lab060 and isinstance(result_lab060, dict) and result_lab060.get('has_finding'):
+        verdict_060  = result_lab060.get('verdict', 'WARNING')
+        critical_060 = result_lab060.get('critical', [])
+        warning_060  = result_lab060.get('warning', [])
+        info_060     = result_lab060.get('info', [])
+        unknown_060  = result_lab060.get('unknown', [])
+
+        if verdict_060 == 'CRITICAL':
+            level_060 = LEVEL_CRITICAL
+        elif verdict_060 == 'WARNING':
+            level_060 = LEVEL_WARNING
+        else:
+            level_060 = LEVEL_INFO
+
         writer.startWriter(
-            "ENCRYPTION_AES/DES/MD5", LEVEL_NOTICE,
-            u"[lab_060][OWASP-V1.11,V3.2,V3.3][MAST-4.2.6][工-4.1.2.3.6] AES/DES/MD5加密檢查",
-            u"發現AES/DES/MD5加密演算法:" + "||" + u"Discover AES/DES/MD5 encryption algorithms:")
-        if list_path_encryption:
-            writer.write("[AES/DES]")
-            for i in list_path_encryption:
-                writer.show_Path(d, i)
-            writer.write("--------------------------------------------------")
-        if list_path_MD5:
-            writer.write("[MD5]")
-            for i in list_path_MD5:
-                writer.show_Path(d, i)
+            "LAB_060_WEAK_CIPHER", level_060,
+            u"[AS-lab060][MAS-4.1.2.3.6][MASVS-CRYPTO-1][CWE-327] 弱對稱/非對稱加密演算法檢查",
+            u"解析 Cipher.getInstance(transformation) 的字串參數 (algorithm/mode/padding),"
+            u"依加密強度分級。"
+            u"CRITICAL: ECB mode (任何演算法都受影響) / DES / RC4 / RC2 / Blowfish; "
+            u"WARNING: CBC mode (未驗證 IV 來源) / 3DES (DESede); "
+            u"INFO: GCM / CCM / ChaCha20-Poly1305 等 authenticated encryption。"
+            u"注意: 雜湊函式 (MessageDigest) 不是加密,已獨立為 lab_079 處理。"
+            u"本次未涵蓋 (留待後續): hardcoded IV 偵測 / key size 強度檢查 / "
+            u"PBKDF2 iteration count / KeyGenParameterSpec 配置稽核。"
+            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/"
+            + "||" +
+            u"Parses Cipher.getInstance(transformation) string arguments "
+            u"(algorithm/mode/padding) and classifies by cryptographic strength. "
+            u"CRITICAL: ECB mode (any algorithm) / DES / RC4 / RC2 / Blowfish; "
+            u"WARNING: CBC mode (no IV verification) / 3DES (DESede); "
+            u"INFO: GCM / CCM / ChaCha20-Poly1305 authenticated encryption. "
+            u"Note: hash functions (MessageDigest) are NOT encryption and are covered in lab_079. "
+            u"Not yet covered (future work): hardcoded IV detection / key size enforcement / "
+            u"PBKDF2 iteration count / KeyGenParameterSpec audit."
+            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/",
+            ["Crypto", "Cipher"])
+
+        def _fmt_cipher(f):
+            return u"  %s.%s()  transformation=%s  reason=%s" % (
+                _fmt_cls(f.get('class', '')), f.get('method', ''),
+                f.get('transformation', ''), f.get('reason', ''))
+
+        def _fmt_key(f):
+            return u"  %s.%s()  key_source=%s  iv_source=%s  reason=%s" % (
+                _fmt_cls(f.get('class', '')), f.get('method', ''),
+                f.get('key_source', ''), f.get('iv_source', ''),
+                f.get('reason', ''))
+
+        # Only output CRITICAL findings — keep report compact for table display
+        if critical_060:
+            cipher_c = [f for f in critical_060 if 'transformation' in f]
+            key_c    = [f for f in critical_060 if 'key_source'     in f]
+            writer.write(u"[CRITICAL: %d]" % len(critical_060))
+            if cipher_c:
+                writer.write(u"  -- Cipher transformation --")
+                for f in cipher_c:
+                    writer.write(_fmt_cipher(f))
+            if key_c:
+                writer.write(u"  -- Key material --")
+                for f in key_c:
+                    writer.write(_fmt_key(f))
+
+    # ------------------------------------------------------------------------
+    # [lab_079] - Weak Hash function detection (split from lab_060)
+    # 雜湊不是加密 — 沒有 key, 不可逆。獨立為一個 lab 以符合正確密碼學分類
+    result_lab079 = get_androguard('/lab_079')
+
+    if result_lab079 and isinstance(result_lab079, dict) and result_lab079.get('has_finding'):
+        verdict_079  = result_lab079.get('verdict', 'WARNING')
+        critical_079 = result_lab079.get('critical', [])
+        info_079     = result_lab079.get('info', [])
+        unknown_079  = result_lab079.get('unknown', [])
+
+        if verdict_079 == 'CRITICAL':
+            level_079 = LEVEL_CRITICAL
+        elif verdict_079 == 'WARNING':
+            level_079 = LEVEL_WARNING
+        else:
+            level_079 = LEVEL_INFO
+
+        writer.startWriter(
+            "LAB_079_WEAK_HASH", level_079,
+            u"[AS-lab079][MAS-4.1.2.3.6][MASVS-CRYPTO-1][CWE-327][CWE-328] 弱雜湊函式檢查",
+            u"解析 MessageDigest.getInstance(algorithm) 的字串參數,辨識已破解或 collision-prone 的雜湊。"
+            u"雜湊函式不是加密 — 沒有 key, 不可逆,單純把任意 input 轉成固定長度指紋。"
+            u"CRITICAL: MD5 / MD2 / MD4 / SHA-1 (已被破解或 collision-prone); "
+            u"INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 系列 (NIST 推薦)。"
+            u"本次未涵蓋 (留待後續): 用途分類 (password hash vs file checksum vs cache key) / "
+            u"HMAC 演算法強度 / 迭代雜湊偵測 (PBKDF2)。"
+            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/"
+            + "||" +
+            u"Parses MessageDigest.getInstance(algorithm) string arguments and identifies broken "
+            u"or collision-prone hashes. Hashing is NOT encryption: no key, one-way, fixed-length output. "
+            u"CRITICAL: MD5 / MD2 / MD4 / SHA-1 (broken or collision-prone); "
+            u"INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 family (NIST recommended). "
+            u"Not yet covered (future work): usage classification (password hash vs file checksum vs "
+            u"cache key) / HMAC algorithm strength / iterated hashing detection (PBKDF2)."
+            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/",
+            ["Crypto", "Hash"])
+
+        # Only output CRITICAL findings — keep report compact for table display
+        if critical_079:
+            writer.write(u"[CRITICAL: %d]" % len(critical_079))
+            for f in critical_079:
+                writer.write(u"  %s.%s()  algorithm=%s  reason=%s" % (
+                    _fmt_cls(f.get('class', '')), f.get('method', ''),
+                    f.get('algorithm', ''), f.get('reason', '')))
+
+    # ------------------------------------------------------------------------
+    # [lab_080] - Sensitive data copied to system clipboard
+    # same-method co-occurrence: clipboard write API + 敏感關鍵字 const-string 才標記
+    result_lab080 = get_androguard('/lab_080')
+
+    if result_lab080 and isinstance(result_lab080, dict) and result_lab080.get('has_finding'):
+        verdict_080  = result_lab080.get('verdict', 'WARNING')
+        critical_080 = result_lab080.get('critical', [])
+        warning_080  = result_lab080.get('warning', [])
+
+        if verdict_080 == 'CRITICAL':
+            level_080 = LEVEL_CRITICAL
+        elif verdict_080 == 'WARNING':
+            level_080 = LEVEL_WARNING
+        else:
+            level_080 = LEVEL_INFO
+
+        writer.startWriter(
+            "LAB_080_CLIPBOARD_SENSITIVE", level_080,
+            u"[AS-lab080][MAS-4.1.2.3.11][MASVS-STORAGE-1][CWE-200] 剪貼簿敏感資料外洩檢查",
+            u"任何 App (以及部分輸入法) 都能讀取系統全域剪貼簿,將密碼、PIN、卡號、token 等"
+            u"敏感資料複製到剪貼簿會曝露給其他 App。本檢查採 same-method co-occurrence 啟發式: "
+            u"在同一 method 內偵測到剪貼簿寫入 API (ClipboardManager.setPrimaryClip / setText) "
+            u"且該 method 含敏感關鍵字 const-string 才標記。"
+            u"CRITICAL: 明確敏感關鍵字 (password / pin / cvv / ssn / card / secret key); "
+            u"WARNING: 可能敏感關鍵字 (token / account / auth / credential / otp)。"
+            u"單純剪貼簿寫入但無敏感關鍵字 (如複製訂單編號、分享連結) 不報以避免噪音。"
+            u" Ref: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling"
+            + "||" +
+            u"Any app (and some IMEs) can read the global system clipboard, so copying secrets "
+            u"(passwords, PINs, card numbers, tokens) into it exposes them to other apps. This check "
+            u"uses a same-method co-occurrence heuristic: a clipboard write API "
+            u"(ClipboardManager.setPrimaryClip / setText) together with a sensitive-keyword const-string "
+            u"in the same method. CRITICAL: explicit secret keyword (password / pin / cvv / ssn / card / "
+            u"secret key); WARNING: possibly-sensitive keyword (token / account / auth / credential / otp). "
+            u"Clipboard writes without any sensitive keyword (e.g. copying an order id or share link) are "
+            u"NOT reported to avoid noise."
+            u" Ref: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling",
+            ["Clipboard", "Privacy"])
+
+        if critical_080:
+            writer.write(u"[CRITICAL: %d]" % len(critical_080))
+            for f in critical_080:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  keyword=%s  reason=%s" % (
+                    cls, f.get('method', ''), f.get('keyword', ''), f.get('reason', '')))
+
+        if warning_080:
+            writer.write(u"[WARNING: %d]" % len(warning_080))
+            for f in warning_080:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  keyword=%s  reason=%s" % (
+                    cls, f.get('method', ''), f.get('keyword', ''), f.get('reason', '')))
+
+    #-----------------------------------------------------------------------------------
+    # [AS-lab081] - 4.1.5.4.1 — 使用者輸入驗證 (型別 / 長度)
+    # 掃 res/layout* 的輸入欄位, 檢查有無宣告 android:inputType 與 android:maxLength
+    result_lab081 = get_androguard('/lab_081')
+    warning_081   = result_lab081.get('warning', []) if isinstance(result_lab081, dict) else []
+
+    # 報告只列出 WARNING (敏感 / 密碼欄位)。NOTICE (一般欄位缺 inputType) 仍會偵測並保留在
+    # 檢測結果中, 但不寫進報告 —— 搜尋欄、備註欄不限制字元屬正常用法, 列出會稀釋重點。
+    # 入口條件用 warning_081 而非 has_finding, 避免寫出沒有明細的空區塊。
+    if warning_081:
+        writer.startWriter(
+            "INPUT_VALIDATION", LEVEL_WARNING,
+            u"[AS-lab081][MAS-4.1.5.4.1][MASVS-CODE-4][M4] 使用者輸入驗證檢查",
+            u"未限制使用者輸入的型別與長度時，攻擊者可輸入預期外的字元或超長字串，觸發 SQL Injection、命令注入、路徑穿越等注入攻擊，或造成後端處理異常；密碼類欄位若無長度上限，超長輸入可能造成雜湊運算資源耗盡。" u"\n\n"
+            u"本檢查解析 res/layout 及其限定詞目錄（layout-land、layout-v21 等）下的 layout XML，找出 EditText / AutoCompleteTextView 系列欄位，檢查 android:inputType（型別限制，所有欄位皆檢查）與 android:maxLength（長度限制，僅檢查敏感／密碼類欄位，因一般欄位如搜尋欄、備註欄不設長度上限屬正常用法）。" u"\n\n"
+            u"報告僅列出 WARNING（敏感／密碼類欄位缺少型別或長度限制）；一般輸入欄位缺少型別限制屬低風險，仍會偵測並保留於檢測結果，但不列入報告。" u"\n\n"
+            u"限制：僅檢查 layout XML 的宣告；以程式碼實作的驗證（InputFilter）與程式化建立的介面（Jetpack Compose、WebView 表單）皆掃不到，建議對命中項目人工複查。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
+            + "||" +
+            u"When user input has no declared type or length constraint, an attacker can supply unexpected characters or an overly long string, enabling SQL injection, command injection, path traversal, or backend processing failures; a password field with no length cap allows input long enough to exhaust hashing resources." u"\n\n"
+            u"This check parses the layout XML under res/layout and its qualifier directories (layout-land, layout-v21, etc.), locates EditText / AutoCompleteTextView family fields, and verifies android:inputType (type constraint, checked on every field) and android:maxLength (length constraint, checked on sensitive / password fields only, since ordinary fields such as search or comment boxes legitimately have no length cap)." u"\n\n"
+            u"Only WARNING findings (sensitive / password field missing a type or length constraint) are listed; an ordinary input field missing a type constraint is low risk and is still detected and kept in the result data, but omitted from the report." u"\n\n"
+            u"Limitation: only the layout XML declarations are inspected; validation implemented in code (InputFilter) and programmatically built UI (Jetpack Compose, WebView forms) are not covered, so manual review of flagged items is recommended." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType",
+            [u"InputValidation", u"Injection"])
+
+        # Detail 一律用英文並先 encode 成 UTF-8: vector_details 為中英文版報告共用,
+        # 且 Writer.write() 會把 unicode 逃逸成 \xNN 字面文字。
+        def _w081(line):
+            writer.write(line.encode('utf-8'))
+
+        # 每行格式: [等級] 版面檔 <元件 欄位定位> missing=缺少的屬性
+        # Writer 每個 lab 最多收 10 行, 超過時留一行標示尚有幾筆。
+        shown_081 = warning_081 if len(warning_081) <= 10 else warning_081[:9]
+
+        for f in shown_081:
+            # server 端 missing 為 "inputType (type constraint)", 報告只留屬性名
+            missing_attrs = u", ".join(m.split(' ')[0] for m in f.get('missing', []))
+            # 缺 maxLength 時附上現有型別, 幫助判斷該設多長
+            declared      = f.get('input_type_readable')
+            _w081(u"[%s] %s <%s %s> missing=%s%s" % (
+                f.get('severity', ''), f.get('file', ''),
+                f.get('tag', 'EditText'), f.get('field_label', ''),
+                missing_attrs,
+                (u"  (inputType=%s)" % declared) if declared else u""))
+
+        if len(warning_081) > 10:
+            _w081(u"... and %d more" % (len(warning_081) - 9))
 
     #-----------------------------------------------------------------------------------
     # [lab_061] - Checking shared_user_id
@@ -4776,7 +4912,7 @@ Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-i
     if sharedUserId_in_system:
         writer.startWriter(
             "SHARED_USER_ID", LEVEL_NOTICE,
-            u"[lab_061][MAST-4.2.2] AndroidManifest sharedUserId 檢查",
+            u"[AS-lab061][MAST-4.2.2] AndroidManifest sharedUserId 檢查",
             u"這app使用 \"android.uid.system\" sharedUserId, 他需要\"system(uid=1000)\" 這個權限. 他必須被製造者或google的keystore簽名才能成功安裝在使用者的手機." + "||" + u"This app uses \"android.uid.system\" sharedUserId, which requires the permission \"system(uid=1000)\". It must be signed by the manufacturer or google keystore to be successfully installed on the user's phone.",
             ["System"])
 
@@ -4785,31 +4921,38 @@ Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-i
     if sharedUserId_in_system and isMasterKeyVulnerability:
         writer.startWriter(
             "MASTER_KEY_SYSTEM_APP", LEVEL_CRITICAL,
-            u"[lab_062][OWASP-V7.1][MAST-4.2.6][工-4.1.5.1.2][CVE-2013-4787] 使用Master Key漏洞去取得管理者權限",
+            u"[AS-lab062][OWASP-V7.1][MAST-4.2.6][工-4.1.5.1.2][CVE-2013-4787] 使用Master Key漏洞去取得管理者權限",
             u"這app是一個惡意軟體, 他需要透過Master Key漏洞得到\"system(uid=1000)\" , 導致手機被取得管理者權限." + "||" + u"This app is a malware, he needs to get \"system(uid=1000)\" through the Master Key vulnerability, resulting in the phone being granted administrator privileges."
         )
 
     # ------------------------------------------------------------------------
-    # [lab_063] - File delete alert
+    # [lab_063] - Unsafe file deletion check (migrated to androguard_server)
+    # 舊版只要呼叫過 file.delete() 就標記, 在現代 (R8/ProGuard 混淆) APK 上幾乎全是
+    # 第三方函式庫自己的快取清理雜訊 (例如 AndroidX 字型快取), 誤報率高。
+    # 新版只在「同一個 method 內, delete() 呼叫跟敏感關鍵字字串同時出現」時才標記。
+    result_lab063 = get_androguard('/lab_063')
 
-    path_FileDelete = vmx.get_tainted_packages(
-    ).search_class_methods_exact_match("Ljava/io/File;", "delete", "()Z")
-    path_FileDelete = filteringEngine.filter_list_of_paths(d, path_FileDelete)
+    if result_lab063 and isinstance(result_lab063, dict) and result_lab063.get('has_finding'):
+        results_063 = result_lab063.get('results', [])
 
-    if path_FileDelete:
-        writer.startWriter("FILE_DELETE", LEVEL_NOTICE,
-                           u"[lab_063][MAST-4.2.3][M2]不安全的檔案刪除檢查",
-                           u"""任何你所刪除的都可能被使用者或攻擊者恢復, 特別是root過的device.
- 請確認沒有使用"file.delete()"去刪除必要的資料.
- 請看這個影片: https://www.youtube.com/watch?v=tGw1fxUD-uY""" + "||" + \
-"""Anything you delete can be recovered by users or attackers, especially rooted devices.
- Please make sure you do not use "file.delete()" to delete the necessary data.
- See this video: https://www.youtube.com/watch?v=tGw1fxUD-uY""")
-        writer.show_Paths(d, path_FileDelete)
-    # else:
-    #     writer.startWriter("FILE_DELETE", LEVEL_INFO,
-    #                        u"[lab_063][MAST-4.2.3][M2]不安全的檔案刪除檢查",
-    #                        u"並無查覺到不安全的檔案刪除檢查")
+        writer.startWriter(
+            "FILE_DELETE", LEVEL_NOTICE,
+            u"[AS-lab063][MAS-4.1.2.3.5][MASVS-STORAGE-2][M9]不安全的檔案刪除檢查",
+            u"""偵測到 File.delete() 與敏感關鍵字 (password/token/secret 等) 出現在同一個 method 內。
+任何你所刪除的都可能被使用者或攻擊者恢復, 特別是root過的device.
+請確認沒有使用"file.delete()"去刪除必要的資料, 建議改用覆寫後再刪除等安全清除方式。
+請看這個影片: https://www.youtube.com/watch?v=tGw1fxUD-uY""" + "||" + \
+u"""Detected File.delete() co-located with a sensitive keyword (password/token/secret, etc.) in the same method.
+Anything you delete can be recovered by users or attackers, especially rooted devices.
+Please make sure you do not use "file.delete()" to delete the necessary data; consider securely
+overwriting the file before deletion instead.
+See this video: https://www.youtube.com/watch?v=tGw1fxUD-uY""",
+            [u"FileDelete", u"DataRemanence"])
+
+        for r in results_063[:5]:
+            writer.write(u"{0}->{1}".format(
+                r.get('class', ''), r.get('method', '')
+            ))
 
     # ------------------------------------------------------------------------
     # [lab_064] - Check if app check for installing from Google Play
@@ -4824,123 +4967,52 @@ Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-i
 
     if result:
         writer.startWriter(
-        "HACKER_INSTALL_SOURCE_CHECK", LEVEL_NOTICE, u"[lab_064] APP安裝來源檢查",
+        "HACKER_INSTALL_SOURCE_CHECK", LEVEL_NOTICE, u"[AS-lab064] APP安裝來源檢查",
         u"這APP有檢查APK安裝來源(e.g. from Google Play, from Amazon, etc.)." + "||" + u"This app has check APK installation source(e.g. from Google Play, from Amazon, etc.)",
         ["Hacker"])
         # writer.show_Paths(d, path_getInstallerPackageName)
     else:
         writer.startWriter("HACKER_INSTALL_SOURCE_CHECK", LEVEL_INFO,
-                           u"[lab_064] APP安裝來源檢查", u"這APP沒有檢查APK安裝來源",
+                           u"[AS-lab064] APP安裝來源檢查", u"這APP沒有檢查APK安裝來源",
                            ["Hacker"])
 
     # ------------------------------------------------------------------------
-    # [lab_065] - WebView allow file access check
-    """
-		Get all "dst" class: Landroid/webkit/WebSettings;
-		  => Categorized by src function,
-		     If the src function:
-		       1. setAllowFileAccessFromFileURLs(true)
-		       2. setAllowUniversalAccessFromFileURLs(true)
-		           =>src function may be vulnerable
+    # [lab_065] - WebView advanced configuration audit (migrated to androguard_server)
+    # 補 lab_034 未涵蓋的 setter: setAllowFileAccess / setMixedContentMode /
+    # setWebContentsDebuggingEnabled (與 lab_034 零重疊)
+    result_lab065 = get_androguard('/lab_065')
 
-		**Why check WebSettings? It's because WebView almost always uses the method: WebView->getSettings()
-
-		**Even if the below example, it will finally call WebSettings:
-		  class TestWebView extends WebView {
-		    public TestWebView(Context context) {
-		      super(context);
-		    }
-		  }
-	"""
-
-    pkg_WebView_WebSettings = vmx.get_tainted_packages().search_packages(
-        "Landroid/webkit/WebSettings;")
-
-    pkg_WebView_WebSettings = filteringEngine.filter_list_of_paths(
-        d, pkg_WebView_WebSettings)
-
-    dict_WebSettings_ClassMethod_to_Path = {}
-
-    for path in pkg_WebView_WebSettings:
-        src_class_name, src_method_name, src_descriptor = path.get_src(cm)
-        dst_class_name, dst_method_name, dst_descriptor = path.get_dst(cm)
-
-        dict_name = src_class_name + "->" + src_method_name + src_descriptor
-        if dict_name not in dict_WebSettings_ClassMethod_to_Path:
-            dict_WebSettings_ClassMethod_to_Path[dict_name] = []
-
-        dict_WebSettings_ClassMethod_to_Path[dict_name].append(
-            (dst_method_name + dst_descriptor, path))
-
-    # path_setAllowFileAccess_vulnerable_ready_to_test = []
-    path_setAllowFileAccessFromFileURLs_vulnerable_candidate = []
-    path_setAllowFileAccessFromFileURLs_vulnerable_confirm = []
-    path_setAllowUniversalAccessFromFileURLs_vulnerable_candidate = []
-    path_setAllowUniversalAccessFromFileURLs_vulnerable_confirm = []
-
-    # Find the function descriptor 
-    for class_fun_descriptor, value in dict_WebSettings_ClassMethod_to_Path.items(
-    ):
-        has_setAllowFileAccessFromFileURLs = False
-        has_setAllowUniversalAccessFromFileURLs = False
-
-        for func_name_descriptor, path in value:
-            # if find, add in candidate list 
-            if func_name_descriptor == "setAllowFileAccessFromFileURLs(Z)V":
-                has_setAllowFileAccessFromFileURLs = True
-                path_setAllowFileAccessFromFileURLs_vulnerable_candidate.append(path)
-            elif func_name_descriptor == "setAllowUniversalAccessFromFileURLs(Z)V":
-                has_setAllowUniversalAccessFromFileURLs = True
-                path_setAllowUniversalAccessFromFileURLs_vulnerable_candidate.append(path)
-
-    # setAllowFileAccessFromFileURLs - Trace in the vm_code, check if the value is true
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(d, path_setAllowFileAccessFromFileURLs_vulnerable_candidate):
-        # parameter is true
-        if i.getResult()[1] == 0x1:  
-            path = i.getPath()
-            src_class_name, src_method_name, src_descriptor = path.get_src(cm)
-            dict_name = src_class_name + "->" + src_method_name + src_descriptor
-
-            if dict_name not in path_setAllowFileAccessFromFileURLs_vulnerable_confirm:
-                path_setAllowFileAccessFromFileURLs_vulnerable_confirm.append(path)
-
-    # setAllowUniversalAccessFromFileURLs - Trace in the vm_code, check if the value is true
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(d, path_setAllowUniversalAccessFromFileURLs_vulnerable_candidate):
-        # parameter is true
-        if i.getResult()[1] == 0x1:  
-            path = i.getPath()
-            src_class_name, src_method_name, src_descriptor = path.get_src(cm)
-            dict_name = src_class_name + "->" + src_method_name + src_descriptor
-
-            if dict_name not in path_setAllowUniversalAccessFromFileURLs_vulnerable_confirm:
-                path_setAllowUniversalAccessFromFileURLs_vulnerable_confirm.append(path)
-    
-    if path_setAllowFileAccessFromFileURLs_vulnerable_confirm or path_setAllowUniversalAccessFromFileURLs_vulnerable_confirm:
+    if result_lab065 and isinstance(result_lab065, dict) and result_lab065.get('has_finding'):
+        warning_065 = result_lab065.get('warning', [])
 
         writer.startWriter(
-            "WEBVIEW_ALLOW_FILE_ACCESS", LEVEL_WARNING,
-            u"[lab_065][OWASP-V6.6,V6.7][MAST-4.2.7][工-4.1.2.3.7, 4.1.2.5.3][M4] WebView File Access Attacks 檢查",
-            u"""找到 "setAllowFileAccessFromFileURLs", "setAllowUniversalAccessFromFileURLs", 這兩個 api 攻擊者可能會引用外部的惡意 script 到 WebView 並找機會去存取本地資源
-    **setAllowFileAccessFromFileURLs: 允許從 file:// URL 加載的 JavaScript 讀取其他的源 
-    **setAllowUniversalAccessFromFileURLs: 允許從 file:// URL 加載的 JavaScript 讀取任意的源 (包括 http、https 等等的源)
-    Related documents:
-    (1) https://blog.csdn.net/carson_ho/article/details/64904635
-    (2) https://developer.android.com/reference/android/webkit/WebSettings#setAllowFileAccessFromFileURLs(boolean)
-    (3) https://developer.android.com/reference/android/webkit/WebSettings#setAllowUniversalAccessFromFileURLs(boolean)
+            "LAB_065_WEBVIEW_ADVANCED_CONFIG", LEVEL_WARNING,
+            u"[AS-lab065][MAS-4.1.2.3.7][MASVS-PLATFORM-2][CWE-200] WebView 進階配置檢查",
+            u"檢查 lab_034 未涵蓋的 WebView 危險設定 (與 lab_034 零重疊): "
+            u"setAllowFileAccess(true) -> WebView 可載入 file:// URL,配合 file 載入入口可存取本地檔案"
+            u"(注意: 與 lab_034 的 setAllowFileAccessFromFileURLs 是不同 API); "
+            u"setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW) -> HTTPS 頁面可載入 HTTP 子資源,MITM 風險; "
+            u"setWebContentsDebuggingEnabled(true) -> 遠端 Chrome DevTools 除錯,release 版必須關閉。"
+            u"靜態分析無法判斷 release/debug build,故均標 WARNING 供人工確認。"
+            u" Ref: https://developer.android.com/reference/android/webkit/WebSettings"
+            + "||" +
+            u"Checks dangerous WebView settings not covered by lab_034 (zero overlap): "
+            u"setAllowFileAccess(true) -> WebView can load file:// URLs (different API from "
+            u"setAllowFileAccessFromFileURLs in lab_034); "
+            u"setMixedContentMode(MIXED_CONTENT_ALWAYS_ALLOW) -> HTTPS page can load HTTP sub-resources (MITM); "
+            u"setWebContentsDebuggingEnabled(true) -> remote Chrome DevTools debugging, must be off in release. "
+            u"Static analysis cannot tell release vs debug, so all are WARNING for manual review."
+            u" Ref: https://developer.android.com/reference/android/webkit/WebSettings",
+            ["WebView", "Config"])
 
-    """ + "||" + u"""Find "setAllowFileAccessFromFileURLs", "setAllowUniversalAccessFromFileURLs", these two api attackers may reference external malicious scripts to WebView and find opportunities to access local resources
-    **setAllowFileAccessFromFileURLs: Allow JavaScript loaded from file:// URLs to read other sources
-    **setAllowUniversalAccessFromFileURLs: allows JavaScript loaded from a file:// URL to read arbitrary sources (including http, https, etc.)
-    Related documents:
-    (1) https://blog.csdn.net/carson_ho/article/details/64904635
-    (2) https://developer.android.com/reference/android/webkit/WebSettings#setAllowFileAccessFromFileURLs(boolean)
-    (3) https://developer.android.com/reference/android/webkit/WebSettings#setAllowUniversalAccessFromFileURLs(boolean)
-    """, ["WebView"])
-        
-        for i in path_setAllowFileAccessFromFileURLs_vulnerable_confirm:
-            writer.show_Path(d, i)
-        for i in path_setAllowUniversalAccessFromFileURLs_vulnerable_confirm:
-            writer.show_Path(d, i)
+        if warning_065:
+            writer.write(u"[WARNING: %d]" % len(warning_065))
+            for f in warning_065:
+                cls = f.get('class', '')
+                if cls.startswith('L') and cls.endswith(';'):
+                    cls = cls[1:-1].replace('/', '.')
+                writer.write(u"  %s.%s()  api=%s  reason=%s" % (
+                    cls, f.get('method', ''), f.get('api', ''), f.get('reason', '')))
 
     # ------------------------------------------------------------------------
     # [lab_066] - Adb Backup check
@@ -4948,7 +5020,7 @@ Please refer to: http://android-developers.blogspot.tw/2011/03/identifying-app-i
     if a.is_adb_backup_enabled():
         writer.startWriter(
             "ALLOW_BACKUP", LEVEL_NOTICE,
-            u"[lab_066][MAST-4.2.7][][CVE-2013-5112][CVE-2014-7952] AndroidManifest Adb Backup 檢查",
+            u"[AS-lab066][MAST-4.2.7][][CVE-2013-5112][CVE-2014-7952] AndroidManifest Adb Backup 檢查",
             u"""ADB Backup對這app來說是允許的(預設: ENABLED). ADB Backup是一個很好的工具對於備份資料而且. 如果這個app是開放的, 人們利用它可以複製你的私密檔案 (Prerequisite: 1.解鎖螢幕 2.進入開發者模式). 私密資料可能包括 lifetime access token, 使用者名稱或密碼, etc.
 ADB Backup的安全例子:
 1.http://www.securityfocus.com/archive/1/530288/30/0/threaded
@@ -5024,7 +5096,7 @@ Reference: http://developer.android.com/guide/topics/manifest/application-elemen
 
         writer.startWriter(
             "SSL_X509", log_level,
-            u"[lab_067][OWASP-V5.1,V5.2,V5.3,V5.4][MAST-4.2.6][工-4.1.4.2.2, 4.1.4.2.3][CVE-2015-1816][M3] SSL證書的正確性檢查",
+            u"[AS-lab067][OWASP-V5.1,V5.2,V5.3,V5.4][MAST-4.2.6][工-4.1.4.2.2, 4.1.4.2.3][CVE-2015-1816][M3] SSL證書的正確性檢查",
             log_partial_prefix_msg + u"""
 這是一個嚴重的威脅會允許攻擊者在你不知道的狀況下使用中間人攻擊.
 如果你在傳送使用者的帳號或密碼等等的敏感性資料，這是有可能會洩漏的.
@@ -5189,7 +5261,7 @@ Please modify or remove any weaknesses in the program:""", ["SSL_Security"])
         
         writer.startWriter(
             "USER_Identification", log_level,
-            u"[lab_068][OWASP-V4.7,4.10,5.5][M4] 是否正確實作使用者生物辨識身分鑑別 (Biometric API)",
+            u"[AS-lab068][OWASP-V4.7,4.10,5.5][M4] 是否正確實作使用者生物辨識身分鑑別 (Biometric API)",
             log_partial_prefix_msg + u"""
 使用者身分鑑別是一種確保使用者身分的方法，透過使用者身分鑑別，可以確保使用者的身分，並且確保使用者的資料不會被其他人存取。
 使用者身分鑑別的方法有很多種，例如：密碼、生物識別、指紋、人臉辨識等等。
@@ -5218,9 +5290,378 @@ refer to:
     else:
         writer.startWriter(
             "USER_Identification", "INFO",
-            u"[lab_068][OWASP-V4.7,4.10,5.5][M4] 是否正確實作使用者生物辨識身分鑑別 (Biometric API)",
+            u"[AS-lab068][OWASP-V4.7,4.10,5.5][M4] 是否正確實作使用者生物辨識身分鑑別 (Biometric API)",
             u"未偵測到使用 Biometric API" + "||" + "No Biometric API used", ["user_Identification"])
     
+
+    #----------------------------------------------------------------
+    
+    # [lab_069] Detect Overlay Attack prevention (Tapjacking)
+    # Check if filterTouchesWhenObscured is set to true in AndroidManifest.xml
+    # This attribute prevents overlay attacks by ignoring touch events when the view is obscured
+
+    lab069Result = get_androguard('/lab_069')
+
+    if lab069Result and lab069Result.get('has_finding') == True:
+        print("Lab69 pass")
+    else:
+        print("Have Overlay Attack issue by the lab69")
+        # 可能存在 Overlay Attack (Tapjacking) 風險
+        writer.startWriter(
+            "OVERLAY_ATTACK_PREVENTION", LEVEL_WARNING,
+            u"[AS-lab069][MAS V4.0 4.1.5.1.3] Overlay Attack (Tapjacking) 防護檢測",
+            u"此 app 未偵測到設定 filterTouchesWhenObscured=\"true\"，可能存在 Overlay Attack (Tapjacking) 風險。建議在敏感 UI 元件中設定此屬性。\n 參考: https://developer.android.com/privacy-and-security/risks/tapjacking?hl=zh-tw#risk_full_occlusion " + "||" + \
+            u"This app does not have filterTouchesWhenObscured=\"true\" set. It may be vulnerable to Overlay Attack (Tapjacking). Consider setting this attribute on sensitive UI elements.\n refer to: https://developer.android.com/privacy-and-security/risks/tapjacking#risk_full_occlusion",
+            ["Overlay", "Tapjacking", "Security"])
+        writer.write(u"filterTouchesWhenObscured=\"true\" not found ! ")
+    
+    
+
+    #----------------------------------------------------------------
+
+    # [lab_070] 4.1.2.1.2 使用者拒絕蒐集敏感性資料之權利 — Runtime Permission 機制檢測
+    # 靜態驗證：有 dangerous permission 宣告時，是否實作 runtime request 及拒絕處理
+
+    lab070Result = get_androguard('/lab_070')
+
+    if lab070Result:
+        verdict = lab070Result.get('verdict', '')
+        dangerous_perms = lab070Result.get('dangerous_permissions', [])
+        perms_str = u", ".join(dangerous_perms) if dangerous_perms else u"(none)"
+
+        if verdict == 'FAIL':
+            writer.startWriter(
+                "SENSITIVE_DATA_REFUSAL_MECHANISM", LEVEL_CRITICAL,
+                u"[AS-lab070][MAS V4.0 4.1.2.1.2] 使用者拒絕蒐集敏感性資料之權利 — Runtime Permission 機制未實作",
+                u"App 宣告了 dangerous permission（" + perms_str + u"），但靜態掃描未發現任何 Runtime Permission Request 呼叫（requestPermissions / registerForActivityResult）。"
+                u"使用者無法行使拒絕權利，違反 4.1.2.1.2。\n"
+                u"建議實作 Android Runtime Permission 機制，並正確處理使用者拒絕的情境。\n"
+                u"參考: https://developer.android.com/training/permissions/requesting" + "||" +
+                u"App declares dangerous permission(s) (" + perms_str + u") but no Runtime Permission Request call was found (requestPermissions / registerForActivityResult). "
+                u"Users cannot exercise the right to refuse, violating 4.1.2.1.2.\n"
+                u"Implement Android Runtime Permission mechanism and handle the denied scenario properly.\n"
+                u"Refer to: https://developer.android.com/training/permissions/requesting",
+                ["Permission", "Privacy", "RuntimePermission"])
+            writer.write(u"Declared dangerous permissions: " + perms_str)
+
+        elif verdict == 'WARNING':
+            writer.startWriter(
+                "SENSITIVE_DATA_REFUSAL_MECHANISM", LEVEL_WARNING,
+                u"[AS-lab070][MAS V4.0 4.1.2.1.2] 使用者拒絕蒐集敏感性資料之權利 — 未確認拒絕情境處理",
+                u"App 已實作 Runtime Permission Request，但靜態掃描未在 onRequestPermissionsResult() 中發現明確的拒絕（DENIED）分支處理邏輯。"
+                u"建議確認拒絕後 App 能合理降級運作，而非強制要求或 crash。需搭配動態測試驗證。\n"
+                u"Declared dangerous permissions: " + perms_str + "||" +
+                u"App implements Runtime Permission Request, but no explicit denied-branch logic was detected in onRequestPermissionsResult(). "
+                u"Verify the app degrades gracefully after denial — dynamic testing required.\n"
+                u"Declared dangerous permissions: " + perms_str,
+                ["Permission", "Privacy", "RuntimePermission"])
+
+        # verdict == 'PASS' or 'INFO': 符合或無需檢測，不寫入 finding
+    else:
+        print("Lab070: androguard server returned no result, skipping")
+     # ------------------------------------------------------------------------
+    # [lab_071] - Debug log calls (Log.d / Log.v) in release build
+    result_lab071 = get_androguard('/lab_071')
+
+    if result_lab071 and isinstance(result_lab071, dict):
+        findings_071 = result_lab071.get('results', [])
+
+        if findings_071:
+            writer.startWriter(
+                "LAB_071_DEBUG_LOG", LEVEL_NOTICE,
+                u"[AS-lab071][4.1.2.3.16][MSTG-STORAGE-3] 系統日誌敏感資料洩漏檢查",
+                u"偵測到 App 使用 Log.d() 或 Log.v() 輸出除錯資訊，Release 版本不應保留這些呼叫。"
+                u" Ref: https://developer.android.com/privacy-and-security/risks/log-info-disclosure"
+                + "||" +
+                u"Debug log calls (Log.d / Log.v) detected. These should be removed before release."
+                u" Ref: https://developer.android.com/privacy-and-security/risks/log-info-disclosure",
+                ["Log", "Privacy"])
+            for item in findings_071:
+                writer.write(u"  {} -> {} [{}]".format(
+                    item.get('class', ''),
+                    item.get('method', ''),
+                    item.get('log_api', '')))
+    #-----------------------------------------------------------------------
+     # [lab_072] - Keyboard Cache Protection Check
+    result_lab072 = get_androguard('/lab_072')
+
+    if result_lab072 and isinstance(result_lab072, dict):
+        findings_072 = result_lab072.get('results', [])
+
+        if findings_072:
+            writer.startWriter(
+                "LAB_072_KEYBOARD_CACHE", LEVEL_WARNING,
+                u"[AS-lab072][4.1.2.3.11][MSTG-STORAGE-5] 鍵盤快取保護檢查",
+                u"偵測到敏感輸入欄位未設定 inputType 鍵盤快取保護，鍵盤可能會學習並快取使用者輸入的敏感資料（密碼、PIN、CVV 等）。"
+                u" Ref: https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0006/"
+                 + "||" +
+                u"Sensitive input fields detected without keyboard cache protection (inputType). "
+                u"The keyboard IME may cache user input including passwords, PINs, and CVV numbers."
+                u" Ref: https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0006/",
+                ["Privacy", "Storage"])
+            for item in findings_072:
+                writer.write(u"  [{}] {} | hint='{}' id='{}' | {}".format(
+                    item.get('severity', ''),
+                    item.get('file', ''),
+                    item.get('hint', ''),
+                    item.get('id', ''),
+                    item.get('description', '')))
+
+    #----------------------------------------------------------------
+
+    # [AS-lab073] - 4.1.2.3.14 — 備份資料不應存有敏感性資料
+    result_lab073 = get_androguard('/lab_073')
+
+    if result_lab073 and isinstance(result_lab073, dict):
+        if result_lab073.get('has_finding', False):
+            manifest   = result_lab073.get('manifest', {})
+            api_calls  = result_lab073.get('storage_api_calls', [])
+            api_count  = result_lab073.get('storage_api_count', 0)
+
+            allow_backup   = manifest.get('allow_backup', 'not set')
+            full_backup    = manifest.get('full_backup_content')
+            data_extract   = manifest.get('data_extraction_rules')
+            has_exclusion  = manifest.get('has_backup_exclusion', False)
+
+            writer.startWriter(
+                "LAB_073_BACKUP_SENSITIVE", LEVEL_NOTICE,
+                u"[AS-lab073][4.1.2.3.14][MASVS-STORAGE-2] 備份資料敏感性資料保護檢查",
+                u"偵測到 App 可能將敏感資料納入備份。android:allowBackup 為 true 或未設定，"
+                u"且程式碼中存在敏感儲存 API 呼叫或未設定備份排除規則。"
+                u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+                u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0262/"
+                + "||" +
+                u"App may include sensitive data in backups. android:allowBackup is true or not set, "
+                u"and sensitive storage API calls were found or no backup exclusion rules are configured."
+                u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+                u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0262/",
+                ["Backup", "Privacy"])
+
+            writer.write(u"[Manifest] allowBackup={}  fullBackupContent={}  dataExtractionRules={}  hasExclusionRules={}".format(
+                allow_backup,
+                full_backup  if full_backup  else "not set",
+                data_extract if data_extract else "not set",
+                has_exclusion))
+
+            if api_calls:
+                writer.write(u"[Sensitive Storage APIs] count={}".format(api_count))
+                for item in api_calls:
+                    writer.write(u"  {} -> {} [{}]".format(
+                        item.get('class', ''),
+                        item.get('method', ''),
+                        item.get('api', '')))
+
+    # ------------------------------------------------------------------------
+    # [AS-lab074] - 4.1.2.3.8 — 敏感性資料應避免出現於程式碼
+    result_lab074 = get_androguard('/lab_074')
+
+    if result_lab074 and isinstance(result_lab074, dict):
+        findings_074 = result_lab074.get('results', [])
+
+        if findings_074:
+            smali_findings = result_lab074.get('smali_findings', [])
+            xml_findings   = result_lab074.get('xml_findings', [])
+
+            writer.startWriter(
+                "LAB_074_HARDCODED_SECRET", LEVEL_CRITICAL,
+                u"[AS-lab074][4.1.2.3.8][MASVS-STORAGE-2] 程式碼中含有硬編碼敏感資料",
+                u"在 App 的 smali bytecode 或 XML 資源檔中偵測到疑似硬編碼的敏感字串（API Key、密碼、Token 等）。"
+                u"敏感資料不應直接寫在程式碼或資源檔中，應使用安全的金鑰管理機制。"
+                u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+                u" | https://developer.android.com/privacy-and-security/risks/hardcoded-cryptographic-secrets"
+                + "||" +
+                u"Hardcoded sensitive data (API keys, passwords, tokens) detected in bytecode or XML resources. "
+                u"Sensitive values must not be stored in source code or resource files. "
+                u"Use a secure key management solution instead. "
+                u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+                u" | https://developer.android.com/privacy-and-security/risks/hardcoded-cryptographic-secrets",
+                ["Hardcoded", "Privacy"])
+
+            if smali_findings:
+                writer.write(u"[Smali Bytecode findings: {}]".format(len(smali_findings)))
+                for item in smali_findings:
+                    cls    = item.get('class', '').replace('L', '', 1).replace(';', '').replace('/', '.')
+                    method = item.get('method', '')
+                    val    = item.get('string', '')[:50]
+                    reason = item.get('match_reason', '')
+                    writer.write(u"  {}.{}() : \"{}\"  [{}]".format(cls, method, val, reason))
+
+            if xml_findings:
+                writer.write(u"[XML Resource findings: {}]".format(len(xml_findings)))
+                for item in xml_findings:
+                    name   = item.get('resource_name', '')
+                    val    = item.get('value', '')[:50]
+                    reason = item.get('match_reason', '')
+                    writer.write(u"  name=\"{}\"  value=\"{}\"  [{}]".format(name, val, reason))
+
+    # [lab_075] 4.1.2.3.10 — 敏感性資料應儲存於系統憑證儲存設施
+    result_lab075 = get_androguard('/lab_075')
+
+    if result_lab075 and isinstance(result_lab075, dict) and result_lab075.get('has_finding'):
+        verdict_075    = result_lab075.get('verdict', 'WARNING')
+        insecure_075   = result_lab075.get('insecure_list', [])
+        no_keystore_075 = result_lab075.get('no_keystore', False)
+        level_075      = LEVEL_CRITICAL if verdict_075 == 'CRITICAL' else LEVEL_NOTICE
+
+        DISCLAIMER_ZH = (
+            u"[!] 靜態分析限制：(1) 僅確認 KeyStore.getInstance() 參數，無法驗證金鑰保護參數是否正確設定。"
+            u"(2) 第三方加密函式庫（如 Tink、EncryptedSharedPreferences）可能已內部使用 AndroidKeyStore，"
+            u"從 smali 層不易辨識，可能產生誤判。(3) 建議搭配動態分析確認金鑰實際儲存位置及保護強度。"
+            u" Ref: https://developer.android.com/training/articles/keystore"
+            u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0051/"
+        )
+        DISCLAIMER_EN = (
+            u"[!] Static analysis limitations: (1) Only KeyStore.getInstance() arguments are verified; "
+            u"key protection parameters (e.g. KeyGenParameterSpec) are not checked. "
+            u"(2) Third-party libraries (e.g. Tink, EncryptedSharedPreferences) may internally use AndroidKeyStore "
+            u"but are hard to identify at smali level, which may produce false positives. "
+            u"(3) Dynamic analysis is recommended to confirm actual key storage and protection strength."
+            u" Ref: https://developer.android.com/training/articles/keystore"
+            u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0051/"
+        )
+
+        if no_keystore_075:
+            title_075 = (
+                u"未偵測到任何 KeyStore API 呼叫，請人工確認敏感金鑰儲存方式。"
+                + DISCLAIMER_ZH
+                + u"||"
+                + u"No KeyStore API call detected; manual review recommended for sensitive key storage. "
+                + DISCLAIMER_EN
+            )
+        elif verdict_075 == 'CRITICAL':
+            providers = u", ".join(sorted(set(i.get('provider', 'unknown') for i in insecure_075)))
+            title_075 = (
+                u"未使用 Android 系統憑證儲存設施(AndroidKeyStore)，"
+                u"金鑰可能以不安全方式儲存 (provider: %s)。" % providers
+                + DISCLAIMER_ZH
+                + u"||"
+                + u"Sensitive key not stored in AndroidKeyStore; insecure provider(s) detected: %s. " % providers
+                + DISCLAIMER_EN
+            )
+        else:
+            providers = u", ".join(sorted(set(i.get('provider', 'unknown') for i in insecure_075)))
+            title_075 = (
+                u"部分金鑰未使用 AndroidKeyStore，混用不安全的憑證儲存方式 (provider: %s)。" % providers
+                + DISCLAIMER_ZH
+                + u"||"
+                + u"Mixed KeyStore usage detected; some keys use insecure provider(s): %s. " % providers
+                + DISCLAIMER_EN
+            )
+
+        writer.startWriter(
+            "LAB_075_KEYSTORE_SYSTEM_STORAGE", level_075,
+            u"[AS-lab075][MAS-4.1.2.3.10][MASVS-STORAGE-1] 敏感性資料應儲存於系統憑證儲存設施",
+            title_075,
+            ["KeyStore", "Storage"]
+        )
+
+        for item in insecure_075:
+            cls      = item.get('class', '').replace('L', '', 1).replace(';', '').replace('/', '.')
+            method   = item.get('method', '')
+            provider = item.get('provider', 'unknown')
+            writer.write(u"  %s.%s()  [provider: %s]" % (cls, method, provider))
+
+    # [lab_076] - Deep Link Security (manifest scheme / autoVerify / host)
+    result_lab076 = get_androguard('/lab_076')
+
+    if result_lab076 and isinstance(result_lab076, dict) and result_lab076.get('has_finding'):
+        findings_076 = result_lab076.get('results', [])
+        has_high_076 = any(
+            sev == 'HIGH'
+            for entry in findings_076
+            for sev, _ in entry.get('risks', [])
+        )
+        level_076 = LEVEL_CRITICAL if has_high_076 else LEVEL_WARNING
+
+        writer.startWriter(
+            "LAB_076_DEEP_LINK_SECURITY", level_076,
+            u"[AS-lab076][MASVS-PLATFORM-3][CWE-939] Deep Link 安全檢查",
+            u"偵測到 Deep Link intent-filter 設定風險:"
+            u"(1) HTTP scheme 易遭 MITM "
+            u"(2) http(s) App Link 缺 autoVerify=\"true\",其他 App 可註冊同 host 攔截 "
+            u"(3) 自訂 scheme 未限制 host,任何 App 可註冊同 scheme。"
+            u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw"
+            u" | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/"
+            + "||" +
+            u"Deep link intent-filter risks detected: "
+            u"(1) http scheme exposed to MITM "
+            u"(2) http(s) App Link missing autoVerify=\"true\" — other apps may intercept "
+            u"(3) Custom scheme without host restriction — scheme hijack possible."
+            u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks"
+            u" | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/",
+            ["DeepLink", "IntentFilter"]
+        )
+
+        for e in findings_076:
+            uri_str = "{}://{}".format(e.get('scheme', ''), e.get('host', '') or '*')
+            for sev, msg in e.get('risks', []):
+                writer.write(u"  [{}] {} -> {}  ({})".format(
+                    sev, e.get('activity', ''), uri_str, msg))
+
+    # [lab_077] - Deep Link Injection (source -> sink in same method, heuristic)
+    result_lab077 = get_androguard('/lab_077')
+
+    if result_lab077 and isinstance(result_lab077, dict) and result_lab077.get('has_finding'):
+        findings_077 = result_lab077.get('results', [])
+
+        writer.startWriter(
+            "LAB_077_DEEP_LINK_INJECTION", LEVEL_CRITICAL,
+            u"[AS-lab077][MASVS-PLATFORM-3][CWE-20] Deep Link Injection 檢查",
+            u"在 Deep Link Activity 的 method 中,同時偵測到 deep link 參數來源"
+            u"(getData / getQueryParameter / getPath 等) 與危險 sink"
+            u"(WebView.loadUrl / Intent.parseUri / File / SQL / Runtime.exec)。"
+            u"代表 Deep Link 帶入的 URI 參數可能未經驗證即流向敏感操作。"
+            u"本檢查為「同 method 啟發式」,無 taint 追蹤,可能誤報,需人工確認資料流。"
+            u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw"
+            + "||" +
+            u"In a deep link Activity method, a deep link source (getData / getQueryParameter / getPath etc.) "
+            u"is detected together with a dangerous sink (WebView.loadUrl / Intent.parseUri / File / SQL / Runtime.exec). "
+            u"A URI parameter from a deep link may flow unsanitized into a sensitive operation. "
+            u"Same-method heuristic only — no taint tracking. Manual review required to confirm actual data flow."
+            u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks",
+            ["DeepLink", "Injection"]
+        )
+
+        for f in findings_077:
+            cls = f.get('class', '')
+            if cls.startswith('L') and cls.endswith(';'):
+                cls = cls[1:-1].replace('/', '.')
+            writer.write(u"  [{}] {}.{}() -> {} ({})  sources: {}".format(
+                f.get('severity', ''), cls, f.get('method', ''),
+                f.get('sink', ''), f.get('risk', ''),
+                ", ".join(f.get('sources', []))))
+
+    # [lab_078] - 4.1.5.1.2 ZIP Path Traversal (ZipSlip) 檢查
+    result_lab078 = get_androguard('/lab_078')
+
+    if result_lab078 and isinstance(result_lab078, dict) and result_lab078.get('has_finding'):
+        findings_078 = result_lab078.get('findings', [])
+
+        writer.startWriter(
+            "LAB_078_ZIP_PATH_TRAVERSAL", LEVEL_CRITICAL,
+            u"[AS-lab078][MAS-4.1.5.1.2][MASVS-CODE-4][CWE-22] ZIP Path Traversal (ZipSlip) 漏洞檢查",
+            u"偵測到 App 解壓縮 ZIP 檔案時,使用 ZipEntry.getName() 取得檔名後直接以 new File(...) 建立目標路徑,"
+            u"未在同一 method 內呼叫 getCanonicalPath() 或檢查 \"..\" 路徑穿越字串。"
+            u"惡意 ZIP 可包含 ../ 序列將檔案寫入 App 沙箱外的任意位置(甚至覆蓋 .so 函式庫造成 RCE)。"
+            u"經典案例: Google Play Core CVE-2020-8913。"
+            u"修補建議: 解壓前以 destDir.getCanonicalPath() 比對 outputFile.getCanonicalPath().startsWith(...)。"
+            u" Ref: https://developer.android.com/privacy-and-security/risks/zip-path-traversal"
+            + "||" +
+            u"App extracts ZIP entries using ZipEntry.getName() and constructs new File(...) without validating "
+            u"the resolved path against the target directory (no getCanonicalPath() check or \"..\" string check "
+            u"detected in the same method). A malicious ZIP can use ../ sequences to write files outside the app "
+            u"sandbox, potentially overwriting native libraries and achieving RCE. Reference case: Google Play "
+            u"Core CVE-2020-8913. Mitigation: verify outputFile.getCanonicalPath().startsWith(destDir.getCanonicalPath())."
+            u" Ref: https://developer.android.com/privacy-and-security/risks/zip-path-traversal",
+            ["ZipSlip", "PathTraversal"]
+        )
+
+        for f in findings_078:
+            cls = f.get('class', '')
+            if cls.startswith('L') and cls.endswith(';'):
+                cls = cls[1:-1].replace('/', '.')
+            writer.write(u"  %s.%s()  [missing: %s]" % (
+                cls, f.get('method', ''), f.get('missing_check', '')))
 
     #----------------------------------------------------------------
     # [Completed] - Must complete the last writer
@@ -5247,6 +5688,7 @@ refer to:
 
     writer.update_analyze_status("success")
     writer.writeInf_ForceNoPrint("time_finish_analyze", datetime.utcnow())
+
 
 def __persist_db(writer, args):
 
@@ -5309,10 +5751,9 @@ def __persist_db(writer, args):
             inserted_app_id = collection_AppInfo.insert(
                 packed_analyzed_results, check_keys=False)
             # print("* Result page: http://127.0.0.1/report/" + str(inserted_app_id) + ' ' + DYLANPACKAGENAME)
-            dylan = open('/out/result.txt', 'a+')
-            dylan.write("./report/" + str(inserted_app_id) + ' ' +
-                        DYLANPACKAGENAME + '\n')
-            dylan.readline()
+            with open('/out/result.txt', 'a') as dylan:
+                dylan.write("./report/" + str(inserted_app_id) + ' ' +
+                            DYLANPACKAGENAME + '\n')
 
             if analyze_status == "success":  # save analyze result only when successful
                 collection_AnalyzeSuccessResults = db[Collection_Analyze_Success_Results]
@@ -5321,7 +5762,7 @@ def __persist_db(writer, args):
                 collection_AnalyzeSuccessResultsFastSearch = db[Collection_Analyze_Success_Results_FastSearch]
                 collection_AnalyzeSuccessResultsFastSearch.insert(packed_analyzed_results_fast_search)
 
-        if (analyze_status == "fail"):
+        if analyze_status == "fail":
             # Name is case-sensitive
             collection_AnalyzeExceptions = db[Collection_Analyze_Fail_Results]
             collection_AnalyzeExceptions.insert(writer.getInf())
@@ -5357,45 +5798,43 @@ def __persist_db(writer, args):
                 traceback.print_exc()
 
 
+def _make_signature_hash(writer, first_key, first_default):
+    # signature = hash(first_key(default) + "-" + file_sha256(default="") + "-" + timestamp + "-" + random8)
+    tmp_original = (writer.getInf(first_key, first_default) + "-" +
+                    writer.getInf("file_sha256", "sha256") + "-" +
+                    str(time.time()) + "-" +
+                    str(random.randrange(10000000, 99999999)))
+    return hashlib.sha512(tmp_original).hexdigest()
+
+
 def get_hash_scanning(writer):
-    # signature = hash(package_name(default="") + "-" + file_sha256(default="") + "-" + timestamp_long + "-" + random_number_length8)
-    # use "-" because aaa-bbb.com is not a valid domain name
-    tmp_original = writer.getInf("package_name", "pkg") + "-" + writer.getInf(
-        "file_sha256", "sha256") + "-" + str(time.time()) + "-" + str(
-            random.randrange(10000000, 99999999))
-    tmp_hash = hashlib.sha512(tmp_original).hexdigest()
-    return tmp_hash
+    return _make_signature_hash(writer, "package_name", "pkg")
 
 
 def get_hash_exception(writer):
-    # signature = hash(analyze_error_id(default="") + "-" + file_sha256(default="") + "-" + timestamp_long + "-" + random_number_length8)
-    tmp_original = writer.getInf(
-        "analyze_error_id", "err") + "-" + writer.getInf(
-            "file_sha256", "sha256") + "-" + str(time.time()) + "-" + str(
-                random.randrange(10000000, 99999999))
-    tmp_hash = hashlib.sha512(tmp_original).hexdigest()
-    return tmp_hash
+    return _make_signature_hash(writer, "analyze_error_id", "err")
 
 
-def __persist_file(writer, args):
-    package_name = writer.getInf("package_name")
-    signature_unique_analyze = writer.getInf("signature_unique_analyze")
-    if package_name and signature_unique_analyze:
-        return writer.save_result_to_file(
-            os.path.join(
-                args.report_output_dir,
-                package_name + "_" + signature_unique_analyze + ".txt"), args)
-    else:
-        print("\"package_name\" or \"signature_unique_analyze\" not exist.")
-        return False
+# def __persist_file(writer, args):
+
+#     package_name = writer.getInf("package_name")
+#     signature_unique_analyze = writer.getInf("signature_unique_analyze")
+
+#     if package_name and signature_unique_analyze:
+#         return writer.save_result_to_file(
+#             os.path.join(
+#                 args.report_output_dir,
+#                 package_name + "_" + signature_unique_analyze + ".txt"), args)
+#     else:
+#         print("\"package_name\" or \"signature_unique_analyze\" not exist.")
+#         return False
 
 
 def main():
 
-    print("[DEBUG] main function started")
     args = parseArgument()
 
-    writer = Writer()
+    writer = Writer(excluded_labs=EXCLUDED_LABS)
 
     try:
 
@@ -5407,8 +5846,6 @@ def main():
         #**               contact: androbugs.framework@gmail.com                **
         #*************************************************************************""")
 
-        # Analyze
-        print("[DEBUG] About to call __analyze function")
         __analyze(writer, args)
 
         analyze_signature = get_hash_scanning(writer)
@@ -5489,22 +5926,17 @@ def main():
             traceback.print_exc()
 
     # Save to the DB
-    # __persist_db(writer, args)
+    __persist_db(writer, args)
     # Save to the File
-    # md5, sha1, sha256, sha512 = get_hashes_by_filename(args.apk_file)
     # __persist_file(writer, args)
     # show json
-
     merge_dict_tw, merge_dict_en = writer.get_json()
-
     # generate pdf
     generate_pdf_state = writer.generate_pdf(args, merge_dict_tw, merge_dict_en)
-    f = open("./maldroid.state",'w')
-    if generate_pdf_state:
-        f.write("success")
-    else:
-        f.write("fail")
-        
+    # Write state to the Frida dir (not CWD='/') so webapp.py's monitor reads it
+    _frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(_frida_dir, "maldroid.state"), 'w') as f:
+        f.write("success" if generate_pdf_state else "fail")
     print("generate_pdf_state: " + str(generate_pdf_state))
 
 

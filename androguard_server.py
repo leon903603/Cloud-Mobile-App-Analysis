@@ -2272,6 +2272,84 @@ def run_androguard_server(port: int, apk_path: str):
         }), 200
 
 
+    @app.route('/androguard/lab_063', methods=['GET'])
+    def detect_lab_063():
+        """
+        MAS 4.1.2.3.5 / MASVS-STORAGE-2 / OWASP Mobile 2024 M9
+
+        Detects File.delete() calls co-located with a sensitive keyword
+        string (password/token/secret, etc.) in the same method.
+
+        Severity:
+          NOTICE - delete() co-located with a sensitive keyword string in
+                   the same method (plausible unsafe cleanup of sensitive
+                   data)
+          (a bare delete() with no co-located sensitive keyword is silently
+           ignored)
+        """
+        SENSITIVE_KEYWORDS = [
+            "password", "passwd", "secret", "api_key", "apikey",
+            "token", "credential", "auth_token", "access_key",
+            "private_key", "client_secret", "bearer", "authorization",
+        ]
+
+        DELETE_SINK = "Ljava/io/File;->delete("
+        INVOKE_OPS  = {0x6e, 0x6f, 0x70, 0x71, 0x72, 0x74, 0x75, 0x76, 0x77, 0x78}
+
+        def keyword_hit(text):
+            lower = text.lower()
+            for kw in SENSITIVE_KEYWORDS:
+                if kw in lower:
+                    return kw
+            return None
+
+        findings = []
+
+        for class_name, method_analysis, method in iter_app_methods(dx):
+            try:
+                instructions = list(method.get_instructions())
+            except Exception:
+                continue
+
+            method_name = method.get_name()
+
+            has_delete     = False
+            local_keywords = []
+
+            for ins in instructions:
+                try:
+                    op = ins.get_op_value()
+
+                    if op in [0x1A, 0x1B]:
+                        s = ins.get_string()
+                        if s and len(s) >= 4:
+                            kw = keyword_hit(s)
+                            if kw:
+                                local_keywords.append(kw)
+                        continue
+
+                    if op in INVOKE_OPS:
+                        out = ins.get_output() if hasattr(ins, 'get_output') else ''
+                        if DELETE_SINK in out:
+                            has_delete = True
+                except Exception:
+                    continue
+
+            if has_delete and local_keywords:
+                findings.append({
+                    "class":    class_name,
+                    "method":   method_name,
+                    "severity": "NOTICE",
+                })
+
+        return jsonify({
+            "has_finding": len(findings) > 0,
+            "count":       len(findings),
+            "results":     findings,
+            "lab_id":      "lab_063",
+            "description": "Unsafe deletion of files that plausibly hold sensitive data (same-method keyword correlation)"
+        }), 200
+
     #4.1.2.3.12 
     @app.route('/androguard/lab_076', methods=['GET'])
     def detect_lab_076():
@@ -3558,6 +3636,176 @@ def run_androguard_server(port: int, apk_path: str):
             "warning":     warning,
             "count":       len(findings),
             "lab_id":      "lab_080",
+        }), 200
+
+    @app.route('/androguard/lab_081', methods=['GET'])
+    def detect_lab_081():
+        """
+        4.1.5.4.1 使用者輸入驗證 (型別/長度)
+
+        掃 res/layout* 的 EditText/AutoCompleteTextView, 檢查 inputType (型別)
+        跟 maxLength (長度, 只查密碼/敏感欄位)。
+
+        WARNING = 敏感欄位缺型別或長度限制; NOTICE = 一般欄位缺型別限制。
+        只查得到 layout XML 宣告, 程式碼裡的 InputFilter 跟 Compose UI 掃不到。
+        """
+        try:
+            from androguard.core.axml import AXMLPrinter        # androguard 4.x
+        except ImportError:
+            from androguard.core.bytecodes.axml import AXMLPrinter  # androguard 3.x
+        import xml.etree.ElementTree as ET
+
+        ANDROID_NS = '{http://schemas.android.com/apk/res/android}'
+
+        # 敏感欄位命名關鍵字 (與 lab_072 同一套)
+        SENSITIVE_RE = re.compile(
+            r'(password|passwd|pwd|pin\b|cvv|cvc|ssn|credit.?card|card.?num|'
+            r'otp|token|secret|auth.?code|account.?num)',
+            re.IGNORECASE
+        )
+
+        # inputType 在編譯後的 layout 是位元遮罩整數, 以下對照表用來還原成 XML 原本的寫法
+        # (對照 Android TextView 文件的 android:inputType 取值)
+        TYPE_MASK_CLASS     = 0x0000000f
+        TYPE_MASK_VARIATION = 0x00000ff0
+        TYPE_CLASS_TEXT     = 0x01
+        TYPE_CLASS_NUMBER   = 0x02
+        TYPE_CLASS_PHONE    = 0x03
+        TYPE_CLASS_DATETIME = 0x04
+        TEXT_VARIATIONS = {
+            0x00: 'text',                0x10: 'textUri',
+            0x20: 'textEmailAddress',    0x30: 'textEmailSubject',
+            0x40: 'textShortMessage',    0x50: 'textLongMessage',
+            0x60: 'textPersonName',      0x70: 'textPostalAddress',
+            0x80: 'textPassword',        0x90: 'textVisiblePassword',
+            0xa0: 'textWebEditText',     0xb0: 'textFilter',
+            0xc0: 'textPhonetic',        0xd0: 'textWebEmailAddress',
+            0xe0: 'textWebPassword',
+        }
+        NUMBER_VARIATIONS   = {0x00: 'number', 0x10: 'numberPassword'}
+        DATETIME_VARIATIONS = {0x00: 'datetime', 0x10: 'date', 0x20: 'time'}
+        TEXT_FLAGS = [
+            (0x001000, 'textCapCharacters'), (0x002000, 'textCapWords'),
+            (0x004000, 'textCapSentences'),  (0x008000, 'textAutoCorrect'),
+            (0x010000, 'textAutoComplete'),  (0x020000, 'textMultiLine'),
+            (0x040000, 'textImeMultiLine'),  (0x080000, 'textNoSuggestions'),
+        ]
+        NUMBER_FLAGS = [(0x001000, 'numberSigned'), (0x002000, 'numberDecimal')]
+
+        def describe_input_type(raw_val):
+            """位元遮罩還原成 XML 寫法 (0x81 -> "textPassword"), 供報告顯示與密碼欄位判斷"""
+            if raw_val is None:
+                return None
+            try:
+                v = int(raw_val, 0) if isinstance(raw_val, str) else int(raw_val)
+            except (ValueError, TypeError):
+                return str(raw_val)
+
+            input_class = v & TYPE_MASK_CLASS
+            variation   = v & TYPE_MASK_VARIATION
+            parts       = []
+
+            if input_class == TYPE_CLASS_TEXT:
+                parts.append(TEXT_VARIATIONS.get(variation, 'text'))
+                parts += [n for bit, n in TEXT_FLAGS if v & bit]
+            elif input_class == TYPE_CLASS_NUMBER:
+                parts.append(NUMBER_VARIATIONS.get(variation, 'number'))
+                parts += [n for bit, n in NUMBER_FLAGS if v & bit]
+            elif input_class == TYPE_CLASS_PHONE:
+                parts.append('phone')
+            elif input_class == TYPE_CLASS_DATETIME:
+                parts.append(DATETIME_VARIATIONS.get(variation, 'datetime'))
+            elif input_class == 0x00:
+                parts.append('none')
+            else:
+                return '0x%08x' % v
+
+            # 變體是預設值又帶旗標時省略基底名 — XML 寫的是 "numberDecimal" 而非 "number|numberDecimal"
+            if len(parts) > 1 and variation == 0x00 and parts[0] in ('text', 'number'):
+                parts = parts[1:]
+
+            return '|'.join(parts)
+
+        def is_password_field(raw_val):
+            # textPassword / textVisiblePassword / textWebPassword / numberPassword
+            return 'Password' in (describe_input_type(raw_val) or '')
+
+        def is_edittext_tag(tag):
+            # 完整類別名只取簡名; AutoCompleteTextView 系列是 EditText 的子類別, 一併納入
+            simple_name = (tag.split('}')[-1] if '}' in tag else tag).split('.')[-1]
+            return simple_name.endswith(('EditText', 'AutoCompleteTextView'))
+
+        def make_field_label(hint_val, id_val, ordinal):
+            """欄位定位標籤, 依可讀性取 hint > id > 元素出現順序"""
+            if hint_val and not hint_val.startswith('@'):
+                return 'hint="%s"' % hint_val
+            if id_val:
+                return 'id=%s' % id_val
+            return 'field #%d' % ordinal
+
+        # 註: findings 內會被印進報告 Detail 的字串一律用英文 —— 中文版與英文版報告
+        # 共用同一份 vector_details, 寫中文會導致英文版報告也印出中文。
+        findings     = []
+        layout_files = [f for f in a.get_files() if f.endswith('.xml')
+                        and (f.startswith('res/layout/') or f.startswith('res/layout-'))]
+        total_fields = 0
+
+        for layout_file in layout_files:
+            try:
+                root = ET.fromstring(AXMLPrinter(a.get_file(layout_file)).get_buff())
+            except Exception:
+                continue
+
+            field_ordinal = 0          # 該 layout 檔內第幾個輸入欄位 (供無 hint/id 時定位)
+            for elem in root.iter():
+                if not is_edittext_tag(elem.tag):
+                    continue
+
+                total_fields  += 1
+                field_ordinal += 1
+
+                hint       = elem.get(ANDROID_NS + 'hint', '')
+                elem_id    = elem.get(ANDROID_NS + 'id', '')
+                input_type = elem.get(ANDROID_NS + 'inputType')
+                max_length = elem.get(ANDROID_NS + 'maxLength')
+
+                is_sensitive = (is_password_field(input_type)
+                                or bool(SENSITIVE_RE.search(hint + ' ' + elem_id)))
+
+                missing = []
+                if input_type is None:
+                    missing.append("inputType (type constraint)")
+                if max_length is None and is_sensitive:
+                    missing.append("maxLength (length constraint)")
+
+                if not missing:
+                    continue   # 應檢查的限制皆已宣告 -> 視為符合
+
+                findings.append({
+                    "file":        layout_file,
+                    "tag":         (elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag).split('.')[-1],
+                    "hint":        hint,
+                    "id":          elem_id,
+                    "field_label": make_field_label(hint, elem_id, field_ordinal),
+                    "input_type":  input_type,
+                    "input_type_readable": describe_input_type(input_type),
+                    "max_length":  max_length,
+                    "missing":     missing,
+                    "severity":    "WARNING" if is_sensitive else "NOTICE",
+                })
+
+        return jsonify({
+            "has_finding":        len(findings) > 0,
+            "count":              len(findings),
+            "results":            findings,
+            "warning":            [f for f in findings if f["severity"] == "WARNING"],
+            "notice":             [f for f in findings if f["severity"] == "NOTICE"],
+            "total_input_fields": total_fields,
+            "scanned_layouts":    len(layout_files),
+            # 完全沒有字串輸入介面 -> 依官方檢測結果規定視為符合
+            "no_input_interface": total_fields == 0,
+            "lab_id":             "lab_081",
+            "description":        "User input validation: EditText fields missing inputType (type) or maxLength (length) constraints"
         }), 200
 
     # 4.1.2.3.7 — WebView advanced configuration audit (complements lab_034)
