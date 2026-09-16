@@ -222,19 +222,37 @@ def run_androguard_server(port: int, apk_path: str):
             if not file_hash:
                 return jsonify({"error": "No hash parameter provided"}), 400
 
-            filename = f"{file_hash}_static.json"
+            lang = request.args.get("lang", "en")
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            candidate_paths = [
-                os.path.join("./Reports", filename),
-                os.path.join(base_dir, "Reports", filename),
-                os.path.join("/app/Frida/maldroid/Reports", filename),
-                os.path.join("/app/Frida/Reports", filename),
-                os.path.join("./Reports", f"{file_hash}.json"),
-                os.path.join("/app/Frida", "test_zh.json"),
-                os.path.join(base_dir, "..", "test_zh.json"),
-                "./test_zh.json",
-                "/test_zh.json"
-            ]
+
+            if lang in ("zh", "zh-TW"):
+                candidate_paths = [
+                    os.path.join("./Reports", f"{file_hash}_static_zh.json"),
+                    os.path.join(base_dir, "Reports", f"{file_hash}_static_zh.json"),
+                    os.path.join("/app/Frida/maldroid/Reports", f"{file_hash}_static_zh.json"),
+                    os.path.join("/app/Frida/Reports", f"{file_hash}_static_zh.json"),
+                    os.path.join("/app/Frida", "test_zh.json"),
+                    os.path.join(base_dir, "..", "test_zh.json"),
+                    "./test_zh.json",
+                    "/test_zh.json"
+                ]
+            else:
+                filename = f"{file_hash}_static.json"
+                candidate_paths = [
+                    os.path.join("./Reports", filename),
+                    os.path.join(base_dir, "Reports", filename),
+                    os.path.join("/app/Frida/maldroid/Reports", filename),
+                    os.path.join("/app/Frida/Reports", filename),
+                    os.path.join("./Reports", f"{file_hash}.json"),
+                    os.path.join("/app/Frida", "test.json"),
+                    os.path.join(base_dir, "..", "test.json"),
+                    "./test.json",
+                    "/test.json",
+                    os.path.join("/app/Frida", "test_zh.json"),
+                    os.path.join(base_dir, "..", "test_zh.json"),
+                    "./test_zh.json",
+                    "/test_zh.json"
+                ]
 
             file_path = None
             for p in candidate_paths:

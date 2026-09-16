@@ -57,7 +57,9 @@ def analyze_apk(self, file_bytes_b64: str, filename: str, file_hash: str, s3_key
     update(4, 4, "Pre-generating PDF report")
     if s3_key:
         try:
-            log.info("[%s] Requesting PDF generation from %s...", job_id, PDF_API)
+            # Explicitly ensure English locale for official PDF report
+            report_data["lang"] = "en"
+            log.info("[%s] Requesting PDF generation from %s (lang=en)...", job_id, PDF_API)
             pdf_resp = requests.post(PDF_API, json=report_data, timeout=90)
             if pdf_resp.status_code == 200:
                 pdf_bytes = pdf_resp.content

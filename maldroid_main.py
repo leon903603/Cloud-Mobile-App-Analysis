@@ -968,10 +968,17 @@ class Writer:
                                 os.makedirs(r_dir)
                             except:
                                 pass
+                        # Default static report to English for international SaaS & English PDF generation
                         cmaa_json_path = os.path.join(r_dir, "{}_static.json".format(sha256))
                         with open(cmaa_json_path, 'w') as outfile:
+                            json.dump(merge_dict_en, outfile)
+                        print("Created CMAA JSON report (en): {}".format(cmaa_json_path))
+
+                        # Also save Chinese version with _zh suffix for reference/localization
+                        cmaa_zh_json_path = os.path.join(r_dir, "{}_static_zh.json".format(sha256))
+                        with open(cmaa_zh_json_path, 'w') as outfile:
                             json.dump(merge_dict_tw, outfile)
-                        print("Created CMAA JSON report: {}".format(cmaa_json_path))
+                        print("Created CMAA JSON report (zh): {}".format(cmaa_zh_json_path))
             except Exception as e:
                 print("Failed to create CMAA JSON report: {}".format(e))
 
