@@ -433,14 +433,22 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
               {/* Set expectations before the upload is paid for, not after */}
               {analysisType === "static" && <PackedApkNotice />}
               {analysisType === "dynamic" && (
-                <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-300">
-                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                  <div className="space-y-1">
-                    <p className="font-semibold text-amber-200">
-                      ⏱️ 雲端沙箱需 8~10 分鐘進行冷開機與 Frida 深度採樣
-                    </p>
-                    <p className="text-amber-300/90 leading-relaxed">
-                      <b>支援全自動離線取件</b>：啟動分析後伺服器將於雲端背景全自動執行，檢測完成後自動關機。您可以隨時關閉視窗，稍後返回即可在「Analysis History」下載報告。
+                <div className="space-y-2.5">
+                  <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-300">
+                    <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-amber-200">
+                        Dynamic Analysis: Est. 8 ~ 10 minutes
+                      </p>
+                      <p className="text-amber-300/90 leading-relaxed">
+                        <b>Offline pickup supported</b>: The dedicated ARM64 sandbox powers on, runs Frida runtime sampling, and safely powers off in the cloud background. You can close this window and retrieve your report anytime from Analysis History.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5 rounded-xl border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="leading-relaxed">
+                      <b>SMS OTP / 2FA Note</b>: Automated sandboxes cannot bypass SMS verification codes, 2FA, or biometric prompts. If your app requires OTP to enter main screens, please <a href="mailto:support@cmaa.io" className="text-primary underline font-medium">contact our team</a> for dedicated concierge assisted testing.
                     </p>
                   </div>
                 </div>

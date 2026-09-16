@@ -367,17 +367,17 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
   const formatStatus = (status: string) => {
     switch (status) {
       case "starting_sandbox":
-        return "Starting Sandbox (喚醒雲端沙箱中...)";
+        return "Starting Sandbox (Waking cloud sandbox...)";
       case "analyzing":
-        return "Analyzing (執行期檢測與採樣中...)";
+        return "Analyzing (Runtime detection & sampling...)";
       case "generating_report":
-        return "Generating Report (產出動態報告中...)";
+        return "Generating Report (Compiling dynamic report...)";
       case "done":
-        return "Done (分析完成)";
+        return "Done";
       case "pending":
-        return "Pending (待分析)";
+        return "Pending";
       case "error":
-        return "Error (分析失敗)";
+        return "Error";
       default:
         return status.charAt(0).toUpperCase() + status.slice(1);
     }
@@ -460,10 +460,10 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                         <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-300">
                           <div className="flex items-center gap-2 font-medium">
                             <Clock className="h-4 w-4 text-indigo-400 shrink-0" />
-                            <span>雲端沙箱正在背景全自動運作中（預估需 8~10 分鐘）</span>
+                            <span>Cloud sandbox is executing in background (Est. 8~10 minutes)</span>
                           </div>
                           <p className="mt-1 text-muted-foreground leading-relaxed">
-                            支援離線取件：您可以放心關閉或離開此網頁。雲端沙箱採樣完畢後會自動安全關機並留存報告，隨時回來皆可下載。
+                            Offline pickup supported: You can safely close or navigate away from this page. The cloud sandbox will automatically power off upon completion, and your report will be saved for download.
                           </p>
                         </div>
                       )}
@@ -501,7 +501,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                             <>
                               <Button size="sm" onClick={() => handleReportGeneration(upload)}>
                                 <FileText className="mr-1.5 h-4 w-4" />
-                                下載靜態 36 頁報告 (PDF)
+                                Download Static Report (PDF, 36 Pages)
                               </Button>
                               {uploads.find(
                                 (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
@@ -518,7 +518,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                   }}
                                 >
                                   <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
-                                  下載動態報告 (PDF)
+                                  Download Dynamic Report (PDF)
                                 </Button>
                               )}
                             </>
@@ -530,7 +530,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                 onClick={() => handleReportGeneration(upload)}
                               >
                                 <FileText className="mr-1.5 h-4 w-4" />
-                                下載動態執行期報告 (PDF)
+                                Download Dynamic Runtime Report (PDF)
                               </Button>
                               {uploads.find(
                                 (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
@@ -546,7 +546,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                   }}
                                 >
                                   <FileText className="mr-1.5 h-4 w-4" />
-                                  下載靜態 36 頁報告 (PDF)
+                                  Download Static Report (PDF, 36 Pages)
                                 </Button>
                               )}
                             </>
