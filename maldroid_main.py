@@ -5925,8 +5925,12 @@ def main():
         if DEBUG:
             traceback.print_exc()
 
-    # Save to the DB
-    __persist_db(writer, args)
+    # Save to the DB (optional, only if Dy-db.cfg exists)
+    try:
+        __persist_db(writer, args)
+    except Exception as e:
+        if DEBUG:
+            print("[INFO] DB persistence skipped: %s" % e)
     # Save to the File
     # __persist_file(writer, args)
     # show json
