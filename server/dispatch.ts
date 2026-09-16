@@ -5,6 +5,12 @@ import { FileMeta } from "./models/FileMeta";
 import { DynamicCredentials } from "./models/DynamicCredentials";
 import { downloadToTemp, putJson } from "./s3";
 import crypto from "crypto";
+import {
+  EC2Client,
+  StartInstancesCommand,
+  StopInstancesCommand,
+  waitUntilInstanceRunning,
+} from "@aws-sdk/client-ec2";
 
 const IOS_STATIC_API = "http://ios-static-backend:8080";
 // Android static analysis now runs on an AWS Lambda behind a Function URL (auth: NONE).
@@ -12,7 +18,11 @@ const IOS_STATIC_API = "http://ios-static-backend:8080";
 // https://xxxx.lambda-url.ap-southeast-2.on.aws — trailing slash is stripped so the
 // `${ANDROID_STATIC_API}/analyze_apk` path joins cleanly.
 const ANDROID_STATIC_API = (process.env.ANDROID_STATIC_API ?? "").replace(/\/+$/, "");
-const ANDROID_DYNAMIC_API = "http://android-dynamic-wrapper:5002";
+
+// Dynamic analysis ARM64 sandbox configuration (AWS Sydney VPC Private IP direct connect)
+const DYNAMIC_SANDBOX_INSTANCE_ID = process.env.DYNAMIC_SANDBOX_INSTANCE_ID || "i-037917cfa6d87177f";
+const DYNAMIC_SANDBOX_HOST = process.env.DYNAMIC_SANDBOX_HOST || "172.31.43.199";
+const DYNAMIC_SANDBOX_PORT = process.env.DYNAMIC_SANDBOX_PORT || "5002";
 
 const POLL_INTERVAL_MS = 5000;
 // Must outlast the android-static worker Lambda (600s timeout + async retries):
@@ -185,26 +195,74 @@ export async function analyzeAndroidStatic(fileId: number) {
   }
 }
 
+function getEC2Client(): EC2Client {
+  return new EC2Client({
+    region: process.env.AWS_REGION || "ap-southeast-2",
+    credentials:
+      process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+        ? {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+          }
+        : undefined,
+  });
+}
+
+async function probeSandbox(url: string, timeoutSec = 90): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutSec * 1000) {
+    try {
+      const res = await fetch(url, { method: "GET" });
+      if (res.status < 500) {
+        return true;
+      }
+    } catch {
+      // not yet responding
+    }
+    await sleep(3000);
+  }
+  return false;
+}
+
 export async function analyzeAndroidDynamic(fileId: number) {
   let tmpPath: string | null = null;
+  const fileDoc = FileMeta.findById(fileId);
+  if (!fileDoc) throw new Error(`No file found with id ${fileId}`);
+  if (fileDoc.analysisType !== "dynamic" || !fileDoc.filename.endsWith(".apk"))
+    throw new Error(`File ${fileDoc.filename} is not eligible for APK dynamic analysis`);
+
+  const ec2 = getEC2Client();
+  const instanceId = DYNAMIC_SANDBOX_INSTANCE_ID;
+  const sandboxBaseUrl = `http://${DYNAMIC_SANDBOX_HOST}:${DYNAMIC_SANDBOX_PORT}`;
+
   try {
-    const fileDoc = FileMeta.findById(fileId);
-    if (!fileDoc) throw new Error(`No file found with id ${fileId}`);
-    if (fileDoc.analysisType !== "dynamic" || !fileDoc.filename.endsWith(".apk"))
-      throw new Error(`File ${fileDoc.filename} is not eligible for APK dynamic analysis`);
+    // ── Phase 1: Waking up sandbox instance ───────────────────────────
+    FileMeta.update(fileDoc.id, { status: "analyzing", taskId: "substatus:starting_sandbox" });
+    console.log(`[Dynamic Analysis] Starting sandbox instance ${instanceId}...`);
 
-    // The test account, if one was given, so the run can get past the login
-    // screen and enumerate what is behind it. This is the only place a stored
-    // password is decrypted, and it travels one way: to the wrapper, never back
-    // to the browser, and never into a log line.
-    //
-    // reveal() throws if the stored value can no longer be opened (the key
-    // changed, the row was tampered with). Failing here is deliberate: running
-    // signed out instead would quietly return a much thinner report for an
-    // analysis the user has already paid for. The retry after re-entering them
-    // is free, since the row is already marked creditSpent.
+    try {
+      await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }));
+      console.log(`[Dynamic Analysis] Waiting for instance ${instanceId} to reach running state...`);
+      await waitUntilInstanceRunning(
+        { client: ec2, maxWaitTime: 120 },
+        { InstanceIds: [instanceId] }
+      );
+      console.log(`[Dynamic Analysis] Sandbox instance ${instanceId} is running. Probing ${sandboxBaseUrl}...`);
+    } catch (startErr) {
+      console.error(`[Dynamic Analysis] Failed to start EC2 instance:`, startErr);
+      throw new Error(`Failed to start sandbox instance: ${startErr}`);
+    }
+
+    const isReady = await probeSandbox(`${sandboxBaseUrl}/`, 90);
+    if (!isReady) {
+      throw new Error(`Sandbox service at ${sandboxBaseUrl} did not become ready within 90s`);
+    }
+    console.log(`[Dynamic Analysis] Sandbox is responsive. Dispatching analysis...`);
+
+    // ── Phase 2: Running dynamic analysis & Frida sampling ────────────
+    FileMeta.update(fileDoc.id, { status: "analyzing", taskId: "substatus:analyzing" });
+
     const credentials = DynamicCredentials.reveal(fileDoc.id);
-
     tmpPath = await downloadToTemp(fileDoc.filePath);
 
     const form = new FormData();
@@ -216,32 +274,32 @@ export async function analyzeAndroidDynamic(fileId: number) {
       form.append("password", credentials.password);
     }
     console.log(
-      `Android dynamic: ${fileDoc.filename} (test account: ${credentials ? "provided" : "none"})`
+      `[Dynamic Analysis] Dispatching ${fileDoc.filename} to ${sandboxBaseUrl}/analyze_dynamic (test account: ${credentials ? "provided" : "none"})`
     );
 
-    try {
-      FileMeta.update(fileDoc.id, { status: "analyzing" });
+    const res = await fetch(`${sandboxBaseUrl}/analyze_dynamic`, {
+      method: "POST",
+      body: form,
+      headers: form.getHeaders(),
+    });
 
-      // Call the wrapper
-      const res = await fetch(`${ANDROID_DYNAMIC_API}/analyze_dynamic`, { method: "POST", body: form, headers: form.getHeaders() });
-      if (res.status !== 200) {
-        throw new Error(`Analysis API request failed with status ${res.status}`);
-      }
-      const result = await res.json() as any;
-
-      await putJson(fileDoc.reportPath, result);
-      // The account has done its job. A finished row can't be re-analysed
-      // (/retry only accepts `error`), so keeping the password would be keeping
-      // it forever.
-      DynamicCredentials.remove(fileDoc.id);
-      FileMeta.update(fileDoc.id, { status: "done" });
-
-      return result;
-    } catch (err) {
-      console.error("Error during dynamic analysis request:", err);
-      FileMeta.update(fileDoc.id, { status: "error" });
-      throw err;
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      throw new Error(`Analysis API request failed with status ${res.status}: ${errBody}`);
     }
+
+    // ── Phase 3: Generating report & saving to S3 ────────────────────
+    FileMeta.update(fileDoc.id, { status: "analyzing", taskId: "substatus:generating_report" });
+    const result = (await res.json()) as any;
+
+    await putJson(fileDoc.reportPath, result);
+    DynamicCredentials.remove(fileDoc.id);
+
+    // ── Phase 4: Done ────────────────────────────────────────────────
+    FileMeta.update(fileDoc.id, { status: "done", taskId: null });
+    console.log(`[Dynamic Analysis] Analysis for file ${fileDoc.id} finished successfully.`);
+
+    return result;
 
   } catch (err) {
     console.error("Error in analyzeAndroidDynamic:", err);
@@ -249,6 +307,15 @@ export async function analyzeAndroidDynamic(fileId: number) {
     throw err;
   } finally {
     if (tmpPath) await fs.promises.unlink(tmpPath).catch(() => {});
+
+    // ── STRICT ZERO-IDLE-COST POLICY: Always shut down the sandbox instance ──
+    try {
+      console.log(`[Dynamic Analysis] Ensuring sandbox instance ${instanceId} is stopped...`);
+      await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }));
+      console.log(`[Dynamic Analysis] StopInstances command successfully dispatched for ${instanceId}.`);
+    } catch (stopErr) {
+      console.error(`[Dynamic Analysis] WARNING: Failed to stop sandbox instance ${instanceId}:`, stopErr);
+    }
   }
 }
 

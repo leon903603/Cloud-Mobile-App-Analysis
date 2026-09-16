@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { getIdToken } from "../firebase/auth";
 import { auth } from "../firebase/config";
 import PackedApkNotice from "./PackedApkNotice";
+import { DynamicConfirmModal } from "./DynamicConfirmModal";
 
 // Structure of an upload entry, might need to adjust based on actual backend response
 interface UploadEntry {
@@ -176,6 +177,9 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
   // Per-row failure message, keyed by upload id (e.g. "not enough credits").
   const [notices, setNotices] = useState<Record<string, string>>({});
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [pendingDynamicUpload, setPendingDynamicUpload] = useState<UploadEntry | null>(null);
+  const [isStartingDynamic, setIsStartingDynamic] = useState(false);
 
   // Fetch upload history from backend
   const fetchUploads = async () => {
@@ -208,6 +212,27 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
     }
   };
 
+  const requestAnalyze = (upload: UploadEntry) => {
+    if (upload.analysisType === "dynamic") {
+      setPendingDynamicUpload(upload);
+      setConfirmModalOpen(true);
+    } else {
+      handleAnalyze(upload);
+    }
+  };
+
+  const handleConfirmDynamic = async () => {
+    if (!pendingDynamicUpload) return;
+    setIsStartingDynamic(true);
+    try {
+      await handleAnalyze(pendingDynamicUpload);
+      setConfirmModalOpen(false);
+    } finally {
+      setIsStartingDynamic(false);
+      setPendingDynamicUpload(null);
+    }
+  };
+
   // Trigger analysis for a specific upload
   const handleAnalyze = async (upload: UploadEntry) => {
     try {
@@ -227,6 +252,15 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
       // Call backend analyze API
       const token = await getIdToken();
       if (!token) throw new Error("User not logged in");
+
+      // Optimistically update status in UI immediately
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.id === upload.id
+            ? { ...u, status: upload.analysisType === "dynamic" ? "starting_sandbox" : "analyzing" }
+            : u
+        )
+      );
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -248,48 +282,19 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
               ? "Not enough credits to run this analysis. Buy more to continue."
               : body.error ?? "Failed to trigger analysis",
         }));
+        // Revert status on failure
+        fetchUploads();
         return;
       }
 
       setNotices(({ [upload.id]: _removed, ...rest }) => rest);
       // The balance just moved; ask the header to re-read it.
       onCreditsChanged?.();
-
-      // Start polling until the file is done
-      const pollInterval = 3000; // 3 seconds
-      const maxAttempts = 40;    // ~2 minutes max
-      let attempts = 0;
-
-      // Polling loop function to check if report is ready
-      const pollStatus = async () => {
-        attempts++; // Increment attempt counter to avoid infinite polling
-        // Fetch the latest uploads data from backend
-        const statusRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/uploads`, {
-          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        });
-        const statusData: UploadEntry[] = await statusRes.json();
-        // Find the exact upload entry matching both hash and analysis type
-        const updated = statusData.find(
-          (u) => u.hash === upload.hash && u.analysisType === upload.analysisType
-        );
-        // Update the local state with the new status
-        if (updated) {
-          setUploads((prev) =>
-            prev.map((u) =>
-              u.hash === updated.hash && u.analysisType === updated.analysisType ? updated : u
-            )
-          );
-        }
-        // Poll if max attempts not reached and still not done
-        if (updated?.status !== "done" && attempts < maxAttempts) {
-          setTimeout(pollStatus, pollInterval);
-        }
-      };
-
-      pollStatus();
+      fetchUploads();
 
     } catch (err) {
       console.error("Analyze error:", err);
+      fetchUploads();
     }
   };
 
@@ -358,17 +363,37 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
     return () => clearInterval(intervalId); // Cleanup on unmount
   }, []);
 
-  // Helper function to capitalize the first letter of status, not essential but looks better
-  const capitalizeStatus = (status: string) =>
-    status.charAt(0).toUpperCase() + status.slice(1);
+  // Helper function to format status with descriptive text
+  const formatStatus = (status: string) => {
+    switch (status) {
+      case "starting_sandbox":
+        return "Starting Sandbox (喚醒雲端沙箱中...)";
+      case "analyzing":
+        return "Analyzing (執行期檢測與採樣中...)";
+      case "generating_report":
+        return "Generating Report (產出動態報告中...)";
+      case "done":
+        return "Done (分析完成)";
+      case "pending":
+        return "Pending (待分析)";
+      case "error":
+        return "Error (分析失敗)";
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
 
   // Specific icon for each status
   const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
     switch (status) {
       case "pending":
         return <Clock className="h-5 w-5 text-yellow-500 animate-pulse" />;
+      case "starting_sandbox":
+        return <Loader2 className="h-5 w-5 text-amber-500 animate-spin" />;
       case "analyzing":
         return <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />;
+      case "generating_report":
+        return <Loader2 className="h-5 w-5 text-purple-500 animate-spin" />;
       case "done":
         return <CheckCircle className="h-5 w-5 text-green-500" />;
       case "error":
@@ -414,7 +439,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                   <div className="pl-8 pr-4 py-4 space-y-2 relative">
                     <div className="flex items-center gap-2">
                       <StatusIcon status={upload.status} />
-                      <span className="font-medium">{capitalizeStatus(upload.status)}</span>
+                      <span className="font-medium">{formatStatus(upload.status)}</span>
                     </div>
                     {/* Display file hash */}
                     <p>Hash: {upload.hash}</p>
@@ -429,32 +454,104 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                         <CredentialsPanel upload={upload} onChanged={fetchUploads} />
                       )}
 
+                    {/* Dynamic analysis running hint */}
+                    {upload.analysisType === "dynamic" &&
+                      ["starting_sandbox", "analyzing", "generating_report"].includes(upload.status) && (
+                        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-300">
+                          <div className="flex items-center gap-2 font-medium">
+                            <Clock className="h-4 w-4 text-indigo-400 shrink-0" />
+                            <span>雲端沙箱正在背景全自動運作中（預估需 8~10 分鐘）</span>
+                          </div>
+                          <p className="mt-1 text-muted-foreground leading-relaxed">
+                            支援離線取件：您可以放心關閉或離開此網頁。雲端沙箱採樣完畢後會自動安全關機並留存報告，隨時回來皆可下載。
+                          </p>
+                        </div>
+                      )}
+
                     {/* Why an analysis could not be started (e.g. no credits) */}
                     {notices[upload.id] && (
                       <p className="text-sm text-amber-500">{notices[upload.id]}</p>
                     )}
 
                     {/* Show analyze button */}
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       {upload.status === "pending" && (
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleAnalyze(upload)}
+                          onClick={() => requestAnalyze(upload)}
                         >
                           {/* Already paid for — a retry of a failed run is free */}
                           {upload.creditSpent ? "Analyze" : "Analyze · 1 credit"}
                         </Button>
                       )}
-                      {upload.status === "done" && (
-                        <Button size="sm" onClick={() => handleReportGeneration(upload)}>
-                          Download PDF
+                      {["starting_sandbox", "analyzing", "generating_report"].includes(upload.status) && (
+                        <Button size="sm" disabled className="gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {upload.status === "starting_sandbox"
+                            ? "Starting Sandbox..."
+                            : upload.status === "generating_report"
+                            ? "Generating Report..."
+                            : "Analyzing..."}
                         </Button>
                       )}
-                      {upload.status === "analyzing" && (
-                        <Button size="sm" disabled>
-                          Analyzing...
-                        </Button>
+                      {upload.status === "done" && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {upload.analysisType === "static" ? (
+                            <>
+                              <Button size="sm" onClick={() => handleReportGeneration(upload)}>
+                                <FileText className="mr-1.5 h-4 w-4" />
+                                下載靜態 36 頁報告 (PDF)
+                              </Button>
+                              {uploads.find(
+                                (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
+                              ) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
+                                  onClick={() => {
+                                    const dyn = uploads.find(
+                                      (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
+                                    );
+                                    if (dyn) handleReportGeneration(dyn);
+                                  }}
+                                >
+                                  <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
+                                  下載動態報告 (PDF)
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                                onClick={() => handleReportGeneration(upload)}
+                              >
+                                <FileText className="mr-1.5 h-4 w-4" />
+                                下載動態執行期報告 (PDF)
+                              </Button>
+                              {uploads.find(
+                                (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
+                              ) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const stat = uploads.find(
+                                      (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
+                                    );
+                                    if (stat) handleReportGeneration(stat);
+                                  }}
+                                >
+                                  <FileText className="mr-1.5 h-4 w-4" />
+                                  下載靜態 36 頁報告 (PDF)
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       )}
                       {upload.status === "error" && (
                         <Button size="sm" onClick={() => handleRetry(upload)}>
@@ -468,6 +565,17 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
             ))}
           </Accordion>
         )}
+
+        <DynamicConfirmModal
+          isOpen={confirmModalOpen}
+          onClose={() => setConfirmModalOpen(false)}
+          onConfirm={handleConfirmDynamic}
+          filename={pendingDynamicUpload?.filename ?? ""}
+          creditSpent={pendingDynamicUpload?.creditSpent}
+          hasCredentials={pendingDynamicUpload?.hasCredentials}
+          credentialUsername={pendingDynamicUpload?.credentialUsername}
+          isStarting={isStartingDynamic}
+        />
       </CardContent>
     </Card>
   );

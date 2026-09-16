@@ -259,7 +259,10 @@ app.get("/uploads", verifyToken, async (req: AuthRequest, res: Response) => {
     hash: u.hash,
     analysisType: u.analysisType,
     filePath: u.filePath,
-    status: u.status,
+    status:
+      u.status === "analyzing" && u.taskId?.startsWith("substatus:")
+        ? u.taskId.replace("substatus:", "")
+        : u.status,
     // Lets the UI say whether pressing Analyze will cost a credit — a retry of
     // an analysis that was already paid for does not.
     creditSpent: !!u.creditSpent,
