@@ -33,7 +33,7 @@ def send_report():
         return jsonify({"msg": "no result in request body"}), 400
 
     if ('lang' not in dataraw):
-        dataraw['lang'] = 'zh-TW'
+        dataraw['lang'] = 'en'
 
     report_pdf = report.Product_PDF(dataraw)
 
