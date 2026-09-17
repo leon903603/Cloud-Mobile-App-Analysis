@@ -8,6 +8,10 @@ services:
     build: .
     restart: always
     container_name: android-static-backend
+    volumes:
+      - ./:/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     ports:
       - "8010:8010"
   queue-wrapper:
