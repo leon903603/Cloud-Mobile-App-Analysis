@@ -13,18 +13,6 @@ dx = None
 apk_path = None
 TMP_DIR = "Reports/"
 
-
-
-
-# Response  Stander
-# {
-#     "has_finding": true,
-#     "results": [...],
-#     "count": 2
-# }
-
-
-
 class FilteringEngine:
     """
     Placeholder for filtering engine to check if class name is excluded.
@@ -67,10 +55,17 @@ def check_server_health(port: int, timeout: int = 300):
     
     return False, f"Server did not become ready within {timeout} seconds"
 
-def run_androguard_server(port: int, apk_path: str):
+def run_androguard_server(port: int, initial_apk_path: str = None):
 
     app = Flask(__name__)
 
+    global a, d, dx, apk_path
+    apk_path = initial_apk_path
+    if apk_path:
+        print('androguard_server: Analyzing the APK...')
+        a, d, dx = AnalyzeAPK(apk_path)
+        print('androguard_server: Analysis complete')
+    
     # Debug: Print the types of returned objects
     # print(f'DEBUG: Type of a: {type(a)}')
     # print(f'DEBUG: Type of d: {type(d)}')
@@ -282,6 +277,10 @@ def run_androguard_server(port: int, apk_path: str):
                 return jsonify({"count": 0, "message": "No classes.dex file found in the APK"}), 200
             else:
                 return jsonify({"count": len(match_files), "message": f"Found {len(match_files)} classes.dex file(s) in the APK"}), 200
+
+    #----------------------------------------------------------------
+
+
 
     #----------------------------------------------------------------
 
@@ -518,7 +517,7 @@ def run_androguard_server(port: int, apk_path: str):
 
         for class_name, method, _ in iter_app_methods(dx):
                 method_name = method.name
-                method_class_name = method.class_name
+                method_class_name = class_name  # MethodClassAnalysis has no .class_name; use loop var
                 descriptor = method.descriptor
 
                 if prog.match(method_name) or prog_sec.match(method_name):
@@ -844,7 +843,7 @@ def run_androguard_server(port: int, apk_path: str):
             except Exception:
                 continue
 
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             for idx, ins in enumerate(instructions):
                 try:
@@ -1051,55 +1050,73 @@ def run_androguard_server(port: int, apk_path: str):
                     "count": 0
                 }), 200
 
-            # Step 2: Check Exported Activity 是否有 Intent Redirection 的程式碼模式
+            # Step 2: 掃描 exported Activity 的 smali 指令，找 Intent Redirection 模式
+            #   Source: getIntent() + getParcelableExtra()
+            #   Sink:   startActivity / startService / sendBroadcast / startActivityForResult
             vulnerable_methods = []
-
             exported_names = {a['name'] for a in exported_activities}
+            INVOKE_OPS_036 = {0x6e, 0x6f, 0x70, 0x71, 0x72, 0x74, 0x75, 0x76, 0x77, 0x78}
 
             for class_name, method, method_analysis in iter_app_methods(dx):
-                    normalized_class_name = class_name.replace('L', '').replace('/', '.').replace(';', '')
-                    if normalized_class_name not in exported_names:
+                    # 正確的 Dalvik 類名轉換: Lcom/example/LoginActivity; → com.example.LoginActivity
+                    # (舊版 .replace('L','') 會刪除類名中所有大寫 L，例如 LoginActivity → oginActivity)
+                    if class_name.startswith('L') and class_name.endswith(';'):
+                        normalized = class_name[1:-1].replace('/', '.')
+                    else:
+                        normalized = class_name
+                    if normalized not in exported_names:
                         continue
 
                     try:
-                        # 取得方法的源碼
-                        source_code = method_analysis.get_source()
-                        if source_code:
-                            source_str = str(source_code)
-
-                            # 檢查是否包含關鍵模式
-                            has_get_intent = 'getIntent()' in source_str
-                            has_get_parcelable = 'getParcelableExtra(' in source_str
-
-                            # 檢查啟動方法
-                            has_start_activity = 'startActivity(' in source_str
-                            has_start_service = 'startService(' in source_str
-                            has_send_broadcast = 'sendBroadcast(' in source_str
-                            has_start_for_result = 'startActivityForResult(' in source_str
-
-                            # 判定漏洞：如果同時存在 getIntent + getParcelableExtra + 啟動方法
-                            if has_get_intent and has_get_parcelable:
-                                if has_start_activity or has_start_service or has_send_broadcast or has_start_for_result:
-                                    dangerous_methods = []
-                                    if has_start_activity:
-                                        dangerous_methods.append('startActivity()')
-                                    if has_start_for_result:
-                                        dangerous_methods.append('startActivityForResult()')
-                                    if has_start_service:
-                                        dangerous_methods.append('startService()')
-                                    if has_send_broadcast:
-                                        dangerous_methods.append('sendBroadcast()')
-
-                                    vulnerable_methods.append({
-                                        "class": class_name,
-                                        "method": method.name,
-                                        "dangerous_methods": dangerous_methods,
-                                        "severity": "HIGH"
-                                    })
-
-                    except Exception as e:
-                        # ignore error situation 
+                        instructions = list(method_analysis.get_instructions())
+                    except Exception:
                         continue
+
+                    has_get_intent       = False
+                    has_get_parcelable   = False
+                    has_start_activity   = False
+                    has_start_service    = False
+                    has_send_broadcast   = False
+                    has_start_for_result = False
+
+                    for ins in instructions:
+                        try:
+                            if ins.get_op_value() not in INVOKE_OPS_036:
+                                continue
+                            out = ins.get_output() if hasattr(ins, 'get_output') else ''
+                            if '->getIntent(' in out:
+                                has_get_intent = True
+                            if '->getParcelableExtra(' in out:
+                                has_get_parcelable = True
+                            if '->startActivity(' in out:
+                                has_start_activity = True
+                            if '->startService(' in out:
+                                has_start_service = True
+                            if '->sendBroadcast(' in out:
+                                has_send_broadcast = True
+                            if '->startActivityForResult(' in out:
+                                has_start_for_result = True
+                        except Exception:
+                            continue
+
+                    if has_get_intent and has_get_parcelable:
+                        if has_start_activity or has_start_service or has_send_broadcast or has_start_for_result:
+                            dangerous_methods = []
+                            if has_start_activity:
+                                dangerous_methods.append('startActivity()')
+                            if has_start_for_result:
+                                dangerous_methods.append('startActivityForResult()')
+                            if has_start_service:
+                                dangerous_methods.append('startService()')
+                            if has_send_broadcast:
+                                dangerous_methods.append('sendBroadcast()')
+
+                            vulnerable_methods.append({
+                                "class": class_name,
+                                "method": method.name,
+                                "dangerous_methods": dangerous_methods,
+                                "severity": "HIGH"
+                            })
 
             # Step 3: Result
             if vulnerable_methods:
@@ -1220,6 +1237,211 @@ def run_androguard_server(port: int, apk_path: str):
             "count": len(results)
         })
 
+    @app.route('/androguard/lab_042', methods=['GET'])
+    def detect_lab_042():
+        """
+        Unified packer / framework identification.
+        Replaces standalone lab_039 (Bangcle), lab_040 (iJiami).
+
+        Phase 1: Known packer identification (SO files + class signatures)
+        Phase 2: Known plugin/hotfix/multidex framework identification
+        """
+
+        # ---- Phase 1: Known packer signatures (based on APKiD YARA rules) ----
+        # Source: https://github.com/rednaga/APKiD/blob/master/apkid/rules/apk/packers.yara
+        KNOWN_PACKERS = [
+            # --- China mainstream ---
+            {"name": "Bangcle",
+             "so": ["libsecexe.so", "libsecmain.so", "libSecShell.so"],
+             "classes": ["Lcom/secapk/wrapper/ApplicationWrapper;"],
+             "prefixes": ["Lcom/secapk/"]},
+            {"name": "Bangcle v2 (SecNeo)",
+             "so": ["libDexHelper.so", "libdexjni.so", "libdatajar.so"],
+             "classes": [],
+             "prefixes": ["Lcom/secneo/apkwrapper/"]},
+            {"name": "iJiami",
+             "so": ["libexec.so", "libexecmain.so", "libijmDataEncryption.so"],
+             "classes": ["Lcom/shell/NativeApplication;"],
+             "prefixes": ["Lcom/shell/"]},
+            {"name": "Tencent",
+             "so": ["libshell.so", "libmobisecy.so", "libshella-", "libshellx-"],
+             "classes": [],
+             "prefixes": ["Lcom/tencent/StubShell/"]},
+            {"name": "Qihoo 360",
+             "so": ["libjiagu.so", "libprotectClass.so", "libapktoolplus_jiagu.so"],
+             "classes": [],
+             "prefixes": ["Lcom/qihoo/util/"]},
+            {"name": "Baidu",
+             "so": ["libbaiduprotect.so"],
+             "classes": [],
+             "prefixes": ["Lcom/baidu/protect/"]},
+            {"name": "Alibaba",
+             "so": ["libmobisec.so"],
+             "classes": [],
+             "prefixes": ["Lcom/alibaba/wireless/security/"]},
+            {"name": "NetEase Yidun",
+             "so": ["libnesec.so"],
+             "classes": [],
+             "prefixes": ["Lcom/netease/nis/"]},
+            {"name": "Naga",
+             "so": ["libedog.so", "libchaosvmp.so", "libxloader.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Pangxie",
+             "so": ["libnsecure.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Tongfu Shield",
+             "so": ["libegis.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "KiwiSec",
+             "so": ["libkiwicrash.so", "libKwProtectSDK.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "DingXiang",
+             "so": ["libsys_misc.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Manxi Security",
+             "so": ["libdSafeShell.so", "libmxacc.so", "libmanxi.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Venustech",
+             "so": ["libvenSec.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Nesun",
+             "so": ["libzprotect.so"],
+             "classes": [],
+             "prefixes": []},
+            # --- International ---
+            {"name": "AppGuard",
+             "so": ["libAppGuard.so", "libcompatible.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "DxShield",
+             "so": ["libdxbase.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "DexProtector",
+             "so": ["dp.arm.so.dat", "dp.x86.so.dat"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "DexProtectX",
+             "so": ["libVMDexShellx.so", "libdexshell.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "APKProtect",
+             "so": ["libAPKProtect.so", "libapkprotect.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Kiro",
+             "so": ["libkiroro.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Medusah (AppSolid)",
+             "so": ["libmd.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "AppSealing",
+             "so": ["libcovault.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "LIAPP",
+             "so": [],
+             "classes": [],
+             "prefixes": ["Lcom/lockincomp/"]},
+            {"name": "Approov",
+             "so": ["libapproov.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "EpicVM",
+             "so": ["libEpic_Vm.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "AppIron",
+             "so": ["libAppIron-jni.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Eversafe",
+             "so": ["libeversafe.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "AppCamo",
+             "so": ["libalib.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "NQ Shield",
+             "so": ["libnqshield.so"],
+             "classes": [],
+             "prefixes": []},
+            {"name": "Zimperium zShield",
+             "so": [],
+             "classes": [],
+             "prefixes": ["Lcom/zimperium/"]},
+            {"name": "Gpresto",
+             "so": ["libATG_L.so"],
+             "classes": [],
+             "prefixes": []},
+        ]
+
+        # ---- Phase 2: Known non-packer frameworks ----
+        KNOWN_FRAMEWORKS = [
+            {"name": "AndroidX MultiDex", "type": "multidex",
+             "prefixes": ["Landroidx/multidex/"]},
+            {"name": "Support MultiDex",  "type": "multidex",
+             "prefixes": ["Landroid/support/multidex/"]},
+            {"name": "Tinker",  "type": "hotfix",
+             "prefixes": ["Lcom/tencent/tinker/"]},
+            {"name": "Sophix",  "type": "hotfix",
+             "prefixes": ["Lcom/taobao/sophix/"]},
+            {"name": "RePlugin", "type": "plugin",
+             "prefixes": ["Lcom/qihoo360/replugin/"]},
+            {"name": "VirtualAPK", "type": "plugin",
+             "prefixes": ["Lcom/didi/virtualapk/"]},
+            {"name": "Shadow", "type": "plugin",
+             "prefixes": ["Lcom/tencent/shadow/"]},
+        ]
+
+        all_files       = a.get_files()
+        all_class_names = list(dx.classes.keys())
+
+        # ---- Phase 1 scan ----
+        detected_packers = []
+        for packer in KNOWN_PACKERS:
+            evidence = []
+            for so in packer["so"]:
+                if any(so in f for f in all_files):
+                    evidence.append("so:" + so)
+            for cls in packer["classes"]:
+                if cls in dx.classes:
+                    evidence.append("class:" + cls)
+            for prefix in packer["prefixes"]:
+                if any(c.startswith(prefix) for c in all_class_names):
+                    evidence.append("prefix:" + prefix)
+            if evidence:
+                detected_packers.append({"name": packer["name"], "evidence": evidence})
+
+        # ---- Phase 2 scan ----
+        detected_frameworks = []
+        for fw in KNOWN_FRAMEWORKS:
+            for prefix in fw["prefixes"]:
+                if any(c.startswith(prefix) for c in all_class_names):
+                    detected_frameworks.append({"name": fw["name"], "type": fw["type"]})
+                    break
+
+        verdict = "NOTICE" if detected_packers else "PASS"
+
+        return jsonify({
+            "verdict":     verdict,
+            "has_finding": len(detected_packers) > 0,
+            "packers":     detected_packers,
+            "frameworks":  detected_frameworks,
+            "count":       len(detected_packers),
+            "lab_id":      "lab_042",
+        }), 200
+
     @app.route('/androguard/lab_044', methods=['GET'])
     def detect_Dirty_Steam():
         """
@@ -1261,39 +1483,65 @@ def run_androguard_server(port: int, apk_path: str):
                     "count": 0
                 }), 200
 
-            # Step 2: 檢查是否使用 ContentResolver.query() 查詢 _display_name
+            # Step 2: smali 指令掃描，找 ContentResolver.query + _display_name + File 操作
+            #   DISPLAY_NAME 是 compile-time constant，javac 會 inline 為 const-string "_display_name"
             content_resolver_usage = []
             file_operations = []
+            INVOKE_OPS_044    = {0x6e, 0x6f, 0x70, 0x71, 0x72, 0x74, 0x75, 0x76, 0x77, 0x78}
+            CONST_OPS_044     = {0x1a, 0x1b}
+            NEW_INSTANCE_044  = 0x22
+            FILE_CLASSES_044  = ("Ljava/io/File;", "Ljava/io/FileOutputStream;", "Ljava/io/FileWriter;")
 
             for class_name, method, method_analysis in iter_app_methods(dx):
                     try:
-                        source_code = method_analysis.get_source()
-                        if source_code:
-                            source_str = str(source_code)
-
-                            has_display_name = '_display_name' in source_str or 'DISPLAY_NAME' in source_str
-                            has_content_resolver = 'getContentResolver' in source_str or 'ContentResolver' in source_str
-                            has_query_method = '.query(' in source_str
-                            has_file_operation = ('new File(' in source_str or
-                                                  'FileOutputStream' in source_str or
-                                                  'FileWriter' in source_str)
-
-                            if has_content_resolver and has_query_method and has_display_name:
-                                content_resolver_usage.append({
-                                    "class": class_name,
-                                    "method": method.name,
-                                    "has_file_operation": has_file_operation
-                                })
-
-                                if has_file_operation:
-                                    file_operations.append({
-                                        "class": class_name,
-                                        "method": method.name,
-                                        "severity": "HIGH"
-                                    })
-
+                        instructions = list(method_analysis.get_instructions())
                     except Exception:
                         continue
+
+                    has_display_name     = False
+                    has_content_resolver = False
+                    has_query            = False
+                    has_file_operation   = False
+
+                    for ins in instructions:
+                        try:
+                            op = ins.get_op_value()
+
+                            if op in CONST_OPS_044:
+                                s = ins.get_string()
+                                if s and '_display_name' in s:
+                                    has_display_name = True
+                                continue
+
+                            if op == NEW_INSTANCE_044:
+                                out = ins.get_output() if hasattr(ins, 'get_output') else ''
+                                if any(fc in out for fc in FILE_CLASSES_044):
+                                    has_file_operation = True
+                                continue
+
+                            if op in INVOKE_OPS_044:
+                                out = ins.get_output() if hasattr(ins, 'get_output') else ''
+                                if 'getContentResolver' in out or 'ContentResolver' in out:
+                                    has_content_resolver = True
+                                if '->query(' in out:
+                                    has_query = True
+                                if any(fc in out and '-><init>' in out for fc in FILE_CLASSES_044):
+                                    has_file_operation = True
+                        except Exception:
+                            continue
+
+                    if has_content_resolver and has_query and has_display_name:
+                        content_resolver_usage.append({
+                            "class": class_name,
+                            "method": method.name,
+                            "has_file_operation": has_file_operation
+                        })
+                        if has_file_operation:
+                            file_operations.append({
+                                "class": class_name,
+                                "method": method.name,
+                                "severity": "HIGH"
+                            })
 
             # Step 3: 分析結果
             if content_resolver_usage:
@@ -1823,7 +2071,7 @@ def run_androguard_server(port: int, apk_path: str):
                            "->{}(".format(log_method) in ins_out:
                             findings.append({
                                 "class":       class_name,
-                                "method":      method_analysis.get_name() if hasattr(method_analysis, 'get_name') else str(method_analysis),
+                                "method":      method.get_name(),
                                 "log_api":     "Log.{}()".format(log_method),
                                 "instruction": ins_out,
                                 "description": "Debug log call found: Log.{}() should be removed in release build".format(log_method)
@@ -1852,7 +2100,10 @@ def run_androguard_server(port: int, apk_path: str):
           CRITICAL - 明確敏感欄位 (password / pin / cvv / ssn) 未受保護
           WARNING  - 可能敏感欄位 (otp / token / secret / account) 未受保護
         """
-        from androguard.core.axml import AXMLPrinter
+        try:
+            from androguard.core.axml import AXMLPrinter  # androguard 4.x
+        except ImportError:
+            from androguard.core.bytecodes.axml import AXMLPrinter  # androguard 3.x
         import xml.etree.ElementTree as ET
 
         ANDROID_NS = '{http://schemas.android.com/apk/res/android}'
@@ -2053,7 +2304,7 @@ def run_androguard_server(port: int, apk_path: str):
                             continue
                         storage_api_calls.append({
                             "class":  class_name,
-                            "method": method_analysis.get_name() if hasattr(method_analysis, 'get_name') else str(method_analysis),
+                            "method": method.get_name(),
                             "api":    method_name,
                         })
                         break
@@ -2248,7 +2499,7 @@ def run_androguard_server(port: int, apk_path: str):
             except Exception:
                 continue
 
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             for idx, ins in enumerate(instructions):
                 try:
@@ -2306,7 +2557,7 @@ def run_androguard_server(port: int, apk_path: str):
             "lab_id":       "lab_075",
         }), 200
 
-
+    #4.1.2.3.5 — 行動應用程式應避免將敏感性資料儲存於冗餘檔案或日誌檔案中 (replaces legacy lab_063)
     @app.route('/androguard/lab_063', methods=['GET'])
     def detect_lab_063():
         """
@@ -2385,7 +2636,7 @@ def run_androguard_server(port: int, apk_path: str):
             "description": "Unsafe deletion of files that plausibly hold sensitive data (same-method keyword correlation)"
         }), 200
 
-    #4.1.2.3.12 
+    #4.1.2.3.12
     @app.route('/androguard/lab_076', methods=['GET'])
     def detect_lab_076():
         """
@@ -2627,7 +2878,7 @@ def run_androguard_server(port: int, apk_path: str):
             except Exception:
                 continue
 
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             has_zip_iter        = False
             has_get_name        = False
@@ -2709,7 +2960,10 @@ def run_androguard_server(port: int, apk_path: str):
                      present in code (blocked by OS but should be removed)
         """
         import xml.etree.ElementTree as ET
-        from androguard.core.axml import AXMLPrinter
+        try:
+            from androguard.core.axml import AXMLPrinter  # androguard 4.x
+        except ImportError:
+            from androguard.core.bytecodes.axml import AXMLPrinter  # androguard 3.x
 
         ANDROID_NS = '{http://schemas.android.com/apk/res/android}'
 
@@ -2843,7 +3097,7 @@ def run_androguard_server(port: int, apk_path: str):
             except Exception:
                 continue
 
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             local_http_urls = []
             local_sinks     = []
@@ -3072,7 +3326,7 @@ def run_androguard_server(port: int, apk_path: str):
                 instructions = list(method.get_instructions())
             except Exception:
                 continue
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             # (A) scan Cipher.getInstance
             for idx, ins in enumerate(instructions):
@@ -3228,7 +3482,7 @@ def run_androguard_server(port: int, apk_path: str):
                 instructions = list(method.get_instructions())
             except Exception:
                 continue
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             for idx, ins in enumerate(instructions):
                 try:
@@ -3358,7 +3612,7 @@ def run_androguard_server(port: int, apk_path: str):
                 instructions = list(method.get_instructions())
             except Exception:
                 continue
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             for ins in instructions:
                 try:
@@ -3475,7 +3729,7 @@ def run_androguard_server(port: int, apk_path: str):
                 instructions = list(method.get_instructions())
             except Exception:
                 continue
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             js_enabled        = False
             dynamic_load_url  = False    # loadUrl with variable arg (no const-string)
@@ -3598,7 +3852,7 @@ def run_androguard_server(port: int, apk_path: str):
                 instructions = list(method.get_instructions())
             except Exception:
                 continue
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             # Pass 1: does this method write to the clipboard?
             has_clip_write = False
@@ -3673,6 +3927,7 @@ def run_androguard_server(port: int, apk_path: str):
             "lab_id":      "lab_080",
         }), 200
 
+    # 4.1.5.4.1 — 行動應用程式應針對使用者於輸入階段之字串，進行安全檢查
     @app.route('/androguard/lab_081', methods=['GET'])
     def detect_lab_081():
         """
@@ -3900,7 +4155,7 @@ def run_androguard_server(port: int, apk_path: str):
                 instructions = list(method.get_instructions())
             except Exception:
                 continue
-            method_name = method_analysis.get_name() if hasattr(method_analysis, 'get_name') else ''
+            method_name = method.get_name()
 
             for idx, ins in enumerate(instructions):
                 try:
@@ -3950,8 +4205,161 @@ def run_androguard_server(port: int, apk_path: str):
             "lab_id":      "lab_065",
         }), 200
 
+    @app.route('/androguard/lab_057', methods=['GET'])
+    def detect_lab_057():
+        """
+        Sensitive device / subscriber identifier reads via TelephonyManager.
+
+        The legacy lab only matched getDeviceId(). Modern spyware reads the
+        identifier through newer / more targeted APIs, so this audits all of:
+
+          getDeviceId()        - IMEI/MEID (legacy, deprecated since API 26)
+          getImei()            - IMEI            (API 26+)
+          getMeid()            - MEID            (CDMA, API 26+)
+          getSubscriberId()    - IMSI            (SIM subscriber id; identifies
+                                                  the user even across device reset)
+          getLine1Number()     - phone number
+          getSimSerialNumber() - SIM serial (ICC ID)
+
+        Reading any of these is a hardware / subscriber identifier access that
+        needs a privacy justification (Android 10+ requires privileged
+        permission), so each is reported as WARNING for manual review.
+        Presence-based: the read itself is the privacy concern, regardless of
+        whether the value is later transmitted.
+        """
+        TARGETS = {
+            "Landroid/telephony/TelephonyManager;->getDeviceId(":        ("getDeviceId()",        "imei_meid_legacy"),
+            "Landroid/telephony/TelephonyManager;->getImei(":            ("getImei()",            "imei"),
+            "Landroid/telephony/TelephonyManager;->getMeid(":            ("getMeid()",            "meid"),
+            "Landroid/telephony/TelephonyManager;->getSubscriberId(":    ("getSubscriberId()",    "imsi_subscriber_id"),
+            "Landroid/telephony/TelephonyManager;->getLine1Number(":     ("getLine1Number()",     "phone_number"),
+            "Landroid/telephony/TelephonyManager;->getSimSerialNumber(": ("getSimSerialNumber()", "sim_serial_iccid"),
+        }
+
+        INVOKE_OPS = {0x6e, 0x6f, 0x70, 0x71, 0x72, 0x74, 0x75, 0x76, 0x77, 0x78}
+
+        findings = []
+        seen = set()  # de-dup identical (class, method, api)
+
+        for class_name, method_analysis, method in iter_app_methods(dx):
+            try:
+                instructions = list(method.get_instructions())
+            except Exception:
+                continue
+            try:
+                method_name = method.get_name()
+            except Exception:
+                method_name = getattr(method_analysis, 'name', '') or ''
+
+            for ins in instructions:
+                try:
+                    if ins.get_op_value() not in INVOKE_OPS:
+                        continue
+                    out = ins.get_output() if hasattr(ins, 'get_output') else ''
+                    for token, (api, reason) in TARGETS.items():
+                        if token in out:
+                            key = (class_name, method_name, api)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            findings.append({
+                                "class":    class_name,
+                                "method":   method_name,
+                                "api":      api,
+                                "severity": "WARNING",
+                                "reason":   reason,
+                            })
+                except Exception:
+                    continue
+
+        warning = [f for f in findings if f["severity"] == "WARNING"]
+        verdict = "WARNING" if warning else "PASS"
+
+        return jsonify({
+            "verdict":     verdict,
+            "has_finding": len(findings) > 0,
+            "findings":    findings,
+            "warning":     warning,
+            "count":       len(findings),
+            "lab_id":      "lab_057",
+        }), 200
+
+    @app.route('/androguard/lab_058', methods=['GET'])
+    def detect_lab_058():
+        """
+        Reads of Settings.Secure.ANDROID_ID - a device-scoped identifier used
+        for fingerprinting / user tracking.
+
+        Settings.Secure.ANDROID_ID is a compile-time String constant inlined as
+        the literal "android_id", so the signal is a getString(...) call whose
+        key argument is "android_id". We confirm via const-string lookback so
+        that other Settings.Secure reads (e.g. "bluetooth_name") are NOT flagged
+        - this preserves the precision of the old taint-based detection.
+        """
+        GETSTRING_TOKEN = "Landroid/provider/Settings$Secure;->getString("
+        ANDROID_ID_KEY  = "android_id"
+
+        INVOKE_OPS       = {0x6e, 0x6f, 0x70, 0x71, 0x72, 0x74, 0x75, 0x76, 0x77, 0x78}
+        CONST_STRING_OPS = {0x1a, 0x1b}  # const-string, const-string/jumbo
+
+        def has_android_id_arg(instructions, idx):
+            """Look back up to 8 instructions for a const-string == "android_id"."""
+            for back in range(1, min(9, idx + 1)):
+                prev = instructions[idx - back]
+                if prev.get_op_value() in CONST_STRING_OPS:
+                    out = prev.get_output() if hasattr(prev, 'get_output') else ''
+                    lit = out.split(',', 1)[-1].strip().strip('"').strip("'")
+                    if lit == ANDROID_ID_KEY:
+                        return True
+            return False
+
+        findings = []
+        seen = set()
+
+        for class_name, method_analysis, method in iter_app_methods(dx):
+            try:
+                instructions = list(method.get_instructions())
+            except Exception:
+                continue
+            try:
+                method_name = method.get_name()
+            except Exception:
+                method_name = getattr(method_analysis, 'name', '') or ''
+
+            for idx, ins in enumerate(instructions):
+                try:
+                    if ins.get_op_value() not in INVOKE_OPS:
+                        continue
+                    out = ins.get_output() if hasattr(ins, 'get_output') else ''
+                    if GETSTRING_TOKEN in out and has_android_id_arg(instructions, idx):
+                        key = (class_name, method_name)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        findings.append({
+                            "class":    class_name,
+                            "method":   method_name,
+                            "api":      "Settings.Secure.getString(ANDROID_ID)",
+                            "severity": "WARNING",
+                            "reason":   "android_id_device_fingerprint",
+                        })
+                except Exception:
+                    continue
+
+        warning = [f for f in findings if f["severity"] == "WARNING"]
+        verdict = "WARNING" if warning else "PASS"
+
+        return jsonify({
+            "verdict":     verdict,
+            "has_finding": len(findings) > 0,
+            "findings":    findings,
+            "warning":     warning,
+            "count":       len(findings),
+            "lab_id":      "lab_058",
+        }), 200
+
     app.run(host='0.0.0.0', port=port)
 if __name__ == "__main__":
     os.makedirs("./uploads", exist_ok=True)
-    run_androguard_server(8010, None)
-    
+    apk_env = os.environ.get('APK_PATH', None)
+    run_androguard_server(8010, apk_env)
