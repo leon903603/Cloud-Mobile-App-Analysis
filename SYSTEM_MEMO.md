@@ -219,6 +219,29 @@
 
 ---
 
+## 💻 本地端（Windows 開發工作區目錄結構：D:\APP平台）
+
+本地端現已將所有會用到的子系統完整配置到位，方便在本地 IDE 高效修改代碼、版本比對與測試：
+
+1. **`android-static/`（靜態分析微服務引擎）**：
+   - 倉庫：`leon903603/Cloud-Mobile-App-Analysis`，分支：`android-static`
+   - 內容：80 條 MAST 規則、Androguard 47 條規則、`maldroid_main.py`、Celery Worker、Queue Wrapper。已全面修復 `lab_042`、`~)^` 檔名亂碼與台灣時區（已與 GitHub 和主機 53 雙向同步最新 `a40eb3a`）。
+2. **`android-detection-system/`（動態分析系統核心）**：
+   - 倉庫：`CoreXing/android_detection_system`，分支：`Dymanic_maintain`
+   - 內容：Frida 注入腳本、APIMonitor-beta、`CmdServer.py`、自動化探測、UI Automator、`run_eval.py`、TestLoader、ws_scrcpy。
+   - 執行架構：本地編輯代碼，透過 ADB / SSH Tunnel 連線至主機 53 (Port 8080) 或 AWS Sydney `c6g.metal` Redroid (Port 5565) 執行測試。
+3. **`Cloud-Mobile-App-Analysis/`（CMAA 雲端主平台門面）**：
+   - 倉庫：`leon903603/Cloud-Mobile-App-Analysis`，分支：`main`
+   - 內容：React 前端 + Express 後端 + Firebase Auth / Firestore 點數金流。
+4. **`Mobile-APP-Crawler/`（大數據爬蟲與批次檢測）**：
+   - 倉庫：`leon903603/Mobile-APP-Crawler`，分支：`leon-repo`
+   - 內容：Google Play 爬蟲、PostgreSQL 介接、Tor 代理池管理。
+5. **`pdf-generator/`（PDF 報告產生器）**：
+   - 倉庫：`leon903603/Cloud-Mobile-App-Analysis`，分支：`pdf-generator`
+   - 內容：ReportLab 報告渲染引擎。
+
+---
+
 ## 🛠️ 常用驗證與健康檢查指令
 
 ### 1. 檢查主機 53 線上端點與開發端點
