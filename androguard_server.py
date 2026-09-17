@@ -4,6 +4,7 @@ import time
 import zipfile
 import json
 import subprocess
+import base64
 from flask import Flask, request, jsonify, send_file
 from androguard.misc import AnalyzeAPK
 
@@ -184,7 +185,9 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
         try:
             maldroid_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maldroid_main.py")
-            cmd = ["python2", maldroid_path, "-s", "-v", "-f", apk_path, "-n", "file", "-u", "root"]
+            raw_fname = os.path.basename(apk_path)
+            b64_fname = base64.b64encode(raw_fname.encode('utf-8')).decode('ascii')
+            cmd = ["python2", maldroid_path, "-s", "-v", "-f", apk_path, "-n", b64_fname, "-u", "root"]
 
             print(f"[DEBUG] Running command: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True)

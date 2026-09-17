@@ -1889,10 +1889,26 @@ def __analyze(writer, args):
     
     # ------------------------------------------------------------------------
     # [Json]
+    # Compute timezone-aware local timestamp (Asia/Taipei UTC+8)
+    _now = datetime.now()
+    if time.timezone == 0 and time.daylight == 0:
+        import datetime as _dt_mod
+        _now = _now + _dt_mod.timedelta(hours=8)
+    formatted_ts = _now.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Resolve genuine filename without '~)^' base64 corruption
+    _real_fname = os.path.basename(args.apk_file) if hasattr(args, 'apk_file') and args.apk_file else 'app.apk'
+    try:
+        _decoded = str(base64.b64decode(args.filename))
+        if _decoded and _decoded != '~)^' and all(32 <= ord(c) < 127 for c in _decoded):
+            _real_fname = _decoded
+    except Exception:
+        pass
+
     report_dict_zhtw["md5"] = md5
     report_dict_zhtw["sha256"] = sha256
-    report_dict_zhtw["timestamp"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    report_dict_zhtw["file_name"] = str(base64.b64decode(args.filename))
+    report_dict_zhtw["timestamp"] = formatted_ts
+    report_dict_zhtw["file_name"] = _real_fname
     report_dict_zhtw["app_name"] = str(package_name)
     report_dict_zhtw["app_version"] = str(a.get_androidversion_name())
     report_dict_zhtw["package_version_code"] = str(a.get_androidversion_code())
@@ -1902,8 +1918,8 @@ def __analyze(writer, args):
 
     report_dict_en["md5"] = md5
     report_dict_en["sha256"] = sha256
-    report_dict_en["timestamp"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    report_dict_en["file_name"] = str(base64.b64decode(args.filename))
+    report_dict_en["timestamp"] = formatted_ts
+    report_dict_en["file_name"] = _real_fname
     report_dict_en["app_name"] = str(package_name)
     report_dict_en["app_version"] = str(a.get_androidversion_name())
     report_dict_en["package_version_code"] = str(a.get_androidversion_code())
