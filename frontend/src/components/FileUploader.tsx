@@ -210,7 +210,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
 
       // Half an account
       if (hasUsername !== hasPassword) {
-        setCredentialError("請填寫完整的帳號與密碼，或兩者皆留空以訪客身分分析。");
+        setCredentialError("Please provide both username and password, or leave both empty for guest mode.");
         return;
       }
 
@@ -569,7 +569,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        準備以 <span className="font-medium text-foreground capitalize">{analysisType} 分析</span> 進行檢測
+                        Ready for <span className="font-medium text-foreground capitalize">{analysisType} Analysis</span>
                       </p>
                     </div>
                   </div>
@@ -583,7 +583,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                     }}
                     className="text-xs"
                   >
-                    更換檔案
+                    Change File
                   </Button>
                 </div>
 
@@ -604,7 +604,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                       setCredentialError(null);
                     }}
                   >
-                    取消
+                    Cancel
                   </Button>
                   <Button
                     type="button"
@@ -612,7 +612,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                     className="gap-2 px-6 shadow-sm font-medium"
                   >
                     <UploadCloud className="h-4 w-4" />
-                    確認並上傳
+                    Confirm & Upload
                   </Button>
                 </div>
               </div>
@@ -697,26 +697,26 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
-                尚未設定測試帳號密碼
+                No Test Account Provided
               </AlertDialogTitle>
               <AlertDialogDescription className="space-y-2 text-sm text-muted-foreground">
                 <p>
-                  您選擇了<b>動態分析</b>，但尚未輸入測試帳號與密碼。
+                  You selected <b>Dynamic Analysis</b> without providing test account credentials.
                 </p>
                 <div className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-300 space-y-1">
-                  <p className="font-medium">⚠️ 執行提示：</p>
+                  <p className="font-medium">Execution Notice:</p>
                   <p>
-                    自動化沙箱將以<b>訪客模式 (Visitor Mode)</b> 執行，會自動跳過登入畫面並僅檢測可公開瀏覽的功能與背景 API。
+                    The automated sandbox will run in <b>Guest Mode</b>, automatically skipping login screens and analyzing only publicly accessible screens, features, and background network traffic.
                   </p>
                 </div>
                 <p className="text-xs">
-                  若此 APP 無需登入即可使用，請點擊「確定以訪客模式上傳」；若需檢測登入後之核心功能，請點擊「返回填寫」。
+                  If this app does not require login, click &quot;Proceed as Guest&quot;. If you need to analyze features behind a login wall, click &quot;Go Back &amp; Add Account&quot;.
                 </p>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setShowGuestConfirmModal(false)}>
-                返回填寫帳密
+                Go Back &amp; Add Account
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
@@ -724,7 +724,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                 }}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                確定以訪客模式上傳
+                Proceed as Guest
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
