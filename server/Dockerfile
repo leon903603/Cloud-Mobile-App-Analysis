@@ -7,8 +7,8 @@ FROM node:22-bookworm-slim
 WORKDIR /usr/src/app
 
 COPY package*.json ./
-# npm ci: deterministic from the lockfile and skips resolution work.
-RUN npm ci
+# npm ci: deterministic from the lockfile; fallback to npm install if lockfile is slightly out of sync
+RUN npm ci || npm install
 
 COPY . .
 
