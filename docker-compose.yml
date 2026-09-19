@@ -53,6 +53,10 @@ services:
       # Days a stored account is kept if its analysis is never run; 0 disables the
       # sweep. A completed run deletes its own regardless.
       - DYNAMIC_CRED_TTL_DAYS=${DYNAMIC_CRED_TTL_DAYS:-30}
+      # Dynamic analysis ARM64 sandbox configuration (AWS Sydney VPC Private IP direct connect)
+      - DYNAMIC_SANDBOX_INSTANCE_ID=${DYNAMIC_SANDBOX_INSTANCE_ID:-i-037917cfa6d87177f}
+      - DYNAMIC_SANDBOX_HOST=${DYNAMIC_SANDBOX_HOST:-172.31.43.199}
+      - DYNAMIC_SANDBOX_PORT=${DYNAMIC_SANDBOX_PORT:-5002}
       # NewebPay (藍新金流) — credit purchases. Replaced Stripe.
       # Gateway: https://ccore.newebpay.com (test) / https://core.newebpay.com (prod).
       # Credentials are environment-specific and are NOT interchangeable.
