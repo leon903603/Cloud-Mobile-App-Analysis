@@ -19,6 +19,16 @@ import {
 } from "lucide-react";
 import { getIdToken } from "../firebase/auth";
 import PackedApkNotice from "./PackedApkNotice";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type AnalysisType = "static" | "dynamic";
 
@@ -163,14 +173,55 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
   // failed for it, so it has to be said out loud instead.
   const [credentialNotice, setCredentialNotice] = useState<string | null>(null);
 
+  const [stagedFile, setStagedFile] = useState<File | null>(null);
+  const [showGuestConfirmModal, setShowGuestConfirmModal] = useState(false);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+
   // Helper function that resets state of variables
   const resetState = () => {
     setFile(null);
+    setStagedFile(null);
     setStatus("idle");
     setProgress(0);
     setAppUsername("");
     setAppPassword("");
     setCredentialNotice(null);
+    setCredentialError(null);
+    setShowGuestConfirmModal(false);
+  };
+
+  const handleSelectFile = (selected: File) => {
+    setStagedFile(selected);
+    setCredentialError(null);
+  };
+
+  const startUpload = (fileToUpload: File) => {
+    setStagedFile(null);
+    setShowGuestConfirmModal(false);
+    handleFile(fileToUpload);
+  };
+
+  const handleConfirmAndUpload = () => {
+    if (!stagedFile) return;
+
+    if (analysisType === "dynamic") {
+      const hasUsername = Boolean(appUsername.trim());
+      const hasPassword = Boolean(appPassword);
+
+      // Half an account
+      if (hasUsername !== hasPassword) {
+        setCredentialError("請填寫完整的帳號與密碼，或兩者皆留空以訪客身分分析。");
+        return;
+      }
+
+      // Neither filled -> prompt confirmation modal
+      if (!hasUsername && !hasPassword) {
+        setShowGuestConfirmModal(true);
+        return;
+      }
+    }
+
+    startUpload(stagedFile);
   };
 
   // Helper function for calculating SHA-256 hash of a file
@@ -370,7 +421,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false); // Remove highlight
-    if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]); // Handle file drop
+    if (e.dataTransfer.files.length > 0) handleSelectFile(e.dataTransfer.files[0]); // Handle file select
   };
 
   const isProcessing = status === "check_duplicate" || status === "uploading";
@@ -501,35 +552,106 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
               </div>
             )}
 
-            <div
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onClick={() => document.getElementById("file-upload")?.click()}
-              className={`group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 transition-all
-                ${isDragOver
-                  ? "border-primary bg-primary/10"
-                  : "border-border hover:border-primary/50 hover:bg-muted/30"
-                }`}
-            >
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 ring-1 ring-primary/20 transition-transform group-hover:scale-105">
-                <UploadCloud className="h-7 w-7 text-primary" />
+            {stagedFile ? (
+              <div className="space-y-4 rounded-xl border-2 border-primary/40 bg-primary/5 p-6 transition-all">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary ring-1 ring-primary/30">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm truncate max-w-[280px]" title={stagedFile.name}>
+                          {stagedFile.name}
+                        </p>
+                        <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                          {(stagedFile.size / (1024 * 1024)).toFixed(2)} MB
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        準備以 <span className="font-medium text-foreground capitalize">{analysisType} 分析</span> 進行檢測
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setStagedFile(null);
+                      setCredentialError(null);
+                    }}
+                    className="text-xs"
+                  >
+                    更換檔案
+                  </Button>
+                </div>
+
+                {credentialError && (
+                  <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>{credentialError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/50">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setStagedFile(null);
+                      setCredentialError(null);
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleConfirmAndUpload}
+                    className="gap-2 px-6 shadow-sm font-medium"
+                  >
+                    <UploadCloud className="h-4 w-4" />
+                    確認並上傳
+                  </Button>
+                </div>
               </div>
-              <div className="text-center">
-                <p className="text-sm font-medium">Drag & drop your APK or IPA file</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  or <span className="font-medium text-primary">browse</span> to choose a file
-                </p>
+            ) : (
+              <div
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                onClick={() => document.getElementById("file-upload")?.click()}
+                className={`group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 transition-all
+                  ${isDragOver
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50 hover:bg-muted/30"
+                  }`}
+              >
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 ring-1 ring-primary/20 transition-transform group-hover:scale-105">
+                  <UploadCloud className="h-7 w-7 text-primary" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium">Drag & drop your APK or IPA file</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    or <span className="font-medium text-primary">browse</span> to choose a file
+                  </p>
+                </div>
+                <p className="text-[11px] text-muted-foreground">.apk or .ipa</p>
+                <input
+                  id="file-upload"
+                  type="file"
+                  className="hidden"
+                  accept=".apk,.ipa"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handleSelectFile(e.target.files[0]);
+                      e.target.value = "";
+                    }
+                  }}
+                />
               </div>
-              <p className="text-[11px] text-muted-foreground">.apk or .ipa</p>
-              <input
-                id="file-upload"
-                type="file"
-                className="hidden"
-                accept=".apk,.ipa"
-                onChange={(e) => e.target.files && handleFile(e.target.files[0])}
-              />
-            </div>
+            )}
           </div>
         )}
 
@@ -568,6 +690,45 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
         {RESULT_META[status] && (
           <ResultPanel status={status} file={file} note={credentialNotice} onReset={resetState} />
         )}
+
+        {/* ── Guest Mode Confirmation Dialog for Dynamic Analysis ── */}
+        <AlertDialog open={showGuestConfirmModal} onOpenChange={setShowGuestConfirmModal}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                尚未設定測試帳號密碼
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  您選擇了<b>動態分析</b>，但尚未輸入測試帳號與密碼。
+                </p>
+                <div className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-300 space-y-1">
+                  <p className="font-medium">⚠️ 執行提示：</p>
+                  <p>
+                    自動化沙箱將以<b>訪客模式 (Visitor Mode)</b> 執行，會自動跳過登入畫面並僅檢測可公開瀏覽的功能與背景 API。
+                  </p>
+                </div>
+                <p className="text-xs">
+                  若此 APP 無需登入即可使用，請點擊「確定以訪客模式上傳」；若需檢測登入後之核心功能，請點擊「返回填寫」。
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setShowGuestConfirmModal(false)}>
+                返回填寫帳密
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (stagedFile) startUpload(stagedFile);
+                }}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                確定以訪客模式上傳
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
       </CardContent>
     </Card>

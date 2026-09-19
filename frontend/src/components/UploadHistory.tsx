@@ -73,7 +73,7 @@ const CredentialsPanel: React.FC<{ upload: UploadEntry; onChanged: () => void }>
         throw new Error(
           res.status === 503
             ? "Credential storage isn't configured on this server."
-            : body.error ?? "Could not save the test account"
+            : body.error ?? `Could not save the test account (HTTP ${res.status})`
         );
       }
 
