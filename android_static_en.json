@@ -798,5 +798,25 @@
         "level": "WARNING",
         "cve": "CWE-20",
         "desc": "When user input has no declared type or length constraint, an attacker can supply unexpected characters or an overly long string, enabling SQL injection, command injection, path traversal, or backend processing failures; a password field with no length cap allows input long enough to exhaust hashing resources.\n\nThis check parses the layout XML under res/layout and its qualifier directories (layout-land, layout-v21, etc.), locates EditText / AutoCompleteTextView family fields, and verifies android:inputType (type constraint, checked on every field) and android:maxLength (length constraint, checked on sensitive / password fields only, since ordinary fields such as search or comment boxes legitimately have no length cap).\n\nOnly WARNING findings (sensitive / password field missing a type or length constraint) are listed; an ordinary input field missing a type constraint is low risk and is still detected and kept in the result data, but omitted from the report.\n\nLimitation: only the layout XML declarations are inspected; validation implemented in code (InputFilter) and programmatically built UI (Jetpack Compose, WebView forms) are not covered, so manual review of flagged items is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
+    },
+    "AS-lab082": {
+        "title": "Emulator Detection Check",
+        "mas": "4.1.5.5.7",
+        "mast": "",
+        "real_mstg": "MASVS-RESILIENCE-1",
+        "owasp_mobile": "M7",
+        "level": "WARNING",
+        "cve": "",
+        "desc": "When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily.\n\nThis check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection; if neither is found, emulator detection is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+    },
+    "AS-lab083": {
+        "title": "USB Debugging Detection Check",
+        "mas": "4.1.5.5.8",
+        "mast": "",
+        "real_mstg": "MASVS-RESILIENCE-2",
+        "owasp_mobile": "M7",
+        "level": "WARNING",
+        "cve": "",
+        "desc": "When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access.\n\nThis check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection; if neither is found, USB debugging detection is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
     }
 }

@@ -798,5 +798,25 @@
         "level": "WARNING",
         "cve": "CWE-20",
         "desc": "未限制使用者輸入的型別與長度時，攻擊者可輸入預期外的字元或超長字串，觸發 SQL Injection、命令注入、路徑穿越等注入攻擊，或造成後端處理異常；密碼類欄位若無長度上限，超長輸入可能造成雜湊運算資源耗盡。\n\n本檢查解析 res/layout 及其限定詞目錄（layout-land、layout-v21 等）下的 layout XML，找出 EditText / AutoCompleteTextView 系列欄位，檢查 android:inputType（型別限制，所有欄位皆檢查）與 android:maxLength（長度限制，僅檢查敏感／密碼類欄位，因一般欄位如搜尋欄、備註欄不設長度上限屬正常用法）。\n\n報告僅列出 WARNING（敏感／密碼類欄位缺少型別或長度限制）；一般輸入欄位缺少型別限制屬低風險，仍會偵測並保留於檢測結果，但不列入報告。\n\n限制：僅檢查 layout XML 的宣告；以程式碼實作的驗證（InputFilter）與程式化建立的介面（Jetpack Compose、WebView 表單）皆掃不到，建議對命中項目人工複查。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
+    },
+    "AS-lab082": {
+        "title": "模擬器偵測檢查",
+        "mas": "4.1.5.5.7",
+        "mast": "",
+        "real_mstg": "MASVS-RESILIENCE-1",
+        "owasp_mobile": "M7",
+        "level": "WARNING",
+        "cve": "",
+        "desc": "App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。\n\n本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK；皆未發現即判定缺少模擬器偵測。加殼的 APK 因結果不可靠，不列入報告。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+    },
+    "AS-lab083": {
+        "title": "USB 偵錯模式偵測檢查",
+        "mas": "4.1.5.5.8",
+        "mast": "",
+        "real_mstg": "MASVS-RESILIENCE-2",
+        "owasp_mobile": "M7",
+        "level": "WARNING",
+        "cve": "",
+        "desc": "App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。\n\n本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK；皆未發現即判定缺少 USB 偵錯偵測。加殼的 APK 因結果不可靠，不列入報告。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
     }
 }

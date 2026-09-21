@@ -4101,6 +4101,180 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "description":        "User input validation: EditText fields missing inputType (type) or maxLength (length) constraints"
         }), 200
 
+    # 已知 RASP 防護 SDK, 有這些 class 就算 App 有做偵測 (lab_082 / lab_083 共用)
+    RASP_SDK_PREFIXES = [
+        ("Lcom/aheaditec/talsec_security/", "freeRASP (Talsec)"),
+        ("Lapp/talsec/rasp/",               "freeRASP (Talsec)"),
+    ]
+
+    def find_class_prefixes(dx, prefixes):
+        """回傳 APK 內出現過的 class 前綴 (含函式庫)"""
+        found = []
+        for prefix, name in prefixes:
+            for class_name in dx.classes:
+                if class_name.startswith(prefix):
+                    found.append({"class": class_name, "library": name})
+                    break
+        return found
+
+    def missing_app_components(a, dx):
+        """Manifest 宣告的 App 元件大多不在 dex 裡 -> 程式碼被加密載入 (未知加殼)"""
+        # 排除 Android / Google 等函式庫元件, 只看 App 自己的
+        comps = ["L" + c.replace(".", "/") + ";"
+                 for c in a.get_activities() + a.get_services() + a.get_receivers() + a.get_providers()]
+        comps = [c for c in comps if app_class_filter(a)(c)]
+        missing = [c for c in comps if c not in dx.classes]
+        return {
+            "suspected": len(comps) > 0 and len(missing) * 2 > len(comps),
+            "app_components": len(comps),
+            "missing": missing[:10],
+            "application": a.get_attribute_value("application", "name"),
+        }
+
+    # 共用排除清單之外, 常見第三方 SDK / 執行環境 (lab_082 / lab_083 用)
+    EXTRA_LIB_PREFIXES = (
+        "Ljava/", "Ljavax/", "Lcom/facebook/", "Lio/flutter/", "Lio/reactivex/",
+        "Lcom/squareup/", "Lokhttp3/", "Lokio/", "Lretrofit2/", "Lcom/bumptech/",
+        "Lcom/airbnb/", "Lcom/unity3d/", "Lcom/tencent/", "Lcom/alibaba/",
+        "Lcom/huawei/", "Lcom/amazonaws/", "Lcom/appsflyer/", "Lcom/adjust/",
+        "Lcom/onesignal/", "Lcom/microsoft/", "Lcom/crashlytics/", "Lio/sentry/",
+    )
+
+    def app_class_filter(a):
+        """判斷 class 是否為 App 自己的程式碼 (lab_082 / lab_083 用)"""
+        pkg = (a.get_package() or "").replace(".", "/")
+        own = ("L" + pkg + "/") if pkg else None
+
+        def keep(class_name):
+            # App 自己的套件優先: 即使前綴在排除清單 (如 org.*) 也要掃
+            if own and class_name.startswith(own):
+                return True
+            if not FilteringEngine.is_class_name_not_in_exclusion(class_name):
+                return False
+            return not class_name.startswith(EXTRA_LIB_PREFIXES)
+
+        return keep
+
+    def count_app_classes(dx, keep):
+        """掃描範圍: App 自己的 class 數"""
+        return sum(1 for c in dx.classes if keep(c))
+
+    def find_app_const_strings(dx, match, keep):
+        """掃 App 自己的程式碼的 const-string, match(字串) 回傳命中的特徵或 None"""
+        found, seen = [], set()
+        for class_name, cls_value in dx.classes.items():
+            if not keep(class_name):
+                continue
+            for method in cls_value.get_methods():
+                method_analysis = method.get_method()
+                if not method_analysis:
+                    continue
+                try:
+                    instructions = list(method_analysis.get_instructions())
+                except Exception:
+                    continue
+                for ins in instructions:
+                    try:
+                        if ins.get_op_value() not in (0x1A, 0x1B):
+                            continue
+                        hit = match(ins.get_string())
+                    except Exception:
+                        continue
+                    key = (class_name, method.name, hit)
+                    if hit and key not in seen:
+                        seen.add(key)
+                        found.append({"class": class_name, "method": method.name, "indicator": hit})
+        return found
+
+    # 4.1.5.5.7 — 模擬器偵測
+    @app.route('/androguard/lab_082', methods=['GET'])
+    def detect_lab_082():
+        """
+        風險: App 沒偵測模擬器, 攻擊者可用模擬器大量自動化操作或分析 App。
+        檢測: App 自己的程式碼有模擬器特徵字串 (MASTG-KNOW-0031 與常見判斷依據),
+              或有 Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
+        結果: 都沒有 -> WARNING (缺少防護)。疑似加殼 (App 元件不在 dex) -> PASS。
+        限制: 字串加密、寫在 .so、動態載入的偵測邏輯看不到。
+        """
+        # 夠獨特, 包含即算
+        DISTINCT = [
+            "goldfish", "ranchu", "google_sdk", "sdk_gphone", "android sdk built for",
+            "genymotion", "vbox86", "bluestacks", "droid4x", "tiantianvm", "itoolsavm",
+            "qemu_pipe", "qemud", "ro.kernel.qemu", "15555215554",
+            "com.bignox", "com.microvirt",
+            # 其他常見判斷依據: 模擬器預設 IP / 空 IMEI / 測試簽章 / CPU 資訊
+            "10.0.2.15", "000000000000000", "test-keys", "/proc/cpuinfo", "ro.product.cpu.abi",
+        ]
+        # 太常見, 要整個字串完全相同才算
+        EXACT = {"generic", "sdk", "emulator", "nox", "andy", "ttvm"}
+
+        def match(s):
+            s = (s or "").strip().lower()
+            if s in EXACT:
+                return s
+            return next((k for k in DISTINCT if k in s), None)
+
+        keep = app_class_filter(a)
+        code_evidence = find_app_const_strings(dx, match, keep)
+        api_evidence = find_class_prefixes(dx, [
+            ("Lcom/google/android/play/core/integrity/", "Google Play Integrity API"),
+            ("Lcom/google/android/gms/safetynet/",       "Google SafetyNet API"),
+        ]) + find_class_prefixes(dx, RASP_SDK_PREFIXES)
+
+        implemented = bool(code_evidence or api_evidence)
+        packing = missing_app_components(a, dx)
+        return jsonify({
+            "verdict":       "PASS" if implemented or packing["suspected"] else "WARNING",
+            "has_finding":   not implemented,   # True = 缺少防護
+            "implemented":   implemented,
+            "packing":       packing,           # 疑似加殼 -> 結果不可靠, 視為通過
+            "code_evidence": code_evidence,
+            "api_evidence":  api_evidence,
+            "scanned_app_classes": count_app_classes(dx, keep),
+            "count":         len(code_evidence) + len(api_evidence),
+            "lab_id":        "lab_082",
+            "description":   "Emulator detection implementation check",
+        }), 200
+
+    # 4.1.5.5.8 — USB 偵錯偵測
+    @app.route('/androguard/lab_083', methods=['GET'])
+    def detect_lab_083():
+        """
+        風險: App 沒偵測 USB / 無線偵錯, 攻擊者或木馬可透過 ADB 操控裝置與 App。
+        檢測: App 自己的程式碼讀取 adb_enabled / adb_wifi_enabled /
+              development_settings_enabled 或 adb 服務屬性, 或有已知 RASP SDK -> 視為有做。
+              Play Integrity 不判斷偵錯狀態, 不算。
+        結果: 都沒有 -> WARNING (缺少防護)。疑似加殼 (App 元件不在 dex) -> PASS。
+        限制: 字串加密、寫在 .so、動態組字串的偵測邏輯看不到。
+        """
+        # Settings.Global 常數編譯後會變成字串
+        SETTINGS_KEYS = {"adb_enabled", "adb_wifi_enabled", "development_settings_enabled"}
+        # 直接查 adb 服務狀態的系統屬性
+        ADB_PROPS = {"init.svc.adbd", "service.adb.tcp.port"}
+
+        def match(s):
+            s = (s or "").strip()
+            return s if s in SETTINGS_KEYS or s in ADB_PROPS else None
+
+        keep = app_class_filter(a)
+        code_evidence = find_app_const_strings(dx, match, keep)
+        api_evidence = find_class_prefixes(dx, RASP_SDK_PREFIXES)
+
+        implemented = bool(code_evidence or api_evidence)
+        packing = missing_app_components(a, dx)
+        return jsonify({
+            "verdict":       "PASS" if implemented or packing["suspected"] else "WARNING",
+            "has_finding":   not implemented,   # True = 缺少防護
+            "implemented":   implemented,
+            "packing":       packing,           # 疑似加殼 -> 結果不可靠, 視為通過
+            "code_evidence": code_evidence,
+            "api_evidence":  api_evidence,
+            "scanned_app_classes": count_app_classes(dx, keep),
+            "count":         len(code_evidence) + len(api_evidence),
+            "lab_id":        "lab_083",
+            "description":   "USB debugging detection implementation check",
+        }), 200
+
     # 4.1.2.3.7 — WebView advanced configuration audit (complements lab_034)
     @app.route('/androguard/lab_065', methods=['GET'])
     def detect_lab_065():
