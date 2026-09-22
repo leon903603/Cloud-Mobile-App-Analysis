@@ -166,8 +166,8 @@ class PDFPSReporte:
             )
 
             if (self.masterReport[rule]['isDetected']):
-                lab_id_cell = "<font color='red'>{label_detected}</font>".format(
-                    label_detected = i18n.t('label.rule_detected')
+                lab_id_cell = "<font color='red'>{label_failed}</font>".format(
+                    label_failed = i18n.t('label.rule_failed')
                 )
 
             result_cell = "<b>{rule_id} - {rule_title}</b>".format(
