@@ -20,7 +20,7 @@
         "sdk_name": "SDK name",
         "table_result_title": "Result",
         "table_rule_title": "Rule",
-        "rule_detected": "⚠ Detected",
+        "rule_failed": "✗ Failed",
         "rule_passed": "✓ Passed",
         "mas_title": "Basic Information Security Testing Standard for Mobile Applications, R.O.C.: ",
         "owasp_mobile_title": "OWASP MOBILE: ",

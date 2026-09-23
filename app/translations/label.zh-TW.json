@@ -20,7 +20,7 @@
         "sdk_name": "SDK名稱",
         "table_result_title": "結果",
         "table_rule_title": "規則",
-        "rule_detected": "⚠ 偵測到風險",
+        "rule_failed": "✗ 未通過",
         "rule_passed": "✓ 通過",
         "mas_title": "行動應用App基本資安檢測基準",
         "owasp_mobile_title": "OWASP Mobile: ",
