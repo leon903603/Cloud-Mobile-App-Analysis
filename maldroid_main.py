@@ -4942,6 +4942,50 @@ Proof-Of-Concept reference:
             _w081(u"... and %d more" % (len(warning_081) - 9))
 
     #-----------------------------------------------------------------------------------
+    # [AS-lab082] 4.1.5.5.7 模擬器偵測 / [AS-lab083] 4.1.5.5.8 USB 偵錯偵測
+    # 缺失告警: 沒找到偵測機制才報 WARNING; 有做或有加殼 (結果不準) 都不寫入報告
+    result_042_packers = (get_androguard('/lab_042') or {}).get('packers', [])
+    is_packed_08x = bool(result_042_packers)
+
+    # Detail 一律英文並先 encode, 原因同 lab_081
+    def _w08x(line):
+        writer.write(line.encode('utf-8'))
+
+    result_lab082 = get_androguard('/lab_082')
+    if isinstance(result_lab082, dict) and result_lab082.get('verdict') == 'WARNING' and not is_packed_08x:
+        writer.startWriter(
+            "EMULATOR_DETECTION_MISSING", LEVEL_WARNING,
+            u"[AS-lab082][MAS-4.1.5.5.7][MASVS-RESILIENCE-1][M7] 模擬器偵測檢查",
+            u"App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。" u"\n\n"
+            u"本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK；皆未發現即判定缺少模擬器偵測。加殼的 APK 因結果不可靠，不列入報告。" u"\n\n"
+            u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+            + "||" +
+            u"When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily." u"\n\n"
+            u"This check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection; if neither is found, emulator detection is considered missing. Packed APKs are not reported because the result is unreliable." u"\n\n"
+            u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/",
+            [u"Resilience", u"Emulator"])
+        _w08x(u"No emulator detection found in app code")
+
+    result_lab083 = get_androguard('/lab_083')
+    if isinstance(result_lab083, dict) and result_lab083.get('verdict') == 'WARNING' and not is_packed_08x:
+        writer.startWriter(
+            "USB_DEBUG_DETECTION_MISSING", LEVEL_WARNING,
+            u"[AS-lab083][MAS-4.1.5.5.8][MASVS-RESILIENCE-2][M7] USB 偵錯模式偵測檢查",
+            u"App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。" u"\n\n"
+            u"本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK；皆未發現即判定缺少 USB 偵錯偵測。加殼的 APK 因結果不可靠，不列入報告。" u"\n\n"
+            u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+            + "||" +
+            u"When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access." u"\n\n"
+            u"This check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection; if neither is found, USB debugging detection is considered missing. Packed APKs are not reported because the result is unreliable." u"\n\n"
+            u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED",
+            [u"Resilience", u"Debug"])
+        _w08x(u"No USB or wireless debugging detection found in app code")
+
+    #-----------------------------------------------------------------------------------
     # [lab_061] - Checking shared_user_id
     sharedUserId = a.get_shared_user_id()
     sharedUserId_in_system = False
