@@ -13,7 +13,8 @@ app = Flask(__name__)
 # FIFO queue
 job_queue = Queue()
 
-HOST = "base:8080"
+import os
+HOST = os.environ.get("BASE_HOST", "127.0.0.1:8080")
 
 def run_ws_task(file_id):
     async def _task():
@@ -110,7 +111,7 @@ def worker_loop():
             print(f"[{job_id}] Retrieving report...")
             for attempt in range(max_retries):
                 try:
-                    result_resp = requests.get(f"http://{HOST}/result", cookies=cookies)
+                    result_resp = requests.get(f"http://{HOST}/result?format=json", cookies=cookies)
                     if result_resp.status_code == 200:
                         print(f"[{job_id}] Report ready!")
                         break

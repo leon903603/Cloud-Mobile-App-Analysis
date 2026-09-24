@@ -3,7 +3,7 @@ import FormData from "form-data";
 import fetch from "node-fetch";
 import { FileMeta } from "./models/FileMeta";
 import { DynamicCredentials } from "./models/DynamicCredentials";
-import { downloadToTemp, putJson } from "./s3";
+import { downloadToTemp, putJson, putObject } from "./s3";
 import crypto from "crypto";
 import {
   EC2Client,
@@ -290,16 +290,38 @@ export async function analyzeAndroidDynamic(fileId: number) {
 
     // ── Phase 3: Generating report & saving to S3 ────────────────────
     FileMeta.update(fileDoc.id, { status: "analyzing", taskId: "substatus:generating_report" });
-    const result = (await res.json()) as any;
+    const responseData = (await res.json()) as any;
 
-    await putJson(fileDoc.reportPath, result);
+    // Handle both wrapped response ({ report, pdf_base64 }) and raw report JSON
+    let reportData = responseData;
+    let pdfBase64: string | null = null;
+    if (responseData && typeof responseData === "object" && "report" in responseData) {
+      reportData = responseData.report;
+      pdfBase64 = responseData.pdf_base64 ?? null;
+    }
+
+    // 1. Save JSON Report
+    await putJson(fileDoc.reportPath, reportData);
+
+    // 2. Fast Path: Save Pre-generated PDF directly to S3 if available
+    if (pdfBase64) {
+      try {
+        const pdfKey = fileDoc.reportPath.replace(/\.json$/, ".pdf");
+        const pdfBuffer = Buffer.from(pdfBase64, "base64");
+        await putObject(pdfKey, pdfBuffer, "application/pdf");
+        console.log(`[Dynamic Analysis] Fast Path: Saved pre-generated PDF to S3 key ${pdfKey} (${pdfBuffer.length} bytes)`);
+      } catch (pdfSaveErr) {
+        console.error(`[Dynamic Analysis] Warning: Failed to save PDF to S3:`, pdfSaveErr);
+      }
+    }
+
     DynamicCredentials.remove(fileDoc.id);
 
     // ── Phase 4: Done ────────────────────────────────────────────────
     FileMeta.update(fileDoc.id, { status: "done", taskId: null });
     console.log(`[Dynamic Analysis] Analysis for file ${fileDoc.id} finished successfully.`);
 
-    return result;
+    return reportData;
 
   } catch (err) {
     console.error("Error in analyzeAndroidDynamic:", err);
