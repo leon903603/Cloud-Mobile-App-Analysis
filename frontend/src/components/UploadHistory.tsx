@@ -388,14 +388,16 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
   }, []);
 
   // Helper function to format status with descriptive text
-  const formatStatus = (status: string) => {
+  const formatStatus = (status: string, analysisType?: string) => {
     switch (status) {
       case "starting_sandbox":
         return "Starting Sandbox (Waking cloud sandbox...)";
       case "analyzing":
-        return "Analyzing (Runtime detection & sampling...)";
+        return analysisType === "dynamic"
+          ? "Analyzing (Runtime detection & sampling...)"
+          : "Analyzing (Static decompilation & rule checks...)";
       case "generating_report":
-        return "Generating Report (Compiling dynamic report...)";
+        return "Generating Report (Compiling report...)";
       case "done":
         return "Done";
       case "pending":
@@ -463,7 +465,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                   <div className="pl-8 pr-4 py-4 space-y-2 relative">
                     <div className="flex items-center gap-2">
                       <StatusIcon status={upload.status} />
-                      <span className="font-medium">{formatStatus(upload.status)}</span>
+                      <span className="font-medium">{formatStatus(upload.status, upload.analysisType)}</span>
                     </div>
                     {/* Display file hash */}
                     <p>Hash: {upload.hash}</p>
