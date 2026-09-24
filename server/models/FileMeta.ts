@@ -95,4 +95,8 @@ export const FileMeta = {
     db.prepare(`UPDATE file_meta SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`)
       .run(...keys.map((k) => patch[k]), id);
   },
+
+  delete(id: number): void {
+    db.prepare("DELETE FROM file_meta WHERE id = ?").run(id);
+  },
 };

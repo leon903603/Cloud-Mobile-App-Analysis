@@ -263,6 +263,10 @@ app.get("/uploads", verifyToken, async (req: AuthRequest, res: Response) => {
       u.status === "analyzing" && u.taskId?.startsWith("substatus:")
         ? u.taskId.replace("substatus:", "")
         : u.status,
+    errorMessage:
+      u.status === "error" && u.taskId?.startsWith("error:")
+        ? u.taskId.replace("error:", "")
+        : null,
     // Lets the UI say whether pressing Analyze will cost a credit — a retry of
     // an analysis that was already paid for does not.
     creditSpent: !!u.creditSpent,
@@ -273,6 +277,30 @@ app.get("/uploads", verifyToken, async (req: AuthRequest, res: Response) => {
   }));
 
   res.json(sanitized);
+});
+
+// Delete an upload record
+app.delete("/uploads/:id", verifyToken, async (req: AuthRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+  const user = User.findById(req.user.uid);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const upload = FileMeta.findOne({ id: Number(req.params.id), user: user.id } as any);
+  if (!upload) return res.status(404).json({ error: "Upload not found" });
+
+  if (upload.status === "analyzing") {
+    return res.status(400).json({ error: "Cannot delete an upload while analysis is running" });
+  }
+
+  try {
+    DynamicCredentials.remove(upload.id);
+    FileMeta.delete(upload.id);
+    res.json({ message: "Upload record deleted successfully" });
+  } catch (err) {
+    console.error("Failed to delete upload record:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // Check for duplicate file

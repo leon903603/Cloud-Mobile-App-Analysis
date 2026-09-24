@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
-import { Calendar, FileText, CheckCircle, Loader2, AlertCircle, Clock, KeyRound } from "lucide-react";
+import { Calendar, FileText, CheckCircle, Loader2, AlertCircle, Clock, KeyRound, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "./ui/input";
 import {
@@ -21,6 +21,7 @@ interface UploadEntry {
   filename: string;
   analysisType: string;
   status: string;
+  errorMessage?: string | null;
   filePath?: string;
   hash?: string;
   uploadTime?: string;
@@ -353,6 +354,29 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
     }
   };
 
+  // Delete an upload record
+  const handleDeleteUpload = async (upload: UploadEntry) => {
+    if (!window.confirm(`Are you sure you want to remove the record for "${upload.filename}"? You will be able to re-upload it cleanly.`)) {
+      return;
+    }
+    try {
+      const token = await getIdToken();
+      if (!token) throw new Error("User not logged in");
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/uploads/${upload.id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Delete failed" }));
+        alert(body.error || "Delete failed");
+        return;
+      }
+      fetchUploads();
+    } catch (err) {
+      console.error("Delete error:", err);
+    }
+  };
+
   // Ensure refresh when new file is uploaded
   useEffect(() => {
     fetchUploads();
@@ -468,13 +492,46 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                         </div>
                       )}
 
+                    {/* Error notice & advice */}
+                    {upload.status === "error" && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+                        <div className="flex items-center gap-2 font-medium">
+                          <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+                          <span>
+                            {upload.errorMessage === "capacity"
+                              ? "Cloud sandbox capacity is temporarily busy in AWS."
+                              : "Analysis did not complete."}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-muted-foreground leading-relaxed">
+                          {upload.errorMessage === "capacity"
+                            ? "AWS region is temporarily out of instant capacity. Please wait 1~2 minutes and click Retry. Retrying a previously paid run is completely free and will not consume credits."
+                            : "An error occurred during execution. You can click Retry to run it again for free, or click Remove to delete this record and re-upload."}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Why an analysis could not be started (e.g. no credits) */}
                     {notices[upload.id] && (
                       <p className="text-sm text-amber-500">{notices[upload.id]}</p>
                     )}
 
-                    {/* Show analyze button */}
+                    {/* Action buttons */}
                     <div className="flex flex-wrap items-center justify-end gap-2">
+                      {/* Delete button for removing old/errored/duplicate record */}
+                      {!["starting_sandbox", "analyzing", "generating_report"].includes(upload.status) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDeleteUpload(upload)}
+                          title="Remove record"
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+
                       {upload.status === "pending" && (
                         <Button
                           size="sm"

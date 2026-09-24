@@ -240,17 +240,32 @@ export async function analyzeAndroidDynamic(fileId: number) {
     FileMeta.update(fileDoc.id, { status: "analyzing", taskId: "substatus:starting_sandbox" });
     console.log(`[Dynamic Analysis] Starting sandbox instance ${instanceId}...`);
 
-    try {
-      await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }));
-      console.log(`[Dynamic Analysis] Waiting for instance ${instanceId} to reach running state...`);
-      await waitUntilInstanceRunning(
-        { client: ec2, maxWaitTime: 120 },
-        { InstanceIds: [instanceId] }
-      );
-      console.log(`[Dynamic Analysis] Sandbox instance ${instanceId} is running. Probing ${sandboxBaseUrl}...`);
-    } catch (startErr) {
-      console.error(`[Dynamic Analysis] Failed to start EC2 instance:`, startErr);
-      throw new Error(`Failed to start sandbox instance: ${startErr}`);
+    let startRetries = 3;
+    while (startRetries > 0) {
+      try {
+        await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }));
+        console.log(`[Dynamic Analysis] Waiting for instance ${instanceId} to reach running state...`);
+        await waitUntilInstanceRunning(
+          { client: ec2, maxWaitTime: 120 },
+          { InstanceIds: [instanceId] }
+        );
+        console.log(`[Dynamic Analysis] Sandbox instance ${instanceId} is running. Probing ${sandboxBaseUrl}...`);
+        break;
+      } catch (startErr: any) {
+        startRetries--;
+        const isCapacityErr = String(startErr).includes("InsufficientInstanceCapacity") || startErr?.name === "InsufficientInstanceCapacity";
+        if (isCapacityErr && startRetries > 0) {
+          console.warn(`[Dynamic Analysis] EC2 capacity busy. Retrying start instance in 10s... (${startRetries} attempts left)`);
+          await new Promise((r) => setTimeout(r, 10000));
+        } else {
+          console.error(`[Dynamic Analysis] Failed to start EC2 instance:`, startErr);
+          FileMeta.update(fileDoc.id, {
+            status: "error",
+            taskId: isCapacityErr ? "error:capacity" : "error:startup_failed",
+          });
+          throw new Error(`Failed to start sandbox instance: ${startErr}`);
+        }
+      }
     }
 
     const isReady = await probeSandbox(`${sandboxBaseUrl}/`, 90);
