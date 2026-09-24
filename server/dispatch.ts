@@ -11,6 +11,7 @@ import {
   StopInstancesCommand,
   waitUntilInstanceRunning,
 } from "@aws-sdk/client-ec2";
+import { renderReportPdf } from "./pdf";
 
 const IOS_STATIC_API = "http://ios-static-backend:8080";
 // Android static analysis now runs on an AWS Lambda behind a Function URL (auth: NONE).
@@ -322,15 +323,32 @@ export async function analyzeAndroidDynamic(fileId: number) {
     // 1. Save JSON Report
     await putJson(fileDoc.reportPath, reportData);
 
-    // 2. Fast Path: Save Pre-generated PDF directly to S3 if available
+    // 2. Render dynamic PDF via Dedicated Dynamic Lambda (or save pre-generated if available)
+    const pdfKey = fileDoc.reportPath.replace(/\.json$/, ".pdf");
     if (pdfBase64) {
       try {
-        const pdfKey = fileDoc.reportPath.replace(/\.json$/, ".pdf");
         const pdfBuffer = Buffer.from(pdfBase64, "base64");
         await putObject(pdfKey, pdfBuffer, "application/pdf");
         console.log(`[Dynamic Analysis] Fast Path: Saved pre-generated PDF to S3 key ${pdfKey} (${pdfBuffer.length} bytes)`);
       } catch (pdfSaveErr) {
         console.error(`[Dynamic Analysis] Warning: Failed to save PDF to S3:`, pdfSaveErr);
+      }
+    } else {
+      try {
+        console.log(`[Dynamic Analysis] Invoking Dynamic PDF Lambda for ${fileDoc.filename}...`);
+        const pdfRes = await renderReportPdf({
+          reportKey: fileDoc.reportPath,
+          filename: `${fileDoc.filename}.pdf`,
+          type: "android-dynamic",
+          outputKey: pdfKey,
+        });
+        if (pdfRes.ok) {
+          console.log(`[Dynamic Analysis] Dynamic PDF Lambda generated PDF successfully (${pdfRes.bytes} bytes)`);
+        } else {
+          console.warn(`[Dynamic Analysis] Warning: Dynamic PDF Lambda failed: ${pdfRes.error}`);
+        }
+      } catch (lambdaErr) {
+        console.warn(`[Dynamic Analysis] Warning invoking PDF Lambda:`, lambdaErr);
       }
     }
 

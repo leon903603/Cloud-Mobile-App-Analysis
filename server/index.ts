@@ -562,6 +562,7 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
     const result = await renderReportPdf({
       reportKey: reportMeta.reportPath,
       filename: `${reportMeta.filename}.pdf`,
+      type: reportMeta.analysisType,
     });
 
     if (!result.ok) {
