@@ -315,6 +315,10 @@ export async function analyzeAndroidDynamic(fileId: number) {
       pdfBase64 = responseData.pdf_base64 ?? null;
     }
 
+    console.log(
+      `[Dynamic Analysis] Response parsed: has pdf_base64=${!!pdfBase64} (${pdfBase64 ? pdfBase64.length : 0} chars), response keys: ${Object.keys(responseData || {})}`
+    );
+
     // 1. Save JSON Report
     await putJson(fileDoc.reportPath, reportData);
 
