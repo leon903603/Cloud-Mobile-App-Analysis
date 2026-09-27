@@ -12,7 +12,7 @@ interface CreditPackage {
   popular?: boolean;
 }
 
-// 1 credit = 1 analysis run = US$30, matching the /product page. Static and
+// 1 credit = 1 analysis run = US$40, matching the /product page. Static and
 // dynamic analysis of the same file are two runs, and so two credits.
 // Package ids must stay in sync with VALID_PACKAGES in server/newebpay.ts.
 //
@@ -20,7 +20,7 @@ interface CreditPackage {
 // is derived from a live rate and comes from GET /api/newebpay/pricing. These
 // are the USD fallbacks used until that request lands (or if it fails) — the
 // server is authoritative for the TWD actually charged.
-const USD_PER_CREDIT = 30;
+const USD_PER_CREDIT = 40;
 const CREDIT_PACKAGES: CreditPackage[] = [
   { id: "starter", credits: 1, usd: 1 * USD_PER_CREDIT, label: "Starter" },
   { id: "pro", credits: 5, usd: 5 * USD_PER_CREDIT, label: "Pro", popular: true },

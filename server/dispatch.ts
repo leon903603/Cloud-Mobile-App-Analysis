@@ -1,10 +1,9 @@
 import fs from "fs";
 import FormData from "form-data";
 import fetch from "node-fetch";
-import { FileMeta } from "./models/FileMeta";
+import { FileMeta, FileMetaRow } from "./models/FileMeta";
 import { DynamicCredentials } from "./models/DynamicCredentials";
 import { downloadToTemp, putJson, putObject } from "./s3";
-import crypto from "crypto";
 import {
   EC2Client,
   StartInstancesCommand,
@@ -13,12 +12,16 @@ import {
 } from "@aws-sdk/client-ec2";
 import { renderReportPdf } from "./pdf";
 
-const IOS_STATIC_API = "http://ios-static-backend:8080";
-// Android static analysis now runs on an AWS Lambda behind a Function URL (auth: NONE).
-// Point ANDROID_STATIC_API at that URL, e.g.
-// https://xxxx.lambda-url.ap-southeast-2.on.aws — trailing slash is stripped so the
-// `${ANDROID_STATIC_API}/analyze_apk` path joins cleanly.
+// Static analysis wrappers on islab53, reached over Tailscale, e.g.
+//   ANDROID_STATIC_API=http://100.117.29.74:5001   (Celery queue_wrapper)
+//   IOS_STATIC_API=http://100.117.29.74:8000       (ios-static-backend, RQ)
+// Both speak the same contract: POST /analyze_{apk,ipa} with {key, hash, filename}
+// → 202 {job_id}, then GET /status/<job_id>. The wrapper pulls the binary from S3
+// itself and pre-generates reports/{uid}/{hash}/static.pdf, which /generate-report
+// serves before falling back to the PDF Lambda. Trailing slashes are stripped so
+// the paths join cleanly.
 const ANDROID_STATIC_API = (process.env.ANDROID_STATIC_API ?? "").replace(/\/+$/, "");
+const IOS_STATIC_API = (process.env.IOS_STATIC_API ?? "").replace(/\/+$/, "");
 
 // Dynamic analysis ARM64 sandbox configuration (AWS Sydney VPC Private IP direct connect)
 const DYNAMIC_SANDBOX_INSTANCE_ID = process.env.DYNAMIC_SANDBOX_INSTANCE_ID || "i-037917cfa6d87177f";
@@ -26,20 +29,77 @@ const DYNAMIC_SANDBOX_HOST = process.env.DYNAMIC_SANDBOX_HOST || "172.31.43.199"
 const DYNAMIC_SANDBOX_PORT = process.env.DYNAMIC_SANDBOX_PORT || "5002";
 
 const POLL_INTERVAL_MS = 5000;
-// Must outlast the android-static worker Lambda (600s timeout + async retries):
-// 180 × 5s = 15 min. The iOS wrapper shares this budget.
+// 180 × 5s = 15 min per static job, shared by Android and iOS. Large IPAs spend
+// most of it in Ghidra; the iOS wrapper's own RQ job timeout is 3600s.
 const MAX_POLL_ATTEMPTS = 180;
 
-interface TaskQueuedResponse {
-  task_id: string;
-  status?: string;
-}
-
-interface ScanReport {
-  [key: string]: any;
-}
-
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Submit a static-analysis job to an islab53 wrapper and poll it to completion.
+ * The report JSON is written to the row's reportPath; the wrapper has already
+ * put static.pdf next to it.
+ */
+async function runStaticJob(fileDoc: FileMetaRow, api: string, submitPath: string) {
+  if (!api) throw new Error(`Static analysis API for ${submitPath} is not configured`);
+
+  FileMeta.update(fileDoc.id, { status: "analyzing" });
+
+  // The wrapper pulls the binary from S3 itself, so we send the object key
+  // (fileDoc.filePath) as JSON instead of uploading the bytes. Returns 202 + job_id.
+  // The key must be uploads/{uid}/{hash}/<file>: the wrapper derives the
+  // reports/{uid}/{hash}/static.pdf key from it.
+  const postRes = await fetch(`${api}${submitPath}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      key: fileDoc.filePath,
+      hash: fileDoc.hash,
+      filename: fileDoc.filename,
+    }),
+  });
+  if (postRes.status !== 202) throw new Error(`Enqueue failed with status ${postRes.status}`);
+  const { job_id } = (await postRes.json()) as { job_id: string };
+  if (!job_id) throw new Error("No job_id returned from wrapper");
+
+  FileMeta.update(fileDoc.id, { taskId: job_id });
+
+  // Poll /status/<job_id> until done
+  let report: any = null;
+  for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+    console.log(`Polling attempt ${attempt}/${MAX_POLL_ATTEMPTS} for job ${job_id}...`);
+    await sleep(POLL_INTERVAL_MS);
+
+    const statusRes = await fetch(`${api}/status/${job_id}`);
+    // Failed jobs come back as HTTP 500 with {status:"failed", error} — surface
+    // the real reason instead of a bare status code.
+    const data = (await statusRes.json().catch(() => null)) as any;
+    if (!statusRes.ok) {
+      throw new Error(`Job ${job_id} failed: ${data?.error ?? `status poll returned ${statusRes.status}`}`);
+    }
+    if (!data) throw new Error(`Status poll for ${job_id} returned invalid JSON`);
+
+    if (data.status === "pending" || data.status === "running") {
+      console.log(`Job ${job_id} still running — step ${data.step ?? "?"}/${data.total ?? "?"}: ${data.message ?? ""}`);
+      continue;
+    }
+    if (data.status === "success") {
+      report = data.result;
+      console.log(`Job ${job_id} completed successfully`);
+      break;
+    }
+    throw new Error(`Job ${job_id} failed: ${data.error}`);
+  }
+
+  if (!report) throw new Error(`Job ${job_id} did not complete after ${MAX_POLL_ATTEMPTS} attempts`);
+
+  // Wrapper may return the report as a JSON string or an object — store parsed JSON.
+  const parsedReport = typeof report === "string" ? JSON.parse(report) : report;
+  await putJson(fileDoc.reportPath, parsedReport);
+  FileMeta.update(fileDoc.id, { status: "done" });
+
+  return report;
+}
 
 // Every analyze function takes the `file_meta` row id, never the file hash. Two
 // users can upload the same binary — the table is unique on (user, hash,
@@ -48,81 +108,17 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // report while the caller's own row sat in `analyzing` forever. The caller has
 // already paid a credit for a specific row, so that row is what runs.
 export async function analyzeIOSStatic(fileId: number) {
-  let tmpPath: string | null = null;
   try {
-    // Fetch the file document
     const fileDoc = FileMeta.findById(fileId);
     if (!fileDoc) throw new Error(`No file found with id ${fileId}`);
     if (fileDoc.analysisType !== "static" || !fileDoc.filename.endsWith(".ipa"))
       throw new Error(`File ${fileDoc.filename} is not eligible for IPA static analysis`);
 
-    // Download the sample from S3 to a local temp file so form-data can send a
-    // known Content-Length to the analysis wrapper.
-    tmpPath = await downloadToTemp(fileDoc.filePath);
-
-    // Prepare file upload
-    const fileStream = fs.createReadStream(tmpPath);
-    const md5Hash = crypto.createHash("md5").update(fs.readFileSync(tmpPath)).digest("hex");
-
-    const form = new FormData();
-    form.append("app_filename", fileDoc.filename);
-    form.append("app_rawfile", fileStream, fileDoc.filename);
-    form.append("md5", md5Hash);
-
-    // Queue analysis
-    const postRes = await fetch(`${IOS_STATIC_API}/scan`, { method: "POST", body: form, headers: form.getHeaders() });
-    if (!postRes.ok) throw new Error(`Analysis API request failed with status ${postRes.status}`);
-    const postData = (await postRes.json()) as TaskQueuedResponse;
-    const taskId = postData.task_id;
-    if (!taskId) throw new Error("No task_id returned from analysis API");
-
-    // Save initial status
-    FileMeta.update(fileDoc.id, { status: "analyzing", taskId });
-
-    // Poll GET /scan/{task_id} until report is ready
-    let report: ScanReport | null = null;
-    for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
-      console.log(`Polling attempt ${attempt}/${MAX_POLL_ATTEMPTS} for task ${taskId}...`);
-      await sleep(POLL_INTERVAL_MS);
-      const getRes = await fetch(`${IOS_STATIC_API}/scan/${taskId}`);
-      const statusCode = getRes.status;
-      if (statusCode === 202) {
-        console.log(`Task ${taskId} still queued/processing...`);
-        continue;
-      }
-      if (statusCode === 200) {
-        const data = (await getRes.json()) as any;
-        if (data.result) {
-          report = data;
-          console.log(`Task ${taskId} completed successfully!`);
-          break;
-        }
-        if (data.status && ["queued", "processing"].includes(data.status)) {
-          console.log(`Task ${taskId} still running (status: ${data.status})...`);
-          continue;
-        }
-        console.log(`Unexpected 200 response:`, data);
-        continue;
-      }
-      const errText = await getRes.text();
-      throw new Error(`Failed to poll task: ${statusCode} - ${errText}`);
-    }
-    if (!report) {
-      throw new Error(`Task ${taskId} did not complete after ${MAX_POLL_ATTEMPTS} attempts`);
-    }
-
-    // Save report to S3 (reportPath key was set at upload time) and update status
-    await putJson(fileDoc.reportPath, report);
-    FileMeta.update(fileDoc.id, { status: "done" });
-
-    return report;
-
+    return await runStaticJob(fileDoc, IOS_STATIC_API, "/analyze_ipa");
   } catch (err) {
     console.error("Error in analyzeIOSStatic:", err);
     FileMeta.update(fileId, { status: "error" });
     throw err;
-  } finally {
-    if (tmpPath) await fs.promises.unlink(tmpPath).catch(() => {});
   }
 }
 
@@ -134,61 +130,7 @@ export async function analyzeAndroidStatic(fileId: number) {
     if (fileDoc.analysisType !== "static" || !fileDoc.filename.endsWith(".apk"))
       throw new Error(`File ${fileDoc.filename} is not eligible for APK static analysis`);
 
-    FileMeta.update(fileDoc.id, { status: "analyzing" });
-
-    // Submit job — the Lambda pulls the APK from S3 itself, so we send the object key
-    // (fileDoc.filePath) as JSON instead of uploading the bytes. Returns 202 + job_id.
-    const postRes = await fetch(`${ANDROID_STATIC_API}/analyze_apk`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key: fileDoc.filePath,
-        hash: fileDoc.hash,
-        filename: fileDoc.filename,
-      }),
-    });
-    if (postRes.status !== 202) throw new Error(`Enqueue failed with status ${postRes.status}`);
-    const { job_id } = (await postRes.json()) as { job_id: string };
-    if (!job_id) throw new Error("No job_id returned from wrapper");
-
-    FileMeta.update(fileDoc.id, { taskId: job_id });
-
-    // Poll /status/<job_id> until done
-    let report: any = null;
-    for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
-      console.log(`Polling attempt ${attempt}/${MAX_POLL_ATTEMPTS} for job ${job_id}...`);
-      await sleep(POLL_INTERVAL_MS);
-
-      const statusRes = await fetch(`${ANDROID_STATIC_API}/status/${job_id}`);
-      // Failed jobs come back as HTTP 500 with {status:"failed", error} — surface
-      // the real reason instead of a bare status code.
-      const data = (await statusRes.json().catch(() => null)) as any;
-      if (!statusRes.ok) {
-        throw new Error(`Job ${job_id} failed: ${data?.error ?? `status poll returned ${statusRes.status}`}`);
-      }
-      if (!data) throw new Error(`Status poll for ${job_id} returned invalid JSON`);
-
-      if (data.status === "pending" || data.status === "running") {
-        console.log(`Job ${job_id} still running — step ${data.step ?? "?"}/${data.total ?? "?"}: ${data.message ?? ""}`);
-        continue;
-      }
-      if (data.status === "success") {
-        report = data.result;
-        console.log(`Job ${job_id} completed successfully`);
-        break;
-      }
-      throw new Error(`Job ${job_id} failed: ${data.error}`);
-    }
-
-    if (!report) throw new Error(`Job ${job_id} did not complete after ${MAX_POLL_ATTEMPTS} attempts`);
-
-    // Wrapper may return the report as a JSON string or an object — store parsed JSON.
-    const parsedReport = typeof report === "string" ? JSON.parse(report) : report;
-    await putJson(fileDoc.reportPath, parsedReport);
-    FileMeta.update(fileDoc.id, { status: "done" });
-
-    return report;
-
+    return await runStaticJob(fileDoc, ANDROID_STATIC_API, "/analyze_apk");
   } catch (err) {
     console.error("Error in analyzeAndroidStatic:", err);
     FileMeta.update(fileId, { status: "error" });

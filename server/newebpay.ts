@@ -24,7 +24,7 @@ const CLIENT_URL = process.env.CLIENT_URL ?? "";
 // integer in 新台幣; the spec has no currency parameter), so each order converts
 // USD→TWD at checkout using the cached rate from fx.ts. The TWD figure therefore
 // moves with the market while the USD price stays fixed.
-const USD_PER_CREDIT = Number(process.env.USD_PER_CREDIT ?? 30);
+const USD_PER_CREDIT = Number(process.env.USD_PER_CREDIT ?? 40);
 
 // Same package ids as the frontend BuyCredits component.
 const VALID_PACKAGES: Record<string, number> = {

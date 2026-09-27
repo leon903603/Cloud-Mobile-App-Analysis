@@ -198,7 +198,7 @@ function Product() {
           <div className="mx-auto w-full max-w-sm rounded-xl border border-border bg-card p-8 text-center">
             <h3 className="font-semibold text-foreground">Application Analysis</h3>
             <div className="my-4">
-              <span className="text-5xl font-bold text-foreground">US$30</span>
+              <span className="text-5xl font-bold text-foreground">US$40</span>
               <span className="text-muted-foreground"> / analysis</span>
               <div className="text-muted-foreground mt-1">
                 billed in TWD at the current exchange rate
@@ -230,7 +230,7 @@ function Product() {
               <span className="font-semibold text-foreground">not</span> provide
               stored-value, e-wallet, or top-up services. Every payment on this
               platform is a prepaid fee for a specific service: one credit
-              corresponds to exactly one mobile application analysis run (US$30,
+              corresponds to exactly one mobile application analysis run (US$40,
               charged in TWD at the exchange rate shown at checkout). Static and
               dynamic analysis are separate services, each costing one credit.
             </p>
