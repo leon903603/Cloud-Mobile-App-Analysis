@@ -86,63 +86,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         f.write("ready")
     print(f'androguard_server: Created ready flag file: {flag_file}')
 
-    #find specific method calls by instructions
-    def find_method_calls(dx, target_class=None, target_method=None):
-        found_calls = []
-        
-        for class_name, cls_value in dx.classes.items():
-            for method in cls_value.get_methods():
-                method_analysis = method.get_method()
-                if method_analysis and hasattr(method_analysis, 'get_instructions'):
-                    instructions = list(method_analysis.get_instructions())
-                    
-                    for i, instruction in enumerate(instructions):
-                        ins_output = instruction.get_output()
-                        if target_class in ins_output and target_method in ins_output:
-                            found_calls.append({
-                                'class': class_name,
-                                'method': method.name,
-                                'instructions': instructions,
-                                'call_index': i
-                            })
-                
-        return found_calls
-
-    """
-        Generator: iterate over all app methods, excluding system/library classes.
-        Yields: (class_name, method, method_analysis)
-    """
-    def iter_app_methods(dx):
-        for class_name, cls_value in dx.classes.items():
-            if not FilteringEngine.is_class_name_not_in_exclusion(class_name):
-                continue
-            for method in cls_value.get_methods():
-                m = method.get_method()
-                if m:
-                    yield class_name, method, m
-
-    def resolve_activity_name(package_name, activity_name):
-        """
-        Resolve a short activity name from AndroidManifest to its full class name.
-        Handles three formats:
-          '.MyActivity'        -> 'com.example.app.MyActivity'
-          'MyActivity'         -> 'com.example.app.MyActivity'
-          'com.other.Activity' -> 'com.other.Activity'  (unchanged)
-        """
-        if activity_name.startswith('.'):
-            return package_name + activity_name
-        elif '.' not in activity_name:
-            return package_name + '.' + activity_name
-        return activity_name
-    
-    def find_so_files(a, *names):
-        """
-        Check which SO library filenames exist in the APK.
-        Returns a set of found SO names.
-        Example: find_so_files(a, 'libexec.so', 'libexecmain.so')
-        """
-        all_files = a.get_files()
-        return {name for name in names if any(name in f for f in all_files)}
+    # 共用函式 / 常數 (iter_app_methods、app_class_filter 等) 在所有 lab 端點之後、app.run 之前
 
     #----------------------------------------------------------------
 
@@ -282,7 +226,6 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                 return jsonify({"count": len(match_files), "message": f"Found {len(match_files)} classes.dex file(s) in the APK"}), 200
 
     #----------------------------------------------------------------
-
 
 
     #----------------------------------------------------------------
@@ -765,41 +708,102 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         return jsonify(response), 200
 
 
-    @app.route('/androguard/lab_27', methods=['GET'])
-    def detect_screen_capture_prevention():
+    # 簽章完整性檢查 (防竄改 / 重新打包)
+    @app.route('/androguard/lab_026', methods=['GET'])
+    def detect_lab_026():
         """
-        Detect screen capture prevention by finding setFlags calls and checking for FLAG_SECURE (0x2000) before it.
+        風險: App 沒驗證自身簽章, 被重新打包 (植入惡意碼後重簽) 仍可正常執行。
+        檢測: App 自己的程式碼讀取 PackageInfo.signatures / signingInfo、
+              SigningInfo 的簽章清單或 PackageManager.hasSigningCertificate,
+              或有 Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
+        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        限制: 簽章比對寫在 .so、反射呼叫或只在伺服器端驗證者看不到。
         """
-        
-        def check_for_0x2000_flag(instructions, call_index):
-            for j in range(max(0, call_index-10), call_index):
-                if j < len(instructions):
-                    ins = instructions[j]
-                    ins_name = ins.get_name()
-                    ins_output = ins.get_output()
-                    
-                    if ins_name in ['const/16', 'const', 'const/4', 'const/high16']:
-                        if '0x2000' in ins_output or '8192' in ins_output:
-                            return True
-            return False
-        
-        results = []
-        
-        # Find setFlags calls
-        found_calls = find_method_calls(dx, target_class="Landroid/view/Window", target_method="setFlags")
-        
-        for call in found_calls:
-            if check_for_0x2000_flag(call['instructions'], call['call_index']):
-                results.append({
-                    'flag_value': '0x2000',
-                    'class_name': call['class'],
-                    'method_name': call['method']
-                })
-        
-        return jsonify({
-            "results": results,
-            "count": len(results)
-        })
+        keep = app_class_filter(a)
+        code_evidence = strip_instructions(find_app_references(dx, keep, [
+            "Landroid/content/pm/PackageInfo;->signatures",
+            "Landroid/content/pm/PackageInfo;->signingInfo",
+            "Landroid/content/pm/SigningInfo;->getApkContentsSigners",
+            "Landroid/content/pm/SigningInfo;->getSigningCertificateHistory",
+            "Landroid/content/pm/PackageManager;->hasSigningCertificate",
+        ]))
+        api_evidence = find_class_prefixes(dx, PLAY_INTEGRITY_PREFIXES + RASP_SDK_PREFIXES)
+        return protection_result("lab_026", "App signature integrity check implementation",
+                                 code_evidence, api_evidence, keep)
+
+    # 4.1.2.3.9 — 防止螢幕擷取 (FLAG_SECURE)
+    @app.route('/androguard/lab_027', methods=['GET'])
+    def detect_lab_027():
+        """
+        風險: 畫面可被截圖 / 錄影 / 顯示在最近使用畫面, 敏感資料外洩。
+        檢測: App 自己的程式碼呼叫 Window.addFlags(flags) / setFlags(flags, mask) 且傳入的常數含
+              FLAG_SECURE (0x2000) 位元, 或呼叫 SurfaceView.setSecure(true) -> 視為有做。
+              追蹤的是「實際傳入的參數暫存器」最近一次被設定的值, 避免附近無關的常數 (-1、8192 緩衝區大小) 造成誤判。
+        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        限制: flag 經由變數 / 欄位 / 跨 method 傳入、或寫在 Flutter / RN 等框架層的設定看不到。
+        """
+        FLAG_SECURE = 0x2000
+        # 第一個運算元是「讀取」而不是「寫入」的指令, 往回找時要跳過
+        NOT_WRITING = ("invoke", "if-", "iput", "sput", "aput", "return", "throw", "goto",
+                       "fill-", "monitor", "packed-", "sparse-", "check-cast")
+
+        def arg_registers(out):
+            """invoke 的參數暫存器: 'v4, v5, L...' 或 range 格式 'v0 ... v2, L...'"""
+            head = out.split("L", 1)[0]
+            m = re.match(r"\s*v(\d+) \.\.\. v(\d+)", head)
+            if m:
+                return ["v%d" % i for i in range(int(m.group(1)), int(m.group(2)) + 1)]
+            return re.findall(r"v\d+", head)
+
+        def reg_value(instructions, index, reg):
+            """往回找最近一次寫入 reg 的指令: 常數回傳數值, 其他 (變數 / 欄位 / 運算結果) 回傳 None"""
+            for ins in reversed(instructions[max(0, index - 30):index]):
+                name = ins.get_name()
+                if name.startswith(NOT_WRITING):
+                    continue
+                out = ins.get_output()
+                if out != reg and not out.startswith(reg + ","):
+                    continue
+                if name.startswith("const") and "string" not in name and "class" not in name:
+                    # androguard 輸出的已是實際數值 (const/high16 也已還原位移)
+                    try:
+                        return int(out.split(",")[-1].strip(), 0)
+                    except ValueError:
+                        return None
+                if name.startswith("or-int/lit"):  # flags = x | FLAG_SECURE
+                    try:
+                        return int(out.split(",")[-1].strip(), 0)
+                    except ValueError:
+                        return None
+                return None
+            return None
+
+        def sets_flag_secure(ref):
+            regs = arg_registers(ref["instructions"][ref["index"]].get_output())
+            if len(regs) < 2:
+                return False
+            value = lambda k: reg_value(ref["instructions"], ref["index"], regs[k]) if len(regs) > k else None
+            flags = value(1)
+            if ref["api"].endswith("setSecure"):
+                return flags == 1
+            if flags is None or not flags & FLAG_SECURE:
+                return False
+            if ref["api"].endswith("setFlags"):
+                mask = value(2)
+                return mask is None or bool(mask & FLAG_SECURE)
+            return True
+
+        keep = app_class_filter(a)
+        refs = find_app_references(dx, keep, [
+            "Landroid/view/Window;->setFlags",
+            "Landroid/view/Window;->addFlags",
+            "Landroid/view/SurfaceView;->setSecure",
+        ])
+        refs = [r for r in refs if sets_flag_secure(r)]
+        return protection_result("lab_027", "Screen capture prevention (FLAG_SECURE) implementation",
+                                 strip_instructions(refs), [], keep)
+
+
     @app.route('/androguard/lab_28', methods=['GET'])
     def detect_runtime_exec():
         """
@@ -1161,6 +1165,10 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "count": len(results)
         })
 
+    # TODO: 刪除 lab_039 / lab_040 / lab_041 端點 —— maldroid_main 已不呼叫
+    #   lab_039 (Bangcle)、lab_040 (iJiami) 的特徵已被 lab_042 涵蓋; lab_041 (MonoDroid) 是跨平台框架不是殼, 已決定不檢測
+    #   一併處理: 刪除後 find_so_files 沒人用可刪; find_method_calls 的「使用」清單拿掉 lab_039 / lab_040;
+    #   android_static_*.json 的 AS-lab039 / 040 / 041 也要刪, 否則報表會一直顯示「通過」
     @app.route('/androguard/lab_039', methods=['GET'])
     def detect_framework_bangcle():
         """
@@ -1245,6 +1253,13 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         """
         Unified packer / framework identification.
         Replaces standalone lab_039 (Bangcle), lab_040 (iJiami).
+
+        加殼 = 靜態分析看不到 App 的程式碼, 其他檢測項結果不可靠 (由 lab_042 統一判斷)。
+        判定為加殼 (任一成立):
+          1. Manifest 的 application / appComponentFactory 是已知殼的入口 class
+          2. App 自己的 Manifest 元件過半不在 dex 裡 (未知殼也抓得到)
+        只命中已知殼的 .so / class 前綴, 但元件都在 dex 裡 -> 不算加殼, 也不列出
+        (常是同廠商的 SDK, 如網易易盾驗證碼 Lcom/netease/nis/, 程式碼仍可分析)
 
         Phase 1: Known packer identification (SO files + class signatures)
         Phase 2: Known plugin/hotfix/multidex framework identification
@@ -1389,6 +1404,20 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
              "prefixes": []},
         ]
 
+        # 殼接管 App 啟動時的入口 class (application / appComponentFactory), 比對 class 名稱前綴
+        PACKER_ENTRY_PREFIXES = [
+            ("com.secapk.wrapper.",      "Bangcle"),
+            ("com.secneo.apkwrapper.",   "Bangcle v2 (SecNeo)"),
+            ("com.shell.",               "iJiami"),
+            ("com.tencent.StubShell.",   "Tencent"),
+            ("com.stub.StubApp",         "Qihoo 360"),
+            ("com.qihoo.util.",          "Qihoo 360"),
+            ("com.baidu.protect.",       "Baidu"),
+            ("com.ali.mobisecenhance.",  "Alibaba"),
+            ("com.netease.nis.wrapper.", "NetEase Yidun"),
+            ("com.AppGuard.",            "AppGuard"),
+        ]
+
         # ---- Phase 2: Known non-packer frameworks ----
         KNOWN_FRAMEWORKS = [
             {"name": "AndroidX MultiDex", "type": "multidex",
@@ -1434,15 +1463,40 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                     detected_frameworks.append({"name": fw["name"], "type": fw["type"]})
                     break
 
-        verdict = "NOTICE" if detected_packers else "PASS"
+        # ---- 加殼判定 ----
+        entry_points = []
+        for attr in ("name", "appComponentFactory"):
+            value = a.get_attribute_value("application", attr)
+            if not value:
+                continue
+            value = resolve_activity_name(a.get_package() or "", value)
+            for prefix, name in PACKER_ENTRY_PREFIXES:
+                if value.startswith(prefix):
+                    entry_points.append({"attribute": attr, "class": value, "name": name})
+                    break
+
+        packing = missing_app_components(a, dx)
+        packed  = bool(entry_points) or packing["suspected"]
+
+        # 只有判定加殼才列出殼名; 入口 class 認得但特徵沒命中的也補上
+        packers = list(detected_packers) if packed else []
+        for ep in entry_points:
+            if not any(p["name"] == ep["name"] for p in packers):
+                packers.append({"name": ep["name"], "evidence": []})
+            next(p for p in packers if p["name"] == ep["name"])["evidence"].append(
+                "entry:" + ep["class"])
 
         return jsonify({
-            "verdict":     verdict,
-            "has_finding": len(detected_packers) > 0,
-            "packers":     detected_packers,
-            "frameworks":  detected_frameworks,
-            "count":       len(detected_packers),
-            "lab_id":      "lab_042",
+            "verdict":      "NOTICE" if packed else "PASS",
+            "has_finding":  packed,
+            "packed":       packed,
+            "packers":      packers,             # 判定加殼時才有, 未知殼為空
+            "entry_points": entry_points,
+            "packing":      packing,             # App 元件不在 dex 的比例
+            "signature_matches": detected_packers,  # 原始特徵命中 (未必是加殼, 不寫入報告)
+            "frameworks":   detected_frameworks,
+            "count":        len(packers),
+            "lab_id":       "lab_042",
         }), 200
 
     @app.route('/androguard/lab_044', methods=['GET'])
@@ -1658,18 +1712,17 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "description": "SQLite PRAGMA key encryption detection"
         }), 200
 
+    # 4.1.5.5.1 — Root 偵測
     @app.route('/androguard/lab_056', methods=['GET'])
     def detect_lab_056():
         """
-        Root Detection Implementation Check
-        靜態分析偵測 APP 是否實作 Root Detection 機制，涵蓋 5 大類：
-          1. SU binary path strings            (su 執行檔路徑字串)
-          2. Root management package names     (root 管理 App 套件名稱)
-          3. Build tags / system properties    (系統屬性 test-keys 等)
-          4. Third-party root detection libs   (RootBeer / SafetyNet / Play Integrity)
-          5. File.exists() checks              (判斷 su binary 是否存在)
+        風險: App 沒偵測 root, 攻擊者可在 root 裝置上 hook、讀取私有資料、竄改執行流程。
+        檢測: App 自己的程式碼有 su 路徑 / 字串 "su"、root 管理 App 套件名稱、test-keys 等特徵字串,
+              或有 RootBeer / Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
+              (File.exists() 幾乎每個 App 都有, 單獨出現不算)
+        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        限制: 字串加密、寫在 .so、動態組字串的偵測邏輯看不到。
         """
-
         ROOT_BINARY_PATHS = [
             "/system/bin/su", "/system/xbin/su", "/sbin/su",
             "/data/local/su", "/data/local/bin/su", "/data/local/xbin/su",
@@ -1678,7 +1731,6 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "/system/app/Superuser", "/data/data/com.noshufou.android.su",
             "/data/local.prop",
         ]
-
         ROOT_MANAGEMENT_PACKAGES = [
             "com.noshufou.android.su", "eu.chainfire.supersu",
             "com.koushikdutta.superuser", "com.thirdparty.superuser",
@@ -1689,133 +1741,25 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "de.robv.android.xposed.installer", "com.saurik.substrate",
             "com.zachspong.temprootremovejb", "com.amphoras.hidemyroot",
         ]
+        # ro.debuggable / ro.secure 一般程式也常讀取, 只收較獨特的
+        BUILD_PROPERTY_INDICATORS = ["test-keys", "ro.build.selinux"]
 
-        BUILD_PROPERTY_INDICATORS = [
-            "test-keys", "ro.debuggable", "ro.secure", "ro.build.selinux",
-        ]
+        def match(s):
+            s = s or ""
+            # 常見寫法把目錄和檔名分開 ("/system/xbin/" + "su", which su), 程式碼裡只會有 "su"; 太短, 要完全相同才算
+            if s.strip() == "su":
+                return "su"
+            return next((k for k in ROOT_BINARY_PATHS + ROOT_MANAGEMENT_PACKAGES + BUILD_PROPERTY_INDICATORS
+                         if k in s), None)
 
-        # Third-party root detection library class prefixes
-        ROOT_DETECTION_CLASSES = [
-            ("Lcom/scottyab/rootbeer/RootBeer", "RootBeer Library"),
-            ("Lcom/scottyab/rootbeer/RootBeerNative", "RootBeer Native Library"),
+        keep = app_class_filter(a)
+        code_evidence = find_app_const_strings(dx, match, keep)
+        api_evidence = find_class_prefixes(dx, [
+            ("Lcom/scottyab/rootbeer/",    "RootBeer Library"),
             ("Lcom/scottyab/rootchecker/", "RootChecker Library"),
-        ]
-
-        # Google SafetyNet / Play Integrity API class prefixes
-        SAFETYNET_INTEGRITY_CLASSES = [
-            ("Lcom/google/android/gms/safetynet/SafetyNet", "Google SafetyNet API"),
-            ("Lcom/google/android/play/core/integrity/", "Google Play Integrity API"),
-        ]
-
-        su_binary_paths = []
-        root_packages = []
-        build_properties = []
-        third_party_libs = []
-        file_exists_checks = []
-
-        # --- Scan all app methods for string patterns and API calls ---
-        for class_name, method, method_analysis in iter_app_methods(dx):
-            try:
-                instructions = list(method_analysis.get_instructions())
-            except Exception:
-                continue
-
-            for instruction in instructions:
-                try:
-                    op = instruction.get_op_value()
-                    ins_out = instruction.get_output()
-                    entry_base = {"class": class_name, "method": method.name}
-
-                    # const-string / const-string-jumbo
-                    if op in [0x1A, 0x1B]:
-                        try:
-                            string_val = instruction.get_string()
-                        except Exception:
-                            continue
-
-                        # 1. SU binary path strings
-                        if any(path in string_val for path in ROOT_BINARY_PATHS):
-                            su_binary_paths.append({
-                                **entry_base,
-                                "string": string_val,
-                                "category": "su_binary_path",
-                                "description": "SU binary path string found"
-                            })
-
-                        # 2. Root management package name strings
-                        if any(pkg in string_val for pkg in ROOT_MANAGEMENT_PACKAGES):
-                            root_packages.append({
-                                **entry_base,
-                                "string": string_val,
-                                "category": "root_package",
-                                "description": "Root management app package name found"
-                            })
-
-                        # 3. Build tag / system property strings
-                        if any(prop in string_val for prop in BUILD_PROPERTY_INDICATORS):
-                            build_properties.append({
-                                **entry_base,
-                                "string": string_val,
-                                "category": "build_property",
-                                "description": "Build tag / system property check string found"
-                            })
-
-                    # invoke-* instructions
-                    if 'invoke' in ins_out:
-                        # 5. File.exists() checks
-                        if 'exists' in ins_out and 'Ljava/io/File;' in ins_out:
-                            file_exists_checks.append({
-                                **entry_base,
-                                "instruction": ins_out,
-                                "category": "file_exists",
-                                "description": "File.exists() call detected (potential su binary existence check)"
-                            })
-
-                except Exception:
-                    continue
-
-        # --- Check for third-party root detection library classes in dx ---
-        for cls_prefix, lib_name in ROOT_DETECTION_CLASSES:
-            for class_name in dx.classes:
-                if class_name.startswith(cls_prefix):
-                    third_party_libs.append({
-                        "class": class_name,
-                        "library": lib_name,
-                        "category": "third_party_lib",
-                        "description": "{} class detected".format(lib_name)
-                    })
-                    break  # one match per library is sufficient
-
-        # --- Check for SafetyNet / Play Integrity API classes in dx ---
-        for cls_prefix, api_name in SAFETYNET_INTEGRITY_CLASSES:
-            for class_name in dx.classes:
-                if class_name.startswith(cls_prefix):
-                    third_party_libs.append({
-                        "class": class_name,
-                        "library": api_name,
-                        "category": "root_detection_api",
-                        "description": "{} class detected".format(api_name)
-                    })
-                    break
-
-        all_findings = (
-            su_binary_paths + root_packages + build_properties +
-            third_party_libs + file_exists_checks
-        )
-
-        # has_finding = True means the app does NOT implement root detection (security issue)
-        return jsonify({
-            "has_finding": len(all_findings) == 0,
-            "count": len(all_findings),
-            "results": all_findings,
-            "su_binary_paths": su_binary_paths,
-            "root_packages": root_packages,
-            "build_properties": build_properties,
-            "third_party_libs": third_party_libs,
-            "file_exists_checks": file_exists_checks,
-            "lab_id": "lab_056",
-            "description": "Root Detection implementation check"
-        }), 200
+        ] + PLAY_INTEGRITY_PREFIXES + RASP_SDK_PREFIXES)
+        return protection_result("lab_056", "Root detection implementation check",
+                                 code_evidence, api_evidence, keep)
 
     @app.route('/androguard/lab_069', methods=['GET'])
     def detect_lab_069():
@@ -2208,7 +2152,6 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "lab_id":          "lab_072",
             "description":     "Keyboard cache protection: sensitive EditText fields without inputType password/noSuggestions"
         }), 200
-
 
 
     # 4.1.2.3.14 — 備份資料不應存有敏感性資料
@@ -2638,6 +2581,27 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "lab_id":      "lab_063",
             "description": "Unsafe deletion of files that plausibly hold sensitive data (same-method keyword correlation)"
         }), 200
+
+    # 安裝來源檢查
+    @app.route('/androguard/lab_064', methods=['GET'])
+    def detect_lab_064():
+        """
+        風險: App 沒檢查安裝來源, 被重新打包後從非官方管道散布仍可正常執行。
+        檢測: App 自己的程式碼呼叫 getInstallerPackageName / getInstallSourceInfo,
+              或有 Play Integrity / Google Play Licensing (LVL) / 已知 RASP SDK -> 視為有做。
+        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        限制: 反射呼叫、寫在 .so 或只在伺服器端驗證者看不到。
+        """
+        keep = app_class_filter(a)
+        code_evidence = strip_instructions(find_app_references(dx, keep, [
+            "Landroid/content/pm/PackageManager;->getInstallerPackageName",
+            "Landroid/content/pm/PackageManager;->getInstallSourceInfo",
+        ]))
+        api_evidence = find_class_prefixes(dx, PLAY_INTEGRITY_PREFIXES + [
+            ("Lcom/google/android/vending/licensing/", "Google Play Licensing (LVL)"),
+        ] + RASP_SDK_PREFIXES)
+        return protection_result("lab_064", "App installation source check implementation",
+                                 code_evidence, api_evidence, keep)
 
     #4.1.2.3.12
     @app.route('/androguard/lab_076', methods=['GET'])
@@ -4101,91 +4065,6 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "description":        "User input validation: EditText fields missing inputType (type) or maxLength (length) constraints"
         }), 200
 
-    # 已知 RASP 防護 SDK, 有這些 class 就算 App 有做偵測 (lab_082 / lab_083 共用)
-    RASP_SDK_PREFIXES = [
-        ("Lcom/aheaditec/talsec_security/", "freeRASP (Talsec)"),
-        ("Lapp/talsec/rasp/",               "freeRASP (Talsec)"),
-    ]
-
-    def find_class_prefixes(dx, prefixes):
-        """回傳 APK 內出現過的 class 前綴 (含函式庫)"""
-        found = []
-        for prefix, name in prefixes:
-            for class_name in dx.classes:
-                if class_name.startswith(prefix):
-                    found.append({"class": class_name, "library": name})
-                    break
-        return found
-
-    def missing_app_components(a, dx):
-        """Manifest 宣告的 App 元件大多不在 dex 裡 -> 程式碼被加密載入 (未知加殼)"""
-        # 排除 Android / Google 等函式庫元件, 只看 App 自己的
-        comps = ["L" + c.replace(".", "/") + ";"
-                 for c in a.get_activities() + a.get_services() + a.get_receivers() + a.get_providers()]
-        comps = [c for c in comps if app_class_filter(a)(c)]
-        missing = [c for c in comps if c not in dx.classes]
-        return {
-            "suspected": len(comps) > 0 and len(missing) * 2 > len(comps),
-            "app_components": len(comps),
-            "missing": missing[:10],
-            "application": a.get_attribute_value("application", "name"),
-        }
-
-    # 共用排除清單之外, 常見第三方 SDK / 執行環境 (lab_082 / lab_083 用)
-    EXTRA_LIB_PREFIXES = (
-        "Ljava/", "Ljavax/", "Lcom/facebook/", "Lio/flutter/", "Lio/reactivex/",
-        "Lcom/squareup/", "Lokhttp3/", "Lokio/", "Lretrofit2/", "Lcom/bumptech/",
-        "Lcom/airbnb/", "Lcom/unity3d/", "Lcom/tencent/", "Lcom/alibaba/",
-        "Lcom/huawei/", "Lcom/amazonaws/", "Lcom/appsflyer/", "Lcom/adjust/",
-        "Lcom/onesignal/", "Lcom/microsoft/", "Lcom/crashlytics/", "Lio/sentry/",
-    )
-
-    def app_class_filter(a):
-        """判斷 class 是否為 App 自己的程式碼 (lab_082 / lab_083 用)"""
-        pkg = (a.get_package() or "").replace(".", "/")
-        own = ("L" + pkg + "/") if pkg else None
-
-        def keep(class_name):
-            # App 自己的套件優先: 即使前綴在排除清單 (如 org.*) 也要掃
-            if own and class_name.startswith(own):
-                return True
-            if not FilteringEngine.is_class_name_not_in_exclusion(class_name):
-                return False
-            return not class_name.startswith(EXTRA_LIB_PREFIXES)
-
-        return keep
-
-    def count_app_classes(dx, keep):
-        """掃描範圍: App 自己的 class 數"""
-        return sum(1 for c in dx.classes if keep(c))
-
-    def find_app_const_strings(dx, match, keep):
-        """掃 App 自己的程式碼的 const-string, match(字串) 回傳命中的特徵或 None"""
-        found, seen = [], set()
-        for class_name, cls_value in dx.classes.items():
-            if not keep(class_name):
-                continue
-            for method in cls_value.get_methods():
-                method_analysis = method.get_method()
-                if not method_analysis:
-                    continue
-                try:
-                    instructions = list(method_analysis.get_instructions())
-                except Exception:
-                    continue
-                for ins in instructions:
-                    try:
-                        if ins.get_op_value() not in (0x1A, 0x1B):
-                            continue
-                        hit = match(ins.get_string())
-                    except Exception:
-                        continue
-                    key = (class_name, method.name, hit)
-                    if hit and key not in seen:
-                        seen.add(key)
-                        found.append({"class": class_name, "method": method.name, "indicator": hit})
-        return found
-
     # 4.1.5.5.7 — 模擬器偵測
     @app.route('/androguard/lab_082', methods=['GET'])
     def detect_lab_082():
@@ -4193,7 +4072,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         風險: App 沒偵測模擬器, 攻擊者可用模擬器大量自動化操作或分析 App。
         檢測: App 自己的程式碼有模擬器特徵字串 (MASTG-KNOW-0031 與常見判斷依據),
               或有 Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
-        結果: 都沒有 -> WARNING (缺少防護)。疑似加殼 (App 元件不在 dex) -> PASS。
+        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
         限制: 字串加密、寫在 .so、動態載入的偵測邏輯看不到。
         """
         # 夠獨特, 包含即算
@@ -4222,12 +4101,10 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         ]) + find_class_prefixes(dx, RASP_SDK_PREFIXES)
 
         implemented = bool(code_evidence or api_evidence)
-        packing = missing_app_components(a, dx)
         return jsonify({
-            "verdict":       "PASS" if implemented or packing["suspected"] else "WARNING",
+            "verdict":       "PASS" if implemented else "WARNING",
             "has_finding":   not implemented,   # True = 缺少防護
             "implemented":   implemented,
-            "packing":       packing,           # 疑似加殼 -> 結果不可靠, 視為通過
             "code_evidence": code_evidence,
             "api_evidence":  api_evidence,
             "scanned_app_classes": count_app_classes(dx, keep),
@@ -4244,7 +4121,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         檢測: App 自己的程式碼讀取 adb_enabled / adb_wifi_enabled /
               development_settings_enabled 或 adb 服務屬性, 或有已知 RASP SDK -> 視為有做。
               Play Integrity 不判斷偵錯狀態, 不算。
-        結果: 都沒有 -> WARNING (缺少防護)。疑似加殼 (App 元件不在 dex) -> PASS。
+        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
         限制: 字串加密、寫在 .so、動態組字串的偵測邏輯看不到。
         """
         # Settings.Global 常數編譯後會變成字串
@@ -4261,12 +4138,10 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         api_evidence = find_class_prefixes(dx, RASP_SDK_PREFIXES)
 
         implemented = bool(code_evidence or api_evidence)
-        packing = missing_app_components(a, dx)
         return jsonify({
-            "verdict":       "PASS" if implemented or packing["suspected"] else "WARNING",
+            "verdict":       "PASS" if implemented else "WARNING",
             "has_finding":   not implemented,   # True = 缺少防護
             "implemented":   implemented,
-            "packing":       packing,           # 疑似加殼 -> 結果不可靠, 視為通過
             "code_evidence": code_evidence,
             "api_evidence":  api_evidence,
             "scanned_app_classes": count_app_classes(dx, keep),
@@ -4533,6 +4408,219 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "warning":     warning,
             "count":       len(findings),
             "lab_id":      "lab_058",
+        }), 200
+
+    # ========================================================================
+    # 共用函式 / 常數 — 放在所有 lab 端點之後
+    # 新增共用函式請放在這一區對應的分類, 並在說明寫上「使用: lab_xxx」;
+    # 新增或移除使用的 lab 時, 記得同步更新「使用」清單。
+    # 端點是收到請求時才呼叫這些函式, 所以定義在端點後面不影響執行。
+    # ========================================================================
+
+    # ---- 程式碼掃描 ----
+
+    def iter_app_methods(dx):
+        """逐一取出 App 的 method (略過 FilteringEngine 排除的系統 / 函式庫 class), 回傳 (class 名, method, method_analysis)
+        使用: lab02, lab_001, lab_022, lab_28, lab_034, lab036, lab_044, lab_055, lab_057, lab_058, lab_060, lab_063, lab_065, lab_070, lab_071, lab_073, lab_074, lab_075, lab_077, lab_078, lab_079, lab_080"""
+        for class_name, cls_value in dx.classes.items():
+            if not FilteringEngine.is_class_name_not_in_exclusion(class_name):
+                continue
+            for method in cls_value.get_methods():
+                m = method.get_method()
+                if m:
+                    yield class_name, method, m
+
+    def find_method_calls(dx, target_class=None, target_method=None):
+        """找出呼叫 target_class / target_method 的指令位置 (含函式庫, 不排除), 回傳每個呼叫的 method 與指令索引
+        使用: lab031, lab035, lab038 (lab_039 / lab_040 端點也有用, 但 maldroid_main 已改用 lab_042, 目前不會呼叫)"""
+        found_calls = []
+        
+        for class_name, cls_value in dx.classes.items():
+            for method in cls_value.get_methods():
+                method_analysis = method.get_method()
+                if method_analysis and hasattr(method_analysis, 'get_instructions'):
+                    instructions = list(method_analysis.get_instructions())
+                    
+                    for i, instruction in enumerate(instructions):
+                        ins_output = instruction.get_output()
+                        if target_class in ins_output and target_method in ins_output:
+                            found_calls.append({
+                                'class': class_name,
+                                'method': method.name,
+                                'instructions': instructions,
+                                'call_index': i
+                            })
+                
+        return found_calls
+
+    def resolve_activity_name(package_name, activity_name):
+        """把 Manifest 的簡寫元件名補成完整 class 名: '.MyActivity' / 'MyActivity' -> 'com.example.app.MyActivity', 已是完整名稱則不變
+        使用: lab036, lab_042, lab_077"""
+        if activity_name.startswith('.'):
+            return package_name + activity_name
+        elif '.' not in activity_name:
+            return package_name + '.' + activity_name
+        return activity_name
+
+    def find_so_files(a, *names):
+        """回傳 APK 內存在的 .so 檔名, 例: find_so_files(a, 'libexec.so', 'libexecmain.so')
+        使用: lab_039, lab_040, lab_041 (這三個端點 maldroid_main 已改用 lab_042, 目前不會呼叫)"""
+        all_files = a.get_files()
+        return {name for name in names if any(name in f for f in all_files)}
+
+    # ---- App 自己的程式碼範圍 ----
+
+    # FilteringEngine 排除清單之外, 再排除的常見第三方 SDK / 執行環境 (給 app_class_filter 用)
+    # 使用: lab_026, lab_027, lab_042, lab_056, lab_064, lab_082, lab_083 (透過 app_class_filter)
+    EXTRA_LIB_PREFIXES = (
+        "Ljava/", "Ljavax/", "Lcom/facebook/", "Lio/flutter/", "Lio/reactivex/",
+        "Lcom/squareup/", "Lokhttp3/", "Lokio/", "Lretrofit2/", "Lcom/bumptech/",
+        "Lcom/airbnb/", "Lcom/unity3d/", "Lcom/tencent/", "Lcom/alibaba/",
+        "Lcom/huawei/", "Lcom/amazonaws/", "Lcom/appsflyer/", "Lcom/adjust/",
+        "Lcom/onesignal/", "Lcom/microsoft/", "Lcom/crashlytics/", "Lio/sentry/",
+    )
+
+    def app_class_filter(a):
+        """回傳 keep(class 名) 判斷函式: 是否為 App 自己的程式碼 (App 套件優先, 再排除 FilteringEngine 與 EXTRA_LIB_PREFIXES)
+        使用: lab_026, lab_027, lab_056, lab_064, lab_082, lab_083; 透過 missing_app_components 也給 lab_042 用"""
+        pkg = (a.get_package() or "").replace(".", "/")
+        own = ("L" + pkg + "/") if pkg else None
+
+        def keep(class_name):
+            # App 自己的套件優先: 即使前綴在排除清單 (如 org.*) 也要掃
+            if own and class_name.startswith(own):
+                return True
+            if not FilteringEngine.is_class_name_not_in_exclusion(class_name):
+                return False
+            return not class_name.startswith(EXTRA_LIB_PREFIXES)
+
+        return keep
+
+    def count_app_classes(dx, keep):
+        """計算 keep 範圍內的 class 數 (回傳結果的 scanned_app_classes, 看掃描範圍是否合理)
+        使用: lab_082, lab_083; 透過 protection_result 也給 lab_026, lab_027, lab_056, lab_064 用"""
+        return sum(1 for c in dx.classes if keep(c))
+
+    # ---- 防護證據搜尋 ----
+
+    def find_app_const_strings(dx, match, keep):
+        """掃 App 自己程式碼的 const-string, match(字串) 回傳命中的特徵或 None; 適合證據是字串的檢測 (su 路徑、套件名)
+        使用: lab_056, lab_082, lab_083"""
+        found, seen = [], set()
+        for class_name, cls_value in dx.classes.items():
+            if not keep(class_name):
+                continue
+            for method in cls_value.get_methods():
+                method_analysis = method.get_method()
+                if not method_analysis:
+                    continue
+                try:
+                    instructions = list(method_analysis.get_instructions())
+                except Exception:
+                    continue
+                for ins in instructions:
+                    try:
+                        if ins.get_op_value() not in (0x1A, 0x1B):
+                            continue
+                        hit = match(ins.get_string())
+                    except Exception:
+                        continue
+                    key = (class_name, method.name, hit)
+                    if hit and key not in seen:
+                        seen.add(key)
+                        found.append({"class": class_name, "method": method.name, "indicator": hit})
+        return found
+
+    def find_app_references(dx, keep, targets):
+        """掃 App 自己程式碼的指令, 找引用到 targets 的 API 呼叫 / 欄位存取 (substring 比對); 適合證據是 API 的檢測
+        使用: lab_026, lab_027, lab_064"""
+        found = []
+        for class_name, cls_value in dx.classes.items():
+            if not keep(class_name):
+                continue
+            for method in cls_value.get_methods():
+                method_analysis = method.get_method()
+                if not method_analysis:
+                    continue
+                try:
+                    instructions = list(method_analysis.get_instructions())
+                except Exception:
+                    continue
+                for i, ins in enumerate(instructions):
+                    try:
+                        out = ins.get_output()
+                    except Exception:
+                        continue
+                    hit = next((t for t in targets if t in out), None)
+                    if hit:
+                        found.append({"class": class_name, "method": method.name, "api": hit,
+                                      "instructions": instructions, "index": i})
+        return found
+
+    def strip_instructions(refs):
+        """拿掉 find_app_references 結果中的 instructions (無法轉 JSON), 只留 class / method / api
+        使用: lab_026, lab_027, lab_064"""
+        return [{"class": r["class"], "method": r["method"], "api": r["api"]} for r in refs]
+
+    def find_class_prefixes(dx, prefixes):
+        """回傳 APK 內出現過的 class 前綴 (含函式庫), 用來判斷有沒有引入某個 SDK
+        使用: lab_026, lab_056, lab_064, lab_082, lab_083"""
+        found = []
+        for prefix, name in prefixes:
+            for class_name in dx.classes:
+                if class_name.startswith(prefix):
+                    found.append({"class": class_name, "library": name})
+                    break
+        return found
+
+    # 已知 RASP 防護 SDK 的 class 前綴; 有引入就算 App 有做對應的偵測
+    # 使用: lab_026, lab_056, lab_064, lab_082, lab_083
+    RASP_SDK_PREFIXES = [
+        ("Lcom/aheaditec/talsec_security/", "freeRASP (Talsec)"),
+        ("Lapp/talsec/rasp/",               "freeRASP (Talsec)"),
+    ]
+
+    # Google Play Integrity / SafetyNet 的 class 前綴; 有引入就算 App 有做完整性 / 環境檢查
+    # 使用: lab_026, lab_056, lab_064
+    PLAY_INTEGRITY_PREFIXES = [
+        ("Lcom/google/android/play/core/integrity/", "Google Play Integrity API"),
+        ("Lcom/google/android/gms/safetynet/",       "Google SafetyNet API"),
+    ]
+
+    # ---- 加殼判斷 ----
+
+    def missing_app_components(a, dx):
+        """Manifest 宣告的 App 元件有多少不在 dex 裡; 過半 (suspected) 代表程式碼被加密、執行時才載入 (可抓未知的殼)
+        使用: lab_042"""
+        # 排除 Android / Google 等函式庫元件, 只看 App 自己的
+        comps = ["L" + c.replace(".", "/") + ";"
+                 for c in a.get_activities() + a.get_services() + a.get_receivers() + a.get_providers()]
+        comps = [c for c in comps if app_class_filter(a)(c)]
+        missing = [c for c in comps if c not in dx.classes]
+        return {
+            "suspected": len(comps) > 0 and len(missing) * 2 > len(comps),
+            "app_components": len(comps),
+            "missing_count": len(missing),
+            "missing": missing[:10],
+            "application": a.get_attribute_value("application", "name"),
+        }
+
+    # ---- 回傳格式 ----
+
+    def protection_result(lab_id, description, code_evidence, api_evidence, keep):
+        """「缺少防護」類檢測的統一回傳: 有證據 -> PASS, 沒有 -> WARNING (加殼由 lab_042 判斷, 這裡不處理)
+        使用: lab_026, lab_027, lab_056, lab_064"""
+        implemented = bool(code_evidence or api_evidence)
+        return jsonify({
+            "verdict":       "PASS" if implemented else "WARNING",
+            "has_finding":   not implemented,   # True = 缺少防護
+            "implemented":   implemented,
+            "code_evidence": code_evidence,
+            "api_evidence":  api_evidence,
+            "scanned_app_classes": count_app_classes(dx, keep),
+            "count":         len(code_evidence) + len(api_evidence),
+            "lab_id":        lab_id,
+            "description":   description,
         }), 200
 
     app.run(host='0.0.0.0', port=port)

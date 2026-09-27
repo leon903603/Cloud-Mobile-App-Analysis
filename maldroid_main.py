@@ -1841,11 +1841,6 @@ def __analyze(writer, args):
     # (1)match_id  
     # (2)regex or string(url or string you want to find)
     # (3)is using regex for parameter 2
-    efficientStringSearchEngine.addSearchItem("$__possibly_check_root__",
-                                              re.compile("/system/bin"),
-                                              True)  # "root" checking
-    efficientStringSearchEngine.addSearchItem("$__possibly_check_su__", "su",
-                                              False)  # "root" checking2
     efficientStringSearchEngine.addSearchItem(
         "$__sqlite_encryption__", re.compile("PRAGMA\s*key\s*=", re.I),
         True)  # SQLite encryption checking
@@ -2899,106 +2894,53 @@ Please modify the following code:"""
     #  writer.startWriter("KEYSTORE_TYPE_CHECK", LEVEL_INFO, u"[LAB-011]金鑰格式檢查", u"金鑰檔案 'BKS' 的格式檢查 OK", ["KeyStore"])
 
     # ------------------------------------------------------------------------
-    # [lab_026] - Android PackageInfo signatures checking:
-    """
-		Example:
+    # 加殼由 lab_042 統一判斷 (報告仍寫在原本 lab_042 的位置)
+    # 加殼時「缺少防護」類檢測 (lab_026 / 027 / 056 / 064 / 082 / 083) 結果不可靠, 一律不寫入報告
+    result_042 = get_androguard('/lab_042')
+    is_packed = isinstance(result_042, dict) and bool(result_042.get('packed'))
 
-		    move-result-object v0
-		    iget-object v2, v0, Landroid/content/pm/PackageInfo;->signatures:[Landroid/content/pm/Signature;
+    # Detail 一律英文並先 encode, 原因同 lab_081
+    def _write_detail(line):
+        writer.write(line.encode('utf-8'))
 
-			PackageManager pkgManager = context.getPackageManager();
-			pkgManager.getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNATURES).signatures[0].toByteArray();
-	"""
-
-    list_PackageInfo_signatures = []
-    path_PackageInfo_signatures = vmx.get_tainted_packages(
-    ).search_class_methods_exact_match(
-        "Landroid/content/pm/PackageManager;", "getPackageInfo",
-        "(Ljava/lang/String; I)Landroid/content/pm/PackageInfo;")
-    path_PackageInfo_signatures = filteringEngine.filter_list_of_paths(
-        d, path_PackageInfo_signatures)
-    for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-            d, path_PackageInfo_signatures):
-        if i.getResult()[2] is None:
-            continue
-        if i.getResult()[2] == 64:
-            list_PackageInfo_signatures.append(i.getPath())
-
-    if list_PackageInfo_signatures:
+    # [lab_026] - App signature integrity check (anti-tampering)
+    # 缺失告警: 沒找到防護機制才寫入 (Failed); 有做或加殼 (結果不準) 都不寫入 (Passed)
+    result_lab026 = get_androguard('/lab_026')
+    if isinstance(result_lab026, dict) and result_lab026.get('verdict') == 'WARNING' and not is_packed:
         writer.startWriter(
             "HACKER_SIGNATURE_CHECK", LEVEL_NOTICE,
             u"[AS-lab026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
-            u"此 app 在程式裡有檢查 package 的簽名，這可以檢查 app 是否被攻擊者駭入" + "||" + \
-            u"This app has a signature in the program to check the package, which can check if the app was hacked by the attacker",
-            ["Signature", "Hacker"])
-        for signature in list_PackageInfo_signatures:
-            writer.show_Path(d, signature)
-    # else:
-    #     writer.startWriter(
-    #         "HACKER_SIGNATURE_CHECK", LEVEL_INFO,
-    #         u"[AS-lab026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
-    #         u"沒有偵測到此 app 在程式中有檢查 package 的簽名", ["Signature", "Hacker"])
+            u"App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。" u"\n\n"
+            u"本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少簽章完整性檢查。加殼的 APK 因結果不可靠，不列入報告。" u"\n\n"
+            u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
+            + "||" +
+            u"When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally." u"\n\n"
+            u"This check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, the signature integrity check is considered missing. Packed APKs are not reported because the result is unreliable." u"\n\n"
+            u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo",
+            [u"Signature", u"Hacker"])
+        _write_detail(u"No signature integrity check found in app code")
 
     # ------------------------------------------------------------------------
-    # [lab_027] - Developers preventing screenshot capturing checking:
-    """
-		Example:
-		    const/16 v1, 0x2000
-		    invoke-super {p0, p1}, Landroid/support/v7/app/AppCompatActivity;->onCreate(Landroid/os/Bundle;)V
-		    invoke-virtual {p0}, Lcom/example/preventscreencapture/MainActivity;->getWindow()Landroid/view/Window;
-		    move-result-object v0
-		    invoke-virtual {v0, v1, v1}, Landroid/view/Window;->setFlags(II)V
-
-
-			getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
-	"""
-
-    list_code_for_preventing_screen_capture = []
-
-    
-    # path_code_for_preventing_screen_capture = vmx.get_tainted_packages(
-    # ).search_class_methods_exact_match("Landroid/view/Window;", "setFlags",
-    #                                    "(I I)V")
-    # path_code_for_preventing_screen_capture = filteringEngine.filter_list_of_paths(
-    #     d, path_code_for_preventing_screen_capture)
-    # for i in analysis.trace_Register_value_by_Param_in_source_Paths(
-    #         d, path_code_for_preventing_screen_capture):
-    #     if (i.getResult()[1] is None) or (i.getResult()[2] is None):
-    #         continue
-    #     if (not isinstance(i.getResult()[1], (int, long))) or (not isinstance(
-    #             i.getResult()[2], (int, long))):
-    #         continue
-    #     if (i.getResult()[1] & 0x2000) and (i.getResult()[2] & 0x2000):
-    #         list_code_for_preventing_screen_capture.append(i.getPath())
-    flagsResult = get_androguard('/lab_27')
-    if flagsResult:
-        list_code_for_preventing_screen_capture = flagsResult['results']
-    else:
-        list_code_for_preventing_screen_capture = []
-    
-    # check if the flag is 0x2000
-    has_0x2000_flag = False
-    print(list_code_for_preventing_screen_capture)
-    if list_code_for_preventing_screen_capture:
-        for item in list_code_for_preventing_screen_capture:
-            if item.get('flag_value') == '0x2000':
-                has_0x2000_flag = True
-                break
-    
-    if has_0x2000_flag:
-        print(list_code_for_preventing_screen_capture)
-       
+    # [lab_027] - Screen capture prevention (FLAG_SECURE)
+    # 缺失告警: 沒找到防護機制才寫入 (Failed); 有做或加殼 (結果不準) 都不寫入 (Passed)
+    result_lab027 = get_androguard('/lab_027')
+    if isinstance(result_lab027, dict) and result_lab027.get('verdict') == 'WARNING' and not is_packed:
         writer.startWriter(
             "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_NOTICE,
             u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
-            u"""此 app 有防止螢幕擷取的設定，範例:getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);這可以讓開發者用來保護 app""" + "||" + \
-            u"""This app has settings to prevent screen capture, example: getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE); this allows the developer to use to protect the app""",
-            ["Hacker"])
-    # else:
-    #     writer.startWriter(
-    #         "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_INFO,
-    #         u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
-    #         u"沒有偵測到這個 app 有防止螢幕擷取的設定", ["Hacker"])
+            u"App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。" u"\n\n"
+            u"本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。加殼的 APK 因結果不可靠，不列入報告。" u"\n\n"
+            u"限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+            + "||" +
+            u"When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data." u"\n\n"
+            u"This check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing. Packed APKs are not reported because the result is unreliable." u"\n\n"
+            u"Limitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE",
+            [u"Hacker"])
+        _write_detail(u"No FLAG_SECURE / SurfaceView.setSecure usage found in app code")
 
     # ------------------------------------------------------------------------
     # [lab_028] - Runtime exec checking:
@@ -3780,25 +3722,29 @@ Vulnerable Codes:""", ["SSL_Security"])
     # (replaces lab_039 Bangcle + lab_040 iJiami + lab_042 DexClassLoader)
     # Note: MonoDroid (lab_041) removed — it's a cross-platform framework, not a packer
 
-    result_042 = get_androguard('/lab_042')
-    if result_042 and isinstance(result_042, dict):
-        packers_042    = result_042.get('packers', [])
-        frameworks_042 = result_042.get('frameworks', [])
-
-        # --- 加殼/框架報告（統一使用 AS-lab042 tag）---
-        if packers_042:
-            packer_names = ', '.join(p.get('name', '') for p in packers_042)
-            writer.startWriter(
-                "PACKER_DETECTION", LEVEL_NOTICE,
-                u"[AS-lab042][MAST-5.2.5] 加殼/框架偵測 - %s" % packer_names,
-                u"偵測到加殼框架，靜態分析結果可能不完整，建議提供未加殼的 APK 以利完整檢測:"
-                + "||"
-                + u"Packer detected. Static analysis results may be incomplete. Please provide the unpacked APK for full analysis:",
-                ["Framework"])
-            for packer in packers_042:
-                pname = packer.get('name', '')
-                evidence = ', '.join(packer.get('evidence', []))
-                writer.write(u"  [%s]  evidence: %s" % (pname, evidence))
+    # result_042 / is_packed 在 lab_026 之前已取得
+    if is_packed:
+        packers_042 = result_042.get('packers', [])
+        packing_042 = result_042.get('packing', {})
+        packer_names = ', '.join(p.get('name', '') for p in packers_042) or u"Unknown"
+        writer.startWriter(
+            "PACKER_DETECTION", LEVEL_NOTICE,
+            u"[AS-lab042][MAST-5.2.5] 加殼/框架偵測 - %s" % packer_names,
+            u"偵測到加殼，App 的程式碼大多無法被靜態分析讀取，檢測結果可能不完整，建議提供未加殼的 APK 以利完整檢測。" u"\n\n"
+            u"判定方式（任一成立）：(1) AndroidManifest 的 application / appComponentFactory 為已知加殼方案的入口 class；"
+            u"(2) AndroidManifest 宣告的 App 元件過半不在 dex 中（程式碼被加密、執行時才載入，可偵測未知的加殼方案）。"
+            u"僅出現已知加殼方案的函式庫或 class 名稱、但程式碼仍可讀取者，不判定為加殼。"
+            + "||" +
+            u"Packing detected. Most of the app's code cannot be read by static analysis, so the results may be incomplete. Please provide the unpacked APK for full analysis." u"\n\n"
+            u"Detection (either condition): (1) the application / appComponentFactory in AndroidManifest is the entry class of a known packer; "
+            u"(2) more than half of the app components declared in AndroidManifest are missing from the dex (code is encrypted and loaded at runtime; this also catches unknown packers). "
+            u"Apps that only contain a known packer's library or class names while their code remains readable are not considered packed.",
+            ["Framework"])
+        for packer in packers_042:
+            _write_detail(u"[%s]  evidence: %s" % (packer.get('name', ''), ', '.join(packer.get('evidence', []))))
+        if packing_042.get('suspected'):
+            _write_detail(u"App components missing from dex: %d / %d" % (
+                packing_042.get('missing_count', 0), packing_042.get('app_components', 0)))
 
     # ------------------------------------------------------------------------
     # [lab_043] - Get External Storage Directory access invoke
@@ -4556,55 +4502,24 @@ Proof-Of-Concept reference:
 
 
     # ------------------------------------------------------------------------
-    # [lab_056] - Searching checking root or not:
-    result_possibly_check_root = efficientStringSearchEngine.get_search_result_by_match_id(
-        "$__possibly_check_root__")
-    result_possibly_check_su = efficientStringSearchEngine.get_search_result_by_match_id(
-        "$__possibly_check_su__")
-    result_possibly_root_total = []
-
-    if result_possibly_check_root:
-        result_possibly_root_total.extend(result_possibly_check_root)
-
-    if result_possibly_check_su:
-        result_possibly_root_total.extend(result_possibly_check_su)
-
-    result_possibly_root_total = filteringEngine.filter_efficient_search_result_value(
-        result_possibly_root_total)
-
-    if result_possibly_root_total:
+    # [lab_056] - Root detection implementation check
+    # 缺失告警: 沒找到防護機制才寫入 (Failed); 有做或加殼 (結果不準) 都不寫入 (Passed)
+    result_lab056 = get_androguard('/lab_056')
+    if isinstance(result_lab056, dict) and result_lab056.get('verdict') == 'WARNING' and not is_packed:
         writer.startWriter(
             "COMMAND_MAYBE_SYSTEM", LEVEL_NOTICE,
-            "[AS-lab056][OWASP-V6.10] Executing \"root\" or System Privilege Checking",
-            u"這個app可能在檢查管理者權限、掛載filesystem的指令或是監看系統:" + "||" + u"The app may be checking administrator privileges, mounting filesystem commands or monitoring the system:", 
-            ["Command"])
-
-        list_possible_root = []
-        list_possible_remount_fs = []
-        list_possible_normal = []
-
-        # strip the duplicated items
-        for found_string, method in set(result_possibly_root_total):
-            if ("'su'" == found_string) or ("/su" in found_string):
-                # 3rd parameter: show string or not
-                list_possible_root.append((found_string, method, True))
-            elif "mount" in found_string:  # mount, remount
-                list_possible_remount_fs.append((found_string, method, True))
-            else:
-                list_possible_normal.append((found_string, method, True))
-
-        lst_ordered_finding = []
-        lst_ordered_finding.extend(list_possible_root)
-        lst_ordered_finding.extend(list_possible_remount_fs)
-        lst_ordered_finding.extend(list_possible_normal)
-
-        for found_string, method, show_string in lst_ordered_finding:
-            if show_string:
-                writer.write(method.get_class_name() + "->" + method.get_name(
-                ) + method.get_descriptor() + "  => " + found_string)
-            else:
-                writer.write(method.get_class_name() + "->" +
-                             method.get_name() + method.get_descriptor())
+            u"[AS-lab056][MAS-4.1.5.5.1][MASVS-RESILIENCE-1][M7] Root Detection 實作檢查",
+            u"App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。" u"\n\n"
+            u"本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少 root 偵測。加殼的 APK 因結果不可靠，不列入報告。" u"\n\n"
+            u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
+            + "||" +
+            u"When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow." u"\n\n"
+            u"This check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, root detection is considered missing. Packed APKs are not reported because the result is unreliable." u"\n\n"
+            u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/",
+            [u"Resilience", u"Root"])
+        _write_detail(u"No root detection found in app code")
 
     # ------------------------------------------------------------------------
     # [lab_057] - Sensitive device / subscriber identifier reads (migrated to androguard_server)
@@ -4944,15 +4859,8 @@ Proof-Of-Concept reference:
     #-----------------------------------------------------------------------------------
     # [AS-lab082] 4.1.5.5.7 模擬器偵測 / [AS-lab083] 4.1.5.5.8 USB 偵錯偵測
     # 缺失告警: 沒找到偵測機制才報 WARNING; 有做或有加殼 (結果不準) 都不寫入報告
-    result_042_packers = (get_androguard('/lab_042') or {}).get('packers', [])
-    is_packed_08x = bool(result_042_packers)
-
-    # Detail 一律英文並先 encode, 原因同 lab_081
-    def _w08x(line):
-        writer.write(line.encode('utf-8'))
-
     result_lab082 = get_androguard('/lab_082')
-    if isinstance(result_lab082, dict) and result_lab082.get('verdict') == 'WARNING' and not is_packed_08x:
+    if isinstance(result_lab082, dict) and result_lab082.get('verdict') == 'WARNING' and not is_packed:
         writer.startWriter(
             "EMULATOR_DETECTION_MISSING", LEVEL_WARNING,
             u"[AS-lab082][MAS-4.1.5.5.7][MASVS-RESILIENCE-1][M7] 模擬器偵測檢查",
@@ -4966,10 +4874,10 @@ Proof-Of-Concept reference:
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/",
             [u"Resilience", u"Emulator"])
-        _w08x(u"No emulator detection found in app code")
+        _write_detail(u"No emulator detection found in app code")
 
     result_lab083 = get_androguard('/lab_083')
-    if isinstance(result_lab083, dict) and result_lab083.get('verdict') == 'WARNING' and not is_packed_08x:
+    if isinstance(result_lab083, dict) and result_lab083.get('verdict') == 'WARNING' and not is_packed:
         writer.startWriter(
             "USB_DEBUG_DETECTION_MISSING", LEVEL_WARNING,
             u"[AS-lab083][MAS-4.1.5.5.8][MASVS-RESILIENCE-2][M7] USB 偵錯模式偵測檢查",
@@ -4983,7 +4891,7 @@ Proof-Of-Concept reference:
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED",
             [u"Resilience", u"Debug"])
-        _w08x(u"No USB or wireless debugging detection found in app code")
+        _write_detail(u"No USB or wireless debugging detection found in app code")
 
     #-----------------------------------------------------------------------------------
     # [lab_061] - Checking shared_user_id
@@ -5039,26 +4947,24 @@ See this video: https://www.youtube.com/watch?v=tGw1fxUD-uY""",
             ))
 
     # ------------------------------------------------------------------------
-    # [lab_064] - Check if app check for installing from Google Play
-    
-    find_method_params = {
-        'classname': 'Landroid/content/pm/PackageManager;',
-        'methodname': 'getInstallerPackageName'
-    }
-    result = get_androguard('/find_method', find_method_params)
-    #path_getInstallerPackageName = filteringEngine.filter_list_of_paths(
-    #    d, path_getInstallerPackageName)
-
-    if result:
+    # [lab_064] - App installation source check
+    # 缺失告警: 沒找到防護機制才寫入 (Failed); 有做或加殼 (結果不準) 都不寫入 (Passed)
+    result_lab064 = get_androguard('/lab_064')
+    if isinstance(result_lab064, dict) and result_lab064.get('verdict') == 'WARNING' and not is_packed:
         writer.startWriter(
-        "HACKER_INSTALL_SOURCE_CHECK", LEVEL_NOTICE, u"[AS-lab064] APP安裝來源檢查",
-        u"這APP有檢查APK安裝來源(e.g. from Google Play, from Amazon, etc.)." + "||" + u"This app has check APK installation source(e.g. from Google Play, from Amazon, etc.)",
-        ["Hacker"])
-        # writer.show_Paths(d, path_getInstallerPackageName)
-    else:
-        writer.startWriter("HACKER_INSTALL_SOURCE_CHECK", LEVEL_INFO,
-                           u"[AS-lab064] APP安裝來源檢查", u"這APP沒有檢查APK安裝來源",
-                           ["Hacker"])
+            "HACKER_INSTALL_SOURCE_CHECK", LEVEL_NOTICE,
+            u"[AS-lab064] APP安裝來源檢查",
+            u"App 未檢查安裝來源時，被重新打包的 App 可經由第三方市集或網站散布並正常執行，使用者難以分辨真偽。" u"\n\n"
+            u"本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK；皆未發現即判定缺少安裝來源檢查。加殼的 APK 因結果不可靠，不列入報告。" u"\n\n"
+            u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
+            u"參考: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
+            + "||" +
+            u"When the app does not check its installation source, a repackaged copy can be distributed through third-party stores or websites and still run normally, making it hard for users to tell it from the genuine app." u"\n\n"
+            u"This check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection; if neither is found, the installation source check is considered missing. Packed APKs are not reported because the result is unreliable." u"\n\n"
+            u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
+            u"Ref: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity",
+            [u"Hacker"])
+        _write_detail(u"No installation source check found in app code")
 
     # ------------------------------------------------------------------------
     # [lab_065] - WebView advanced configuration audit (migrated to androguard_server)

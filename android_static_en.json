@@ -257,7 +257,7 @@
         "owasp_mobile": "M8",
         "level": "NOTICE",
         "cve": "",
-        "desc": "This app has a signature in the program to check the package, which can check if the app was hacked by the attacker"
+        "desc": "When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally.\n\nThis check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, the signature integrity check is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
     },
     "AS-lab027": {
         "title": "Screen capture prevention settings",
@@ -267,7 +267,7 @@
         "owasp_mobile": "",
         "level": "NOTICE",
         "cve": "",
-        "desc": "This app has settings to prevent screen capture. Example: getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE); This can be used by developers to protect the app"
+        "desc": "When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data.\n\nThis check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime Command Checking",
@@ -411,13 +411,13 @@
     },
     "AS-lab042": {
         "title": "Packer / Dynamic Code Loading Detection",
-        "mas": "4.1.5.5.5",
+        "mas": "",
         "mast": "5.2.5",
         "real_mstg": "MASVS-RESILIENCE-2|MSTG-ARCH-2",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "Unified packer identification via SO file and class signatures. Detects 33 known packers including Bangcle, iJiami, Tencent, Qihoo 360, Baidu, Alibaba, NetEase Yidun, Naga, DexProtector, AppGuard, AppSealing, and more. When a packer is detected, the unencrypted APK should be provided for complete analysis. Detection signatures are based on APKiD YARA rules (https://github.com/rednaga/APKiD)."
+        "desc": "Packing makes most of the app's code unreadable to static analysis, so the results of the other checks become unreliable; when packing is detected, the unpacked APK should be provided for full analysis.\n\nDetection (packed if either condition holds): (1) the application / appComponentFactory in AndroidManifest is the entry class of a known packer (Bangcle, iJiami, Tencent, Qihoo 360, Baidu, Alibaba, NetEase Yidun, etc.); (2) more than half of the app components declared in AndroidManifest are missing from the dex (code is encrypted and loaded at runtime; this also catches unknown packers). Apps that only contain a known packer's library or class names while their code remains readable are not considered packed.\n\nKnown packer signatures are based on APKiD (https://github.com/rednaga/APKiD)."
     },
     "AS-lab043": {
         "title": "External storage",
@@ -557,7 +557,7 @@
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "The app implements Root Detection mechanisms. Detected indicators include: (1) SU binary path strings (e.g. /system/xbin/su), (2) Root management app package names (e.g. com.topjohnwu.magisk), (3) Build tag / system property checks (e.g. test-keys, ro.debuggable), (4) Third-party root detection libraries (RootBeer, SafetyNet, Play Integrity), (5) File.exists() checks for su binary paths."
+        "desc": "When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow.\n\nThis check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, root detection is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
     },
     "AS-lab057": {
         "title": "Sensitive Device / Subscriber Identifier Read (IMEI / IMSI / Phone Number)",
@@ -627,7 +627,7 @@
         "owasp_mobile": "",
         "level": "NOTICE",
         "cve": "",
-        "desc": "This app has check APK installation source (e.g. from Google Play, from Amazon, etc.)."
+        "desc": "When the app does not check its installation source, a repackaged copy can be distributed through third-party stores or websites and still run normally, making it hard for users to tell it from the genuine app.\n\nThis check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection; if neither is found, the installation source check is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
     },
     "AS-lab065": {
         "title": "WebView Advanced Configuration Audit",

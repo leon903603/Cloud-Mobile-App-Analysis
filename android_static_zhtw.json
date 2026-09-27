@@ -257,7 +257,7 @@
         "owasp_mobile": "M8",
         "level": "NOTICE",
         "cve": "",
-        "desc": "此 app 在程式裡有檢查 package 的簽名，這可以檢查 app 是否被攻擊者駭入"
+        "desc": "App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。\n\n本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少簽章完整性檢查。加殼的 APK 因結果不可靠，不列入報告。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
     },
     "AS-lab027": {
         "title": "防止螢幕擷取的設定",
@@ -267,7 +267,7 @@
         "owasp_mobile": "",
         "level": "NOTICE",
         "cve": "",
-        "desc": "此 app 有防止螢幕擷取的設定，\n範例:\ngetWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);\n這可以讓開發者用來保護 app"
+        "desc": "App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。\n\n本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。加殼的 APK 因結果不可靠，不列入報告。\n\n限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime指令檢查",
@@ -411,13 +411,13 @@
     },
     "AS-lab042": {
         "title": "加殼/動態載入程式碼偵測",
-        "mas": "4.1.5.5.5",
+        "mas": "",
         "mast": "5.2.5",
         "real_mstg": "MASVS-RESILIENCE-2|MSTG-ARCH-2",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "統一加殼辨識，透過 SO 檔案與類別特徵識別 33 種已知加殼框架，涵蓋梆梆、愛加密、騰訊、360加固、百度、阿里、網易易盾、Naga、DexProtector、AppGuard、AppSealing 等國內外主流方案。偵測到加殼時，建議提供未加殼的 APK 以利完整檢測。偵測特徵參考 APKiD YARA rules (https://github.com/rednaga/APKiD)。"
+        "desc": "加殼會使 App 的程式碼大多無法被靜態分析讀取，其他檢測項的結果因此不可靠；偵測到加殼時，建議提供未加殼的 APK 以利完整檢測。\n\n判定方式（任一成立即判定為加殼）：(1) AndroidManifest 的 application / appComponentFactory 為已知加殼方案（梆梆、愛加密、騰訊、360加固、百度、阿里、網易易盾等）的入口 class；(2) AndroidManifest 宣告的 App 元件過半不在 dex 中（程式碼被加密、執行時才載入，可偵測未知的加殼方案）。僅出現已知加殼方案的函式庫或 class 名稱、但程式碼仍可讀取者，不判定為加殼。\n\n已知加殼方案特徵參考 APKiD (https://github.com/rednaga/APKiD)。"
     },
     "AS-lab043": {
         "title": "外部空間儲存",
@@ -557,7 +557,7 @@
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "偵測到 APP 實作了 Root Detection 機制。偵測指標涵蓋：(1) SU binary 路徑字串（如 /system/xbin/su）、(2) Root 管理 App 套件名稱（如 com.topjohnwu.magisk）、(3) 系統屬性檢查（如 test-keys、ro.debuggable）、(4) 第三方 Root Detection 函式庫（RootBeer、SafetyNet、Play Integrity）、(5) File.exists() 路徑存在性檢查。"
+        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少 root 偵測。加殼的 APK 因結果不可靠，不列入報告。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
     },
     "AS-lab057": {
         "title": "讀取裝置/用戶敏感識別碼 (IMEI / IMSI / 門號)",
@@ -627,7 +627,7 @@
         "owasp_mobile": "",
         "level": "NOTICE",
         "cve": "",
-        "desc": "這APP有檢查APK安裝來源(e.g. from Google Play, from Amazon, etc.)."
+        "desc": "App 未檢查安裝來源時，被重新打包的 App 可經由第三方市集或網站散布並正常執行，使用者難以分辨真偽。\n\n本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK；皆未發現即判定缺少安裝來源檢查。加殼的 APK 因結果不可靠，不列入報告。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
     },
     "AS-lab065": {
         "title": "WebView 進階配置檢查",
