@@ -21,6 +21,8 @@ services:
     ports:
       - "5001:5001"
     environment:
+      - PORT=5001
+      - STATIC_API_KEY=${STATIC_API_KEY}
       - REDIS_URL=redis://redis:6379/0
       - S3_BUCKET=${S3_BUCKET}
       - AWS_REGION=${AWS_REGION}

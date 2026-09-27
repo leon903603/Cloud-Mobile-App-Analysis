@@ -1,6 +1,6 @@
 # 📱 Mobile-APP-Crawler & CMAA 雲地混合全域系統備忘錄 (Project Architecture Cheat Sheet)
 
-> **最新更新時間**：2026-09-17  
+> **最新更新時間**：2026-09-27  
 > **用途**：記錄三大實體/雲端主機配置、職責分工、Tailscale 內網穿透、Docker 微服務與資料庫連線，開新對話或交接時「一秒還原全部架構」！
 
 ---
@@ -38,7 +38,7 @@
        │                                                          │
        │  [動態分析系統 (Dynamic Analysis)]                       │
        │    • 本地模擬器：AndroidDynamicSystem (Port 8080)        │
-       │    • 雲端真實沙箱：AWS Sydney c6g.metal (24x Redroid ARM)│
+       │    • 雲端真實沙箱：AWS Sydney c6g.meDIUM (24x Redroid ARM)│
        └──────────────────────────────────────────────────────────┘
 
        ──────────────────────── 實體硬體隔離 ────────────────────────
@@ -216,6 +216,23 @@
   - **獨立檢測與 PDF 模組**：`5001` Wrapper + `8010` Backend + `8080` PDF Generator
   - **防重複保護**：已實裝 `is_scan_completed`，已檢測之 APP 零延遲略過，不重複下載。
 - **維運策略**：維持現狀未動，專職進行 Google Play 批次抓取與行銷用報表長跑。
+一、 🌐 對外開放監聽的 Host 端口（實體機對外連線）
+端口 (Port)	服務容器名稱	核心職責與用途	說明
+5001	cmaa-static-wrapper	新版靜態分析 API 閘道	接收來自雪梨 EC2（透過 Tailscale）或本機的 APK 檢測任務請求與狀態查詢。
+8010	cmaa-static-backend	Androguard 逆向與 80 條規則引擎	負責 APK DEX/Manifest 反編譯與 80 條 MAST 資安弱點特徵比對。
+5433	mobile-app-dev-database-db-1	PostgreSQL 16 大數據資料庫	容器內轉發 5432，存放 121 萬筆 Google Play 與 App Store 爬蟲歷史資料。
+3000	open-webui	私有 AI 大模型聊天 Web 介面	容器內轉發 8080，可直接用瀏覽器打開 http://192.168.50.120:3000 使用。
+443	local-frontend	舊版地端 Web 門面 (HTTPS)	2 個月前搭建之歷史展示平台 Nginx 前端。
+二、 🔒 Docker 內部專用網路端口（不佔用 Host，容器間互聯）
+內部端口	服務名稱 / 容器	用途說明
+6379	cmaa-static-redis	Celery 任務調度與狀態快取佇列。
+8118 / 9050	9 個 torproxy 容器 (172.28.0.21~29)	供爬蟲自動輪替出口 IP，防止被 Google Play 阻擋。
+27017	local-mongodb	舊版展示用 MongoDB 資料庫。
+8080 (內部)	舊版 pdf-generator / ios-static-backend	舊版獨立 PDF 產生器與舊版 iOS 靜態分析後端。(目前pdf連到53主機做)
+💡 維運速查筆記：
+目前線上 EC2 對接點：http://<5860_TAILSCALE_IP>:5001
+爬蟲資料庫連線點：192.168.50.120:5433（帳密 crawler/crawlerpass）
+
 
 ---
 
@@ -266,3 +283,35 @@ curl -X POST http://localhost:5001/analyze_apk \
 ```bash
 docker logs -f cmaa-astatic-new_celery-worker_1 --tail 50
 ```
+
+---
+
+## 🛡️ 雲地連線資安架構與容器加固規範 (Security & Hardening Architecture)
+
+針對「AWS EC2 經由 Tailscale 連線回實驗室 53 號主機執行靜態分析」之混合雲架構，依據 STRIDE 模型與最小權限原則實施之安全加固規範：
+
+### 1. 威脅邊界防護與網路隔離 (Network & Perimeter Security)
+- **Tailscale ACL 最小化開放**：
+  - 在 Tailscale Admin Console 中設定 ACL，嚴格限制只有 AWS EC2 節點可單向存取實驗室主機之 Port `5001`（Wrapper API），禁止存取其他端口。
+- **嚴禁開啟子網路由 (Subnet Router)**：
+  - 實驗室節點之 Tailscale 服務**絕對禁止使用 `--advertise-routes` 參數**，避免 EC2 節點成為跳板橫向存取實驗室內網（如 5860 主機上的 PostgreSQL 16 資料庫及其他內部服務）。
+- **後端 Port 8010 內部化**：
+  - Androguard 核心端點（Port `8010`）僅供同一 Docker 網路內之 `queue-wrapper` 與 `celery-worker` 內部通訊使用。
+  - `docker-compose.yml` 中不得直接對外暴露 `0.0.0.0:8010`，若本機除錯需映射，應嚴格綁定於本機回路 `127.0.0.1:8010:8010`。
+
+### 2. API 與應用層驗證機制 (Application & API Defense)
+- **內部 API Token 認證**：
+  - `queue_wrapper/wrapper.py` 對外暴露之 `/analyze_apk` 與 `/status/<job_id>` 端點需強制校驗 HTTP 標頭 `X-Internal-Token`。
+  - Token 由環境變數 `WRAPPER_API_TOKEN` 動態注入，未帶 Token 或 Token 不符者一律回傳 HTTP 401 Unauthorized。
+- **防止路徑穿越與任意檔案寫入 (Path Traversal Protection)**：
+  - `androguard_server.py` 在儲存上傳之 APK 時，**必須強制使用 `werkzeug.utils.secure_filename` 過濾原始檔名**。
+  - 禁止直接使用未經清洗的 `file.filename` 進行路徑拼接，杜絕惡意樣本以 `../../` 覆寫宿主機原始碼或設定檔。
+
+### 3. Docker 容器實體隔離與權限降級 (Container Hardening)
+- **生產環境解除原始碼掛載**：
+  - 線上生產環境（`/home/islab/CMAA-Astatic-New`）之 `docker-compose.yml` 應移除 `./:/app` 宿主機即時掛載，上傳暫存目錄改用專屬隔離路徑（如 `/tmp/cmaa_uploads`），確保即便容器遭受惡意樣本攻擊亦無法竄改宿主機代碼。
+- **運算資源配額限制 (DoS & OOM 防禦)**：
+  - 在 `docker-compose.yml` 為分析後端與 Worker 配置記憶體與 CPU 上限（例：`mem_limit: 4g`, `cpus: 2.0`），避免畸形 APK 或 Zip Bomb 造成主機記憶體耗盡（OOM Panic）。
+- **S3 IAM 憑證最小權限配置**：
+  - 注入容器之 AWS 憑證（`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`）僅賦予對 S3 指定 Bucket 之 `s3:PutObject` 權限（上傳報告），禁止賦予刪除、列出全部 Bucket 或其他雲端服務之過高權限。
+
