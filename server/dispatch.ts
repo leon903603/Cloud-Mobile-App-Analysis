@@ -19,6 +19,7 @@ const IOS_STATIC_API = "http://ios-static-backend:8080";
 // https://xxxx.lambda-url.ap-southeast-2.on.aws — trailing slash is stripped so the
 // `${ANDROID_STATIC_API}/analyze_apk` path joins cleanly.
 const ANDROID_STATIC_API = (process.env.ANDROID_STATIC_API ?? "").replace(/\/+$/, "");
+const STATIC_API_KEY = process.env.STATIC_API_KEY || "";
 
 // Dynamic analysis ARM64 sandbox configuration (AWS Sydney VPC Private IP direct connect)
 const DYNAMIC_SANDBOX_INSTANCE_ID = process.env.DYNAMIC_SANDBOX_INSTANCE_ID || "i-037917cfa6d87177f";
@@ -138,9 +139,14 @@ export async function analyzeAndroidStatic(fileId: number) {
 
     // Submit job — the Lambda pulls the APK from S3 itself, so we send the object key
     // (fileDoc.filePath) as JSON instead of uploading the bytes. Returns 202 + job_id.
+    const postHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (STATIC_API_KEY) {
+      postHeaders["X-API-Key"] = STATIC_API_KEY;
+    }
+
     const postRes = await fetch(`${ANDROID_STATIC_API}/analyze_apk`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: postHeaders,
       body: JSON.stringify({
         key: fileDoc.filePath,
         hash: fileDoc.hash,
@@ -155,11 +161,18 @@ export async function analyzeAndroidStatic(fileId: number) {
 
     // Poll /status/<job_id> until done
     let report: any = null;
+    const pollHeaders: Record<string, string> = {};
+    if (STATIC_API_KEY) {
+      pollHeaders["X-API-Key"] = STATIC_API_KEY;
+    }
+
     for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
       console.log(`Polling attempt ${attempt}/${MAX_POLL_ATTEMPTS} for job ${job_id}...`);
       await sleep(POLL_INTERVAL_MS);
 
-      const statusRes = await fetch(`${ANDROID_STATIC_API}/status/${job_id}`);
+      const statusRes = await fetch(`${ANDROID_STATIC_API}/status/${job_id}`, {
+        headers: pollHeaders,
+      });
       // Failed jobs come back as HTTP 500 with {status:"failed", error} — surface
       // the real reason instead of a bare status code.
       const data = (await statusRes.json().catch(() => null)) as any;
