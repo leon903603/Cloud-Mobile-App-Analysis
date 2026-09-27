@@ -17,3 +17,5 @@ log.txt
 *.flag
 .env
 *.bak*
+
+*.log
