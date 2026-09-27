@@ -40,8 +40,12 @@ services:
       - S3_BUCKET=${S3_BUCKET}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      # Android static analysis — AWS Lambda Function URL (auth: NONE)
+      # Static analysis wrappers on islab53 over Tailscale — base URL only, no path
+      # (server/dispatch.ts appends /analyze_apk|/analyze_ipa and /status/<id>).
+      #   ANDROID_STATIC_API=http://100.117.29.74:5001
+      #   IOS_STATIC_API=http://100.117.29.74:8000
       - ANDROID_STATIC_API=${ANDROID_STATIC_API}
+      - IOS_STATIC_API=${IOS_STATIC_API:-}
       # PDF reports — private Lambda, invoked with the SDK (no public endpoint).
       # Renders to S3 and returns a presigned URL, so PDFs never transit this box.
       - PDF_LAMBDA_NAME=${PDF_LAMBDA_NAME}
