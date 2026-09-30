@@ -1,7 +1,7 @@
-// server/newebpay.ts — NewebPay (藍新金流) MPG checkout for credit purchases.
+// server/newebpay.ts — NewebPay MPG checkout for credit purchases.
 // Replaces the Stripe flow: the frontend fetches signed form fields here, then
-// foreground-form-posts them to the MPG gateway (iframe/背景 post is forbidden
-// by NewebPay — error MPG02005). Spec: 線上交易-幕前支付技術串接手冊 NDNF-1.2.3.
+// foreground-form-posts them to the MPG gateway (iframe/background post is forbidden
+// by NewebPay — error MPG02005). Spec: NDNF-1.2.3.
 
 import express from "express";
 import crypto from "crypto";
@@ -9,6 +9,8 @@ import { getAuth } from "firebase-admin/auth";
 import { db } from "./db";
 import { getTwdPerUsd } from "./fx";
 import { recordCreditChange } from "./credit_audit";
+
+import { GuestJob } from "./models/GuestJob";
 
 const router = express.Router();
 
@@ -20,8 +22,8 @@ const HASH_IV = process.env.NEWEBPAY_HASH_IV ?? "";
 const GATEWAY_BASE = process.env.NEWEBPAY_GATEWAY ?? "https://ccore.newebpay.com";
 const CLIENT_URL = process.env.CLIENT_URL ?? "";
 // 1 credit = 1 upload, priced in USD — the platform is international and USD is
-// the listed price everywhere. NewebPay can only *charge* TWD (MPG `Amt` is an
-// integer in 新台幣; the spec has no currency parameter), so each order converts
+// the listed price everywhere. NewebPay can only *charge* TWD (MPG Amt is an
+// integer in TWD; the spec has no currency parameter), so each order converts
 // USD→TWD at checkout using the cached rate from fx.ts. The TWD figure therefore
 // moves with the market while the USD price stays fixed.
 const USD_PER_CREDIT = Number(process.env.USD_PER_CREDIT ?? 40);
@@ -64,6 +66,8 @@ for (const [col, decl] of [
   ["usdAmt", "REAL"],
   ["fxRate", "REAL"],
   ["paidAt", "TEXT"],
+  ["jobId", "TEXT"],
+  ["orderType", "TEXT DEFAULT 'credits'"],
 ] as const) {
   const exists = (db.prepare("PRAGMA table_info(newebpay_orders)").all() as {
     name: string;
@@ -77,11 +81,17 @@ for (const [col, decl] of [
 db.exec(`
   CREATE INDEX IF NOT EXISTS newebpay_orders_uid_paid
     ON newebpay_orders (uid, status, paidAt);
+  CREATE INDEX IF NOT EXISTS newebpay_orders_jobId
+    ON newebpay_orders (jobId);
 `);
 
 const insertOrder = db.prepare(
-  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate)
-   VALUES (?, ?, ?, ?, ?, ?)`
+  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate, orderType)
+   VALUES (?, ?, ?, ?, ?, ?, 'credits')`
+);
+const insertGuestOrder = db.prepare(
+  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate, jobId, orderType)
+   VALUES (?, 'guest', 0, ?, ?, ?, ?, 'guest_report')`
 );
 const findOrder = db.prepare("SELECT * FROM newebpay_orders WHERE orderNo = ?");
 // Atomic pending→paid transition makes the notify handler idempotent.
@@ -97,6 +107,8 @@ interface OrderRow {
   credits: number;
   amt: number;
   status: string;
+  jobId?: string | null;
+  orderType?: string | null;
 }
 
 // ── Crypto helpers (manual §4.1) ────────────────────────────────────────────
@@ -171,10 +183,6 @@ router.get("/pricing", (_req, res) => {
 // ── POST /api/newebpay/checkout ─────────────────────────────────────────────
 // Returns the signed fields the frontend form-posts to the MPG gateway.
 router.post("/checkout", requireAuth, async (req, res) => {
-  if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
-    return res.status(503).json({ error: "NewebPay is not configured" });
-  }
-
   const { packageId } = req.body;
   const credits = VALID_PACKAGES[packageId];
   if (!credits) return res.status(400).json({ error: "Invalid package" });
@@ -182,6 +190,31 @@ router.post("/checkout", requireAuth, async (req, res) => {
   const uid = (req as any).uid as string;
   const email = (req as any).email as string;
   const { usd, twd: amt, rate } = priceFor(credits);
+
+  // If NewebPay keys are not configured, allow local development testing simulation
+  if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
+    if (process.env.NODE_ENV !== "production") {
+      const { getFirestore, FieldValue } = await import("firebase-admin/firestore");
+      const ref = getFirestore().collection("users").doc(uid);
+      await ref.set({ credits: FieldValue.increment(credits) }, { merge: true });
+      const simOrderNo = `SIM${Date.now()}`;
+      recordCreditChange({
+        uid,
+        delta: credits,
+        reason: "purchase",
+        ref: simOrderNo,
+        note: `Dev simulation · ${credits} credits`,
+      });
+      console.log(`[Dev Simulation] Auto-credited ${credits} to user ${uid}`);
+      return res.json({
+        simulated: true,
+        message: "Payment simulated successfully in development mode.",
+        credits,
+        amt,
+      });
+    }
+    return res.status(503).json({ error: "NewebPay is not configured" });
+  }
 
   // MerchantOrderNo: unique, ≤30 chars, [A-Za-z0-9_] only.
   const orderNo = `CMAA${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -218,6 +251,93 @@ router.post("/checkout", requireAuth, async (req, res) => {
     usd,
     twd: amt,
     rate,
+  });
+});
+
+// ── POST /api/newebpay/guest-checkout ─────────────────────────────────────────
+// Public endpoint for anonymous users to pay for a completed analysis report.
+// Strict business rule: Only allowed if the job is 'done' and not yet paid!
+router.post("/guest-checkout", async (req, res) => {
+  const { jobId, email } = req.body ?? {};
+  if (!jobId || typeof jobId !== "string") {
+    return res.status(400).json({ error: "Missing or invalid jobId" });
+  }
+
+  const job = GuestJob.findByJobId(jobId);
+  if (!job) {
+    return res.status(404).json({ error: "Job not found" });
+  }
+
+  // Verify guest secretKey
+  const clientSecret = (req.headers["x-guest-secret"] as string) || (req.body?.secretKey as string);
+  if (job.secretKey && (!clientSecret || job.secretKey !== clientSecret)) {
+    return res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
+  }
+
+  if (job.status !== "done") {
+    return res.status(400).json({ error: "Report is not ready yet. Please wait for analysis to complete." });
+  }
+
+  if (job.isPaid) {
+    return res.status(400).json({ error: "This report has already been paid for and unlocked." });
+  }
+
+  // If NewebPay keys are not configured, allow local development testing simulation
+  if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
+    if (process.env.NODE_ENV !== "production") {
+      const downloadToken = crypto.randomBytes(32).toString("hex");
+      GuestJob.update(jobId, {
+        isPaid: 1,
+        downloadToken,
+        downloadsRemaining: 3,
+        paidAt: new Date().toISOString(),
+      });
+      console.log(`[Dev Simulation] Auto-unlocked guest report ${jobId} with token ${downloadToken.slice(0, 8)}...`);
+      return res.json({
+        simulated: true,
+        message: "Payment simulated successfully in development mode.",
+        jobId,
+        downloadToken,
+      });
+    }
+    return res.status(503).json({ error: "NewebPay is not configured" });
+  }
+
+  // 1 single report = USD_PER_CREDIT (default 40)
+  const { usd, twd: amt, rate } = priceFor(1);
+
+  const orderNo = `CMAAG${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
+  insertGuestOrder.run(orderNo, amt, usd, rate, jobId);
+
+  const tradeInfoPlain = new URLSearchParams({
+    MerchantID: MERCHANT_ID,
+    RespondType: "JSON",
+    TimeStamp: String(Math.floor(Date.now() / 1000)),
+    Version: "2.0",
+    LangType: "en",
+    MerchantOrderNo: orderNo,
+    Amt: String(amt),
+    ItemDesc: `Security Report: ${job.filename || "App Analysis"} (US$${usd})`,
+    Email: email ?? "",
+    NotifyURL: `${CLIENT_URL}/api/newebpay/notify`,
+    ReturnURL: `${CLIENT_URL}/api/newebpay/return`,
+    ClientBackURL: `${CLIENT_URL}/app`,
+    CREDIT: "1",
+  }).toString();
+
+  const encrypted = aesEncrypt(tradeInfoPlain);
+
+  return res.json({
+    gateway: `${GATEWAY_BASE}/MPG/mpg_gateway`,
+    merchantID: MERCHANT_ID,
+    tradeInfo: encrypted,
+    tradeSha: tradeSha(encrypted),
+    version: "2.0",
+    usd,
+    twd: amt,
+    rate,
+    orderNo,
+    jobId,
   });
 });
 
@@ -264,29 +384,40 @@ router.post("/notify", async (req, res) => {
     return res.status(400).send("amount mismatch");
   }
 
-  // Idempotent: only the first successful notify credits the user.
+  // Idempotent: only the first successful notify credits the user or unlocks report.
   const updated = markPaid.run(result.TradeNo ?? null, orderNo);
   if (updated.changes === 1) {
-    const { getFirestore, FieldValue } = await import("firebase-admin/firestore");
-    const ref = getFirestore().collection("users").doc(order.uid);
-    await ref.set({ credits: FieldValue.increment(order.credits) }, { merge: true });
-    console.log(`NewebPay: credited ${order.credits} to ${order.uid} (${orderNo})`);
+    if (order.orderType === "guest_report" && order.jobId) {
+      const downloadToken = crypto.randomBytes(32).toString("hex");
+      GuestJob.update(order.jobId, {
+        isPaid: 1,
+        downloadToken,
+        downloadsRemaining: 3,
+        paidAt: new Date().toISOString(),
+      });
+      console.log(`NewebPay: unlocked guest report ${order.jobId} (${orderNo})`);
+    } else {
+      const { getFirestore, FieldValue } = await import("firebase-admin/firestore");
+      const ref = getFirestore().collection("users").doc(order.uid);
+      await ref.set({ credits: FieldValue.increment(order.credits) }, { merge: true });
+      console.log(`NewebPay: credited ${order.credits} to ${order.uid} (${orderNo})`);
 
-    // Journal the grant so the daily audit can account for the new balance.
-    // After the Firestore write, and never allowed to fail the request: an
-    // unjournaled grant is detected and backfilled from this paid order tomorrow.
-    const balanceAfter = await ref
-      .get()
-      .then((s) => Number(s.data()?.credits ?? 0))
-      .catch(() => null);
-    recordCreditChange({
-      uid: order.uid,
-      delta: order.credits,
-      reason: "purchase",
-      ref: orderNo,
-      balanceAfter,
-      note: `NewebPay ${result.TradeNo ?? "?"} · NT$${order.amt}`,
-    });
+      // Journal the grant so the daily audit can account for the new balance.
+      // After the Firestore write, and never allowed to fail the request: an
+      // unjournaled grant is detected and backfilled from this paid order tomorrow.
+      const balanceAfter = await ref
+        .get()
+        .then((s) => Number(s.data()?.credits ?? 0))
+        .catch(() => null);
+      recordCreditChange({
+        uid: order.uid,
+        delta: order.credits,
+        reason: "purchase",
+        ref: orderNo,
+        balanceAfter,
+        note: `NewebPay ${result.TradeNo ?? "?"} · NT$${order.amt}`,
+      });
+    }
   }
 
   return res.status(200).send("ok");
@@ -298,7 +429,20 @@ router.post("/notify", async (req, res) => {
 router.post("/return", (req, res) => {
   const info = verifyPayload(req.body);
   const ok = info?.Status === "SUCCESS";
+  const result = info?.Result ?? info;
+  const orderNo = result?.MerchantOrderNo;
+  const order = orderNo ? (findOrder.get(orderNo) as OrderRow | undefined) : undefined;
+
+  if (order && order.orderType === "guest_report" && order.jobId) {
+    const job = GuestJob.findByJobId(order.jobId);
+    const tokenParam = job?.downloadToken ? `&token=${job.downloadToken}` : "";
+    return res.redirect(
+      `${CLIENT_URL}/app?guest_job=${order.jobId}&payment=${ok ? "success" : "failed"}${tokenParam}`
+    );
+  }
+
   return res.redirect(`${CLIENT_URL}/app?credits=${ok ? "success" : "failed"}`);
 });
 
 export default router;
+

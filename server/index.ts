@@ -1,3 +1,9 @@
+import path from "path";
+import dotenv from "dotenv";
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+dotenv.config();
+
 import { initializeApp, cert, ServiceAccount } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
@@ -14,7 +20,7 @@ import {
   startCredentialSweep,
   validateCredentials,
 } from "./models/DynamicCredentials";
-import { putFile, putJson, objectExists, getPresignedDownloadUrl } from "./s3";
+import { putFile, putJson, objectExists, getPresignedDownloadUrl, deleteObject } from "./s3";
 import { analyzeIOSStatic, analyzeAndroidStatic, analyzeAndroidDynamic} from "./dispatch";
 import guestRoutes from "./guest_routes";
 import newebpayRouter from "./newebpay";
@@ -106,12 +112,29 @@ async function consumeCredit(uid: string, ref: string, note?: string) {
 }
 
 const app = express();
-// Restrict browser CORS to the configured client origin (falls back to "*" if unset).
-const allowedOrigin = process.env.CLIENT_URL || "*";
+app.set("trust proxy", true);
+// Allow configured client origin and local development origins
+const configuredOrigin = process.env.CLIENT_URL;
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://localhost",
+];
+if (configuredOrigin && !allowedOrigins.includes(configuredOrigin)) {
+  allowedOrigins.push(configuredOrigin);
+}
+
 app.use(cors({
-  origin: allowedOrigin,
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-guest-secret"],
 }));
 app.options("*", cors());
 
@@ -124,9 +147,28 @@ app.use("/api/newebpay", express.urlencoded({ extended: false }), newebpayRouter
 // it has to stay usable when Firebase is the thing under suspicion.
 app.use("/api/admin/credit-audit", creditAuditRouter);
 
+// Public client config
+app.get("/api/config", (_req: Request, res: Response) => {
+  res.json({
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || process.env.VITE_TURNSTILE_SITE_KEY || "",
+  });
+});
+
 // Multer buffers the incoming upload to a local temp file; we then stream it to S3
 // and delete the temp file. S3 is the durable store — no local uploads/reports dirs.
-const upload = multer({ dest: os.tmpdir(), defParamCharset: "utf8" } as any);
+const upload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB max limit
+  defParamCharset: "utf8",
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const allowed = [".apk", ".ipa"];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!allowed.includes(ext)) {
+      return cb(new Error("Invalid file extension: only .apk and .ipa files are allowed."));
+    }
+    cb(null, true);
+  },
+} as any);
 
 // Uploading itself is free — the credit is charged when an analysis is run — but
 // an empty balance means nothing can ever be done with the file, so it is turned
@@ -201,7 +243,32 @@ app.post("/upload", verifyToken, requireCredits, upload.single("file"), async (r
 
   // Find user document
   const user = User.findById(req.user.uid);
-  if (!user) return res.status(401).json({ message: "User not found" });
+  if (!user) {
+    if (file.path) await fs.promises.unlink(file.path).catch(() => {});
+    return res.status(401).json({ message: "User not found" });
+  }
+
+  // Security Check: Magic Bytes for ZIP/APK/IPA (0x50 0x4B 0x03 0x04)
+  try {
+    const fd = await fs.promises.open(file.path, "r");
+    const header = Buffer.alloc(4);
+    await fd.read(header, 0, 4, 0);
+    await fd.close();
+    if (
+      header[0] !== 0x50 ||
+      header[1] !== 0x4b ||
+      header[2] !== 0x03 ||
+      header[3] !== 0x04
+    ) {
+      await fs.promises.unlink(file.path).catch(() => {});
+      return res.status(400).json({
+        error: "invalid_file_format",
+        message: "Invalid file format: must be a valid APK or IPA package (ZIP header PK\\x03\\x04 required).",
+      });
+    }
+  } catch (checkErr) {
+    console.warn("Magic bytes check warning:", checkErr);
+  }
 
   // Generate unique S3 keys per user + hash
   const sanitizedFilename = file.originalname.replace(/\s+/g, "_"); // optional: sanitize spaces
@@ -296,6 +363,26 @@ app.delete("/uploads/:id", verifyToken, async (req: AuthRequest, res: Response) 
   try {
     DynamicCredentials.remove(upload.id);
     FileMeta.delete(upload.id);
+
+    // Physically clean up S3 reports (JSON + PDF) and uploaded binary if no other analysis shares it
+    const filesToDelete = new Set<string>();
+    if (upload.reportPath) {
+      filesToDelete.add(upload.reportPath);
+      filesToDelete.add(upload.reportPath.replace(/\.json$/, ".pdf"));
+      filesToDelete.add(upload.reportPath.replace(/\.json$/, "_zh.pdf"));
+      filesToDelete.add(upload.reportPath.replace(/\.json$/, "_en.pdf"));
+    }
+    const otherUploads = FileMeta.find({ user: user.id, hash: upload.hash })
+      .filter((r) => r.id !== upload.id);
+    if (otherUploads.length === 0 && upload.filePath) {
+      filesToDelete.add(upload.filePath);
+    }
+    for (const key of filesToDelete) {
+      await deleteObject(key).catch((e) => {
+        console.warn(`[uploads] S3 cleanup failed for ${key}:`, e?.message ?? e);
+      });
+    }
+
     res.json({ message: "Upload record deleted successfully" });
   } catch (err) {
     console.error("Failed to delete upload record:", err);
@@ -325,7 +412,7 @@ app.post("/check-hash", verifyToken, async (req: AuthRequest, res: Response) => 
     console.log("Checking for user ID:", user.id); // Log the user ID being checked
     const file = FileMeta.findOne({ hash, user: user.id });
     if (!file) {
-      return res.json({ status: "new "});
+      return res.json({ status: "new" });
     }
 
     if (file.analysisType === analysisType) {
@@ -536,8 +623,11 @@ app.post("/android-dynamic-analyze", verifyToken, analyzeHandler({
 app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
-  const { hash, type } = req.body;
+  const { hash, type, lang } = req.body;
   if (!hash || !type) return res.status(400).json({ error: "Missing fields" });
+
+  const targetLang = lang === "en" ? "en" : "zh-TW";
+  const langSuffix = targetLang === "en" ? "_en" : "_zh";
 
   // Find the current user
   const user = User.findById(req.user.uid);
@@ -551,30 +641,41 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
       return res.status(404).json({ error: "Report file missing" });
     }
 
-    // 1. Fast Path: check if PDF was pre-generated by the analysis worker (reports/uid/hash/static.pdf)
-    const pdfKey = reportMeta.reportPath.replace(/\.json$/, ".pdf");
-    if (await objectExists(pdfKey)) {
-      const url = await getPresignedDownloadUrl(pdfKey, `${reportMeta.filename}.pdf`, 300);
+    const langPdfKey = reportMeta.reportPath.replace(/\.json$/, `${langSuffix}.pdf`);
+    const legacyPdfKey = reportMeta.reportPath.replace(/\.json$/, ".pdf");
+
+    // 1. Fast Path: check if PDF for the requested language already exists on S3
+    let effectiveKey = "";
+    if (await objectExists(langPdfKey)) {
+      effectiveKey = langPdfKey;
+    } else if (targetLang === "zh-TW" && (await objectExists(legacyPdfKey))) {
+      effectiveKey = legacyPdfKey;
+    }
+
+    const downloadFilename = `${reportMeta.filename.replace(/\.[^/.]+$/, "")}-${type}-${targetLang === "en" ? "en" : "zh"}.pdf`;
+
+    if (effectiveKey) {
+      const url = await getPresignedDownloadUrl(effectiveKey, downloadFilename, 300);
       return res.json({ url, expiresIn: 300 });
     }
 
-    // 2. Fallback: on-demand rendering via Lambda for historical reports
+    // 2. Fallback: on-demand rendering via Lambda for the requested language
     const result = await renderReportPdf({
       reportKey: reportMeta.reportPath,
-      filename: `${reportMeta.filename}.pdf`,
+      filename: downloadFilename,
       type: reportMeta.analysisType,
+      lang: targetLang,
+      outputKey: langPdfKey,
     });
 
     if (!result.ok) {
       throw new Error(`PDF generation failed: ${result.error}`);
     }
 
-    // The browser downloads straight from S3; Content-Disposition (including the
-    // filename) was set on the object when the Lambda wrote it.
     res.json({ url: result.url, expiresIn: result.expires_in });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Report generation error:", err);
-    res.status(500).json({ error: "Failed to generate report" });
+    res.status(500).json({ error: err?.message || "Failed to generate report" });
   }
 });
 

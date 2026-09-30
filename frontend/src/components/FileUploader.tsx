@@ -190,9 +190,44 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
     setShowGuestConfirmModal(false);
   };
 
-  const handleSelectFile = (selected: File) => {
-    setStagedFile(selected);
+  const handleSelectFile = async (selected: File) => {
     setCredentialError(null);
+
+    // Size limit check (500 MB max)
+    if (selected.size > 500 * 1024 * 1024) {
+      setCredentialError("File exceeds 500 MB maximum size limit.");
+      return;
+    }
+
+    // Extension check
+    const ext = selected.name.toLowerCase();
+    if (!ext.endsWith(".apk") && !ext.endsWith(".ipa")) {
+      setCredentialError("Invalid file extension: only .apk and .ipa files are supported.");
+      return;
+    }
+
+    // Magic Bytes check (ZIP PK\x03\x04: 0x50 0x4B 0x03 0x04)
+    try {
+      const slice = selected.slice(0, 4);
+      const headerBuf = await slice.arrayBuffer();
+      const bytes = new Uint8Array(headerBuf);
+      if (
+        bytes.length < 4 ||
+        bytes[0] !== 0x50 ||
+        bytes[1] !== 0x4b ||
+        bytes[2] !== 0x03 ||
+        bytes[3] !== 0x04
+      ) {
+        setCredentialError(
+          "Invalid file format: selected file must be a valid APK or IPA package (ZIP header PK\\x03\\x04 required)."
+        );
+        return;
+      }
+    } catch (checkErr) {
+      console.warn("Could not check magic bytes:", checkErr);
+    }
+
+    setStagedFile(selected);
   };
 
   const startUpload = (fileToUpload: File) => {
@@ -291,6 +326,28 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
       setStatus("check_duplicate");
       setProgress(0);
       setCredentialNotice(null);
+
+      // Security check: Magic Bytes for ZIP/APK/IPA (0x50 0x4B 0x03 0x04)
+      try {
+        const slice = selectedFile.slice(0, 4);
+        const headerBuf = await slice.arrayBuffer();
+        const bytes = new Uint8Array(headerBuf);
+        if (
+          bytes.length < 4 ||
+          bytes[0] !== 0x50 ||
+          bytes[1] !== 0x4b ||
+          bytes[2] !== 0x03 ||
+          bytes[3] !== 0x04
+        ) {
+          setStatus("error");
+          setCredentialNotice(
+            "Invalid file format: selected file must be a valid APK or IPA package (ZIP header PK\\x03\\x04 required)."
+          );
+          return;
+        }
+      } catch (checkErr) {
+        console.warn("Could not check magic bytes:", checkErr);
+      }
 
       // Only send an account if it was actually filled in: it is optional, and a
       // dynamic run without one is still a valid — if shallower — analysis.

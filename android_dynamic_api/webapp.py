@@ -50,6 +50,7 @@ from web_static_analysis.activity_call_graph import androguard_acg_creator
 from maldroid import androguard_server
 
 import socket
+import subprocess
 
 TempResponse = Jinja2Templates(directory='/AndroidDynamicSystem/Frida/web_templates').TemplateResponse
 
@@ -62,6 +63,16 @@ result_context = {}
 applist = {}
 APP_HASH = ''
 hasher = PBKDF2Hasher()
+
+def secure_filename(filename: str) -> str:
+    """Sanitize filename to prevent directory traversal and special character injection."""
+    filename = os.path.basename(filename or "")
+    filename = re.sub(r"[^a-zA-Z0-9_.-]", "_", filename)
+    filename = filename.lstrip(".")
+    if not filename:
+        filename = f"upload_{int(time.time())}.apk"
+    return filename
+
 # MOBSF_URL = "http://192.168.50.180:8000"
 MOBSF_URL = "http://" + os.getenv('MOBSF', '172.27.0.3:8000')
 host_ip = socket.gethostbyname(socket.gethostname())
@@ -114,10 +125,17 @@ class APKinfo:
         actFile.close()
     def Androbug_analysis(self):
         # [halloworld]: python2 call maldroid
-        # os.system(f'python2 maldroid/maldroid_main.py -s -v -f {SETTING.UPLOAD_APK_DIR}/{self.filename} -o out -m massive')
-        server_thread = threading.Thread(target=androguard_server.run_androguard_server, args=(8010, os.path.join(SETTING.UPLOAD_APK_DIR, self.filename)))
+        safe_name = secure_filename(self.filename)
+        server_thread = threading.Thread(target=androguard_server.run_androguard_server, args=(8010, os.path.join(SETTING.UPLOAD_APK_DIR, safe_name)))
         server_thread.start()
-        os.system(f'python2 /AndroidDynamicSystem/Frida/maldroid/maldroid_main.py -s -v -f {SETTING.UPLOAD_APK_DIR}/{self.filename} -n file -u root ')
+        subprocess.run([
+            'python2',
+            '/AndroidDynamicSystem/Frida/maldroid/maldroid_main.py',
+            '-s', '-v',
+            '-f', os.path.join(SETTING.UPLOAD_APK_DIR, safe_name),
+            '-n', 'file',
+            '-u', 'root'
+        ], shell=False, check=False)
         jsonfile = self.packageName + ".json"
         path = STATIC_ANALYSIS_DIR + jsonfile
         if os.path.isfile(path):
@@ -320,11 +338,20 @@ def getMobSFStatus(): # 回傳 json
     return {"mobSF_state": "none"}
 
 def decompile_apk(file_name):
-    #file_name[:-4] remove .apk
-    os.system(f'jadx -d {APK_DECOMPILE_DIR}{file_name[:-4]} {SETTING.UPLOAD_APK_DIR}{file_name}')
+    safe_name = secure_filename(file_name)
+    base_decompile_name = safe_name[:-4] if safe_name.lower().endswith(".apk") else safe_name
+    apk_target_path = os.path.join(SETTING.UPLOAD_APK_DIR, safe_name)
+    out_decompile_dir = os.path.join(APK_DECOMPILE_DIR, base_decompile_name)
+    subprocess.run(['jadx', '-d', out_decompile_dir, apk_target_path], shell=False, check=False)
     # python2
-    os.system(f'python2 /AndroidDynamicSystem/Frida/maldroid/maldroid_main.py -s -v -f {SETTING.UPLOAD_APK_DIR}/{file_name} -n file -u root')
-    # os.system(f'python2 maldroid/maldroid_main.py -s -v -f C:\\Users\\jerry\\Desktop\\tmp\\app-debug.apk -n file -u root ')
+    subprocess.run([
+        'python2',
+        '/AndroidDynamicSystem/Frida/maldroid/maldroid_main.py',
+        '-s', '-v',
+        '-f', apk_target_path,
+        '-n', 'file',
+        '-u', 'root'
+    ], shell=False, check=False)
 
 def HomeResponse(request, context={}):
     template = "index.html"
@@ -370,7 +397,8 @@ class Echo(WebSocketEndpoint):
         if(action == "start"):
             if (self.package_name != None): #start control server
                 await self.m_socket.send_json({"status":"INSTALLAPK"})
-                os.system(f"adb -s {SETTING.DEVICEID} install -t {UPLOAD_APK_DIR + self.apkinfo.filename}")
+                apk_safe_name = secure_filename(self.apkinfo.filename)
+                subprocess.run(['adb', '-s', str(SETTING.DEVICEID), 'install', '-t', os.path.join(UPLOAD_APK_DIR, apk_safe_name)], shell=False, check=False)
                 await self.m_socket.send_json({"status":"SERVERSTARING"})
                 self.cmdServer = ControlServer(SETTING.PORT)
                 print(self.package_name)
@@ -570,9 +598,11 @@ class Result(HTTPEndpoint):
                 package_name = request.cookies.get('apk_name')
                 _appinfo = applist[package_name]            
                 # [halloworld]: pull the dynamic result
-                os.system(f"adb -s {SETTING.DEVICEID} root") # check adb i root mode
-                os.system(f"adb -s {SETTING.DEVICEID} pull /data/data/{package_name}/files/LogFile.txt /AndroidDynamicSystem/Frida/static_analysis_result/{package_name}.log.txt")
-                with open(f"/AndroidDynamicSystem/Frida/static_analysis_result/{package_name}.log.txt","r",encoding="utf-8") as f:
+                subprocess.run(["adb", "-s", str(SETTING.DEVICEID), "root"], shell=False, check=False)
+                safe_package_name = re.sub(r'[^a-zA-Z0-9_.-]', '', package_name)
+                pull_dest = f"/AndroidDynamicSystem/Frida/static_analysis_result/{safe_package_name}.log.txt"
+                subprocess.run(["adb", "-s", str(SETTING.DEVICEID), "pull", f"/data/data/{safe_package_name}/files/LogFile.txt", pull_dest], shell=False, check=False)
+                with open(pull_dest, "r", encoding="utf-8", errors="replace") as f:
                     raw_data = f.readlines()
 
                 # [halloworld]: VistedState/MobSF/AndroBugs Result
@@ -686,23 +716,31 @@ class Upload(HTTPEndpoint):
             return TempResponse(template, context)
 
         # Read and validate base APK first (no disk write until validated)
-        filename = base_file.filename or ""
+        raw_base_name = base_file.filename or ""
+        filename = secure_filename(raw_base_name)
         contents = await base_file.read()
         file_mime = magic.from_buffer(contents, mime=True)
         if filename.endswith('.apk') and ("application/zip" in file_mime or "application/java-archive" in file_mime):
             # Save all uploaded files; write base using bytes we already read
             for f in files:
-                fname = getattr(f, 'filename', None)
-                if not fname:
+                raw_fname = getattr(f, 'filename', None)
+                if not raw_fname:
+                    continue
+                safe_fname = secure_filename(raw_fname)
+                if not safe_fname.lower().endswith('.apk'):
                     continue
                 if f is base_file:
                     data = contents
+                    filename = safe_fname
                 else:
                     data = await f.read()
-                with open(UPLOAD_APK_DIR + fname, "wb") as out:
+                dest_file_path = os.path.join(UPLOAD_APK_DIR, safe_fname)
+                if not os.path.abspath(dest_file_path).startswith(os.path.abspath(UPLOAD_APK_DIR)):
+                    raise ValueError(f"Path traversal detected in upload filename: {raw_fname}")
+                with open(dest_file_path, "wb") as out:
                     out.write(data)
             # Get package name
-            a = APK(UPLOAD_APK_DIR + filename)
+            a = APK(os.path.join(UPLOAD_APK_DIR, filename))
             package_name = a.get_package()
             # [halloworld]: monitor mobsf
             mobSF_for_monitoring_state_package_name = package_name

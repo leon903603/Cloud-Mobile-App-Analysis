@@ -70,6 +70,22 @@ db.exec(`
     ON guest_jobs (downloadToken) WHERE downloadToken IS NOT NULL;
 `);
 
+// Add columns for guest_jobs if they do not exist
+for (const [col, decl] of [
+  ["isPaid", "INTEGER NOT NULL DEFAULT 0"],
+  ["paidAt", "TEXT"],
+  ["summaryPreview", "TEXT"],
+  ["secretKey", "TEXT"],
+  ["appUsername", "TEXT"],
+  ["appPassword", "TEXT"],
+  ["discardedAt", "TEXT"],
+] as const) {
+  const exists = (db.prepare("PRAGMA table_info(guest_jobs)").all() as {
+    name: string;
+  }[]).some((c) => c.name === col);
+  if (!exists) db.exec(`ALTER TABLE guest_jobs ADD COLUMN ${col} ${decl}`);
+}
+
 // `file_meta.creditSpent` arrived when the charge moved from upload time to
 // analysis time. Every row that predates the column was already paid for at
 // upload, so they are backfilled as paid — deploying this must never charge

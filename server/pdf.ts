@@ -9,7 +9,7 @@
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 
 const REGION = process.env.AWS_REGION ?? "ap-southeast-2";
-const PDF_LAMBDA_NAME = process.env.PDF_LAMBDA_NAME ?? "cmaa-pdf-report";
+const STATIC_PDF_LAMBDA_NAME = process.env.STATIC_PDF_LAMBDA_NAME ?? process.env.PDF_LAMBDA_NAME ?? "cmaa-static-pdf-report";
 const DYNAMIC_PDF_LAMBDA_NAME = process.env.DYNAMIC_PDF_LAMBDA_NAME ?? "cmaa-dynamic-pdf-report";
 
 const client = new LambdaClient({ region: REGION });
@@ -37,7 +37,9 @@ export async function renderReportPdf(opts: {
   type?: string;
   functionName?: string;
 }): Promise<RenderPdfResult> {
-  const targetFunction = opts.functionName || (opts.type === "android-dynamic" ? DYNAMIC_PDF_LAMBDA_NAME : PDF_LAMBDA_NAME);
+  const isDynamic = opts.type === "dynamic" || opts.type === "android-dynamic";
+  const defaultTarget = isDynamic ? DYNAMIC_PDF_LAMBDA_NAME : STATIC_PDF_LAMBDA_NAME;
+  const targetFunction = opts.functionName || defaultTarget;
   const payload = {
     report_key: opts.reportKey,
     filename: opts.filename,

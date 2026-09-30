@@ -104,8 +104,19 @@ const BuyCredits: React.FC<BuyCreditsProps> = ({ currentCredits = 0, onBack }) =
         throw new Error(data.error ?? "Failed to create checkout session.");
       }
 
-      const { gateway, merchantID, tradeInfo, tradeSha, version } =
-        await response.json();
+      const data = await response.json();
+
+      if (data.simulated) {
+        setSuccess(`Payment simulated successfully! Added ${pkg.credits} credit${pkg.credits > 1 ? "s" : ""} to your account.`);
+        setLoading(false);
+        setTimeout(() => {
+          onBack?.();
+          window.location.reload();
+        }, 1200);
+        return;
+      }
+
+      const { gateway, merchantID, tradeInfo, tradeSha, version } = data;
 
       // NewebPay requires a foreground HTML form post to the MPG payment page
       // (iframe/background posts are rejected with MPG02005).

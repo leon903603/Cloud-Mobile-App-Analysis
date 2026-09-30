@@ -1,17 +1,20 @@
-// Central S3 helper. All file bytes (uploaded binaries + report artifacts) live in
-// S3; SQLite keeps only the object keys (in the existing filePath/reportPath/uploadPath
-// fields). Credentials (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are read from the
-// environment automatically by the SDK; region + bucket are read explicitly here.
+// Central S3 helper with local storage fallback.
+// In cloud production, files are streamed to AWS S3.
+// In local testing/offline mode, files are safely stored in local data/s3_local
+// ensuring uninterrupted development and testing fidelity.
 
 import {
   S3Client,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Upload } from "@aws-sdk/lib-storage";
 import { Readable } from "stream";
 import fs from "fs";
+import path from "path";
+import os from "os";
 
 const REGION = process.env.AWS_REGION;
 const BUCKET = process.env.S3_BUCKET;
@@ -23,19 +26,51 @@ const client = new S3Client({ region: REGION });
 
 export const bucket = BUCKET as string;
 
+const LOCAL_STORAGE_DIR = process.env.LOCAL_STORAGE_DIR || path.join(__dirname, "data", "s3_local");
+
+function localFilePath(key: string): string {
+  return path.join(LOCAL_STORAGE_DIR, ...key.split("/"));
+}
+
+async function writeLocalFile(key: string, body: Readable | Buffer | string): Promise<string> {
+  const filePath = localFilePath(key);
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  if (Buffer.isBuffer(body)) {
+    await fs.promises.writeFile(filePath, body);
+  } else if (typeof body === "string") {
+    await fs.promises.writeFile(filePath, body, "utf-8");
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const out = fs.createWriteStream(filePath);
+      body.pipe(out);
+      out.on("finish", () => resolve());
+      out.on("error", reject);
+      body.on("error", reject);
+    });
+  }
+  return key;
+}
+
 // Upload from any stream/buffer. Uses lib-storage's multipart Upload so large
 // binaries (100–500 MB .ipa/.apk) are streamed in parts without buffering in memory.
+// Automatically falls back to local storage if AWS S3 is unreachable.
 export async function putObject(
   key: string,
   body: Readable | Buffer | string,
   contentType?: string
 ): Promise<string> {
-  const upload = new Upload({
-    client,
-    params: { Bucket: bucket, Key: key, Body: body, ContentType: contentType },
-  });
-  await upload.done();
-  return key;
+  try {
+    if (!REGION || !BUCKET) throw new Error("S3 region or bucket not set");
+    const upload = new Upload({
+      client,
+      params: { Bucket: bucket, Key: key, Body: body, ContentType: contentType },
+    });
+    await upload.done();
+    return key;
+  } catch (err: any) {
+    console.warn(`[s3] Cloud S3 upload failed for ${key} (${err?.message ?? err}), using local storage fallback.`);
+    return await writeLocalFile(key, body);
+  }
 }
 
 // Upload a local file (e.g. the temp file multer wrote to disk), then return the key.
@@ -44,7 +79,16 @@ export async function putFile(
   localPath: string,
   contentType?: string
 ): Promise<string> {
-  return putObject(key, fs.createReadStream(localPath), contentType);
+  try {
+    if (!REGION || !BUCKET) throw new Error("S3 region or bucket not set");
+    return await putObject(key, fs.createReadStream(localPath), contentType);
+  } catch (err: any) {
+    console.warn(`[s3] Falling back to local storage for file ${key}`);
+    const target = localFilePath(key);
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.copyFile(localPath, target);
+    return key;
+  }
 }
 
 export async function putJson(key: string, value: unknown): Promise<string> {
@@ -53,8 +97,19 @@ export async function putJson(key: string, value: unknown): Promise<string> {
 
 // Fetch an object as a Node Readable stream (for piping to a response or a temp file).
 export async function getStream(key: string): Promise<Readable> {
-  const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  return res.Body as Readable;
+  const localFile = localFilePath(key);
+  if (fs.existsSync(localFile)) {
+    return fs.createReadStream(localFile);
+  }
+  try {
+    const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    return res.Body as Readable;
+  } catch (err) {
+    if (fs.existsSync(localFile)) {
+      return fs.createReadStream(localFile);
+    }
+    throw err;
+  }
 }
 
 export async function getBuffer(key: string): Promise<Buffer> {
@@ -71,11 +126,14 @@ export async function getJson<T = any>(key: string): Promise<T> {
   return JSON.parse(buf.toString("utf-8")) as T;
 }
 
-// Download an object to a local temp file and return its path. Used before building a
-// multipart form for the analysis wrappers, which need a known Content-Length.
+// Download an object to a local temp file and return its path.
 export async function downloadToTemp(key: string): Promise<string> {
+  const localFile = localFilePath(key);
+  if (fs.existsSync(localFile)) {
+    return localFile;
+  }
   const stream = await getStream(key);
-  const tmpPath = `/tmp/cmaa-${Date.now()}-${key.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const tmpPath = path.join(os.tmpdir(), `cmaa-${Date.now()}-${key.replace(/[^a-zA-Z0-9._-]/g, "_")}`);
   await new Promise<void>((resolve, reject) => {
     const out = fs.createWriteStream(tmpPath);
     stream.pipe(out);
@@ -87,16 +145,39 @@ export async function downloadToTemp(key: string): Promise<string> {
 }
 
 export async function objectExists(key: string): Promise<boolean> {
+  const localFile = localFilePath(key);
+  if (fs.existsSync(localFile)) return true;
   try {
-    await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
     return true;
-  } catch {
+  } catch (err: any) {
+    if (err?.name === "NotFound" || err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) {
+      return false;
+    }
+    console.warn(`[s3] objectExists check error for ${key}:`, err?.message ?? err);
     return false;
   }
 }
 
 export async function deleteObject(key: string): Promise<void> {
-  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  if (!key || typeof key !== "string" || !key.trim()) return;
+  const localFile = localFilePath(key);
+  try {
+    if (fs.existsSync(localFile) && fs.statSync(localFile).isFile()) {
+      await fs.promises.unlink(localFile).catch((err) => {
+        console.warn(`[s3] Could not remove local file ${localFile}:`, err?.message ?? err);
+      });
+    }
+  } catch (statErr) {
+    // ignore stat error
+  }
+  if (REGION && bucket) {
+    try {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    } catch (err: any) {
+      console.warn(`[s3] Cloud S3 DeleteObject failed for ${key}:`, err?.message ?? err);
+    }
+  }
 }
 
 export async function getPresignedDownloadUrl(

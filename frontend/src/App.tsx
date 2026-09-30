@@ -21,12 +21,46 @@ function App() {
   const [refresh, setRefresh] = React.useState(0);
   const [user, setUser] = React.useState<User | null>(null);
   const [view, setView] = React.useState<View>("main");
-  const [currentCredits, setCurrentCredits] = React.useState(0);
-  const [authMode, setAuthMode] = React.useState<AuthMode>("auth");
+  const [currentCredits, setCurrentCredits] = React.useState<number>(0);
+  const [authMode, setAuthMode] = React.useState<AuthMode>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const historyRaw = localStorage.getItem("cmaa_guest_jobs_history");
+      const hasHistory = historyRaw && historyRaw !== "[]";
+      if (
+        params.get("guest_job") ||
+        hasHistory ||
+        localStorage.getItem("cmaa_guest_job")
+      ) {
+        return "guest";
+      }
+    }
+    return "auth";
+  });
 
   React.useEffect(() => {
     const unsubscribe = onUserStateChanged(setUser);
     return () => unsubscribe();
+  }, []);
+
+  // Handle NewebPay return callback status (?credits=success | ?credits=failed)
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const credits = params.get("credits");
+      if (credits === "success") {
+        alert("Payment successful! Your credit balance has been updated.");
+        params.delete("credits");
+        const newSearch = params.toString() ? `?${params.toString()}` : "";
+        window.history.replaceState({}, document.title, window.location.pathname + newSearch);
+        setRefresh((prev) => prev + 1);
+      } else if (credits === "failed") {
+        alert("Payment was not completed or encountered an error. Please try again.");
+        params.delete("credits");
+        const newSearch = params.toString() ? `?${params.toString()}` : "";
+        window.history.replaceState({}, document.title, window.location.pathname + newSearch);
+      }
+    }
   }, []);
 
   // Email-verified users only: ensure their backend/Firestore record exists.

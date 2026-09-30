@@ -181,6 +181,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [pendingDynamicUpload, setPendingDynamicUpload] = useState<UploadEntry | null>(null);
   const [isStartingDynamic, setIsStartingDynamic] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
 
   // Fetch upload history from backend
   const fetchUploads = async () => {
@@ -208,6 +209,16 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
     
       const data = await res.json();
       setUploads(data);
+      // Clean up notices for uploads that reached done
+      setNotices((prev) => {
+        const next = { ...prev };
+        for (const u of data) {
+          if (u.status === "done" && next[u.id]) {
+            delete next[u.id];
+          }
+        }
+        return next;
+      });
     } catch (error) {
       console.error("Error fetching uploads:", error);
     }
@@ -299,43 +310,54 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
     }
   };
 
-  // Trigger PDF report generation and download
-  const handleReportGeneration = async (upload: UploadEntry) => {
-    const token = await getIdToken();
-    if (!token) throw new Error("User not logged in");
+  // Trigger PDF report generation and download (supports bilingual zh-TW and en)
+  const handleReportGeneration = async (upload: UploadEntry, lang: "zh-TW" | "en" = "zh-TW") => {
+    const downloadKey = `${upload.id}_${lang}`;
+    setDownloadingReport(downloadKey);
 
     try {
+      const token = await getIdToken();
+      if (!token) throw new Error("請先登入 (User not logged in)");
+
+      const backendUrl = import.meta.env.VITE_BACKEND_URL ? import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, "") : "";
       // Call backend generate-report API
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/generate-report`, {
+      const res = await fetch(`${backendUrl}/generate-report`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
-         },
+        },
         body: JSON.stringify({
           hash: upload.hash,
           type: upload.analysisType,
+          lang,
         })
       });
-      if (!res.ok) throw new Error("Failed to trigger report generation");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `生成報告失敗 (HTTP ${res.status})`);
+      }
 
       // The backend returns a short-lived presigned S3 URL; the PDF is downloaded
       // straight from S3 rather than streamed through the backend.
       const { url } = (await res.json()) as { url?: string };
-      if (!url) throw new Error("No download URL returned");
+      if (!url) throw new Error("伺服器未返回下載連結");
 
       const link = document.createElement("a");
       link.href = url;
       // The object's Content-Disposition already carries the filename; this is the
       // hint for browsers that honour the attribute on same-navigation downloads.
-      link.setAttribute("download", `${upload.filename}-${upload.analysisType}.pdf`);
+      link.setAttribute("download", `${upload.filename.replace(/\.[^/.]+$/, "")}-${upload.analysisType}-${lang === "en" ? "en" : "zh"}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Report generation error:", err);
+      alert(`下載報告失敗: ${err?.message || "未知錯誤"}`);
+    } finally {
+      setDownloadingReport(null);
     }
-  }
+  };
 
   // Retry analysis for errored uploads
   const handleRetry = async (upload: UploadEntry) => {
@@ -558,9 +580,30 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                         <div className="flex flex-wrap items-center gap-2">
                           {upload.analysisType === "static" ? (
                             <>
-                              <Button size="sm" onClick={() => handleReportGeneration(upload)}>
-                                <FileText className="mr-1.5 h-4 w-4" />
-                                Download Static Report (PDF, 36 Pages)
+                              <Button
+                                size="sm"
+                                disabled={downloadingReport === `${upload.id}_zh-TW`}
+                                onClick={() => handleReportGeneration(upload, "zh-TW")}
+                              >
+                                {downloadingReport === `${upload.id}_zh-TW` ? (
+                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileText className="mr-1.5 h-4 w-4" />
+                                )}
+                                下載靜態報告 (中文 PDF)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={downloadingReport === `${upload.id}_en`}
+                                onClick={() => handleReportGeneration(upload, "en")}
+                              >
+                                {downloadingReport === `${upload.id}_en` ? (
+                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileText className="mr-1.5 h-4 w-4" />
+                                )}
+                                Download Static (English PDF)
                               </Button>
                               {uploads.find(
                                 (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
@@ -573,11 +616,26 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                     const dyn = uploads.find(
                                       (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
                                     );
-                                    if (dyn) handleReportGeneration(dyn);
+                                    if (dyn) handleReportGeneration(dyn, "zh-TW");
                                   }}
+                                  disabled={(() => {
+                                    const dyn = uploads.find(
+                                      (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
+                                    );
+                                    return dyn ? downloadingReport === `${dyn.id}_zh-TW` : false;
+                                  })()}
                                 >
-                                  <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
-                                  Download Dynamic Report (PDF)
+                                  {(() => {
+                                    const dyn = uploads.find(
+                                      (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
+                                    );
+                                    return dyn && downloadingReport === `${dyn.id}_zh-TW` ? (
+                                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
+                                    );
+                                  })()}
+                                  下載動態報告 (中文 PDF)
                                 </Button>
                               )}
                             </>
@@ -586,10 +644,29 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                               <Button
                                 size="sm"
                                 className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                                onClick={() => handleReportGeneration(upload)}
+                                disabled={downloadingReport === `${upload.id}_zh-TW`}
+                                onClick={() => handleReportGeneration(upload, "zh-TW")}
                               >
-                                <FileText className="mr-1.5 h-4 w-4" />
-                                Download Dynamic Runtime Report (PDF)
+                                {downloadingReport === `${upload.id}_zh-TW` ? (
+                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileText className="mr-1.5 h-4 w-4" />
+                                )}
+                                下載動態報告 (中文 PDF)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
+                                disabled={downloadingReport === `${upload.id}_en`}
+                                onClick={() => handleReportGeneration(upload, "en")}
+                              >
+                                {downloadingReport === `${upload.id}_en` ? (
+                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
+                                )}
+                                Download Dynamic (English PDF)
                               </Button>
                               {uploads.find(
                                 (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
@@ -601,11 +678,26 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                     const stat = uploads.find(
                                       (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
                                     );
-                                    if (stat) handleReportGeneration(stat);
+                                    if (stat) handleReportGeneration(stat, "zh-TW");
                                   }}
+                                  disabled={(() => {
+                                    const stat = uploads.find(
+                                      (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
+                                    );
+                                    return stat ? downloadingReport === `${stat.id}_zh-TW` : false;
+                                  })()}
                                 >
-                                  <FileText className="mr-1.5 h-4 w-4" />
-                                  Download Static Report (PDF, 36 Pages)
+                                  {(() => {
+                                    const stat = uploads.find(
+                                      (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
+                                    );
+                                    return stat && downloadingReport === `${stat.id}_zh-TW` ? (
+                                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <FileText className="mr-1.5 h-4 w-4" />
+                                    );
+                                  })()}
+                                  下載靜態報告 (中文 PDF)
                                 </Button>
                               )}
                             </>
