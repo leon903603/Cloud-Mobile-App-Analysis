@@ -5,6 +5,8 @@ import zipfile
 import json
 import subprocess
 import base64
+import urllib.request
+import urllib.error
 from flask import Flask, request, jsonify, send_file
 from androguard.misc import AnalyzeAPK
 
@@ -716,7 +718,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         檢測: App 自己的程式碼讀取 PackageInfo.signatures / signingInfo、
               SigningInfo 的簽章清單或 PackageManager.hasSigningCertificate,
               或有 Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
-        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        結果: 都沒有 -> WARNING (缺少防護)。
         限制: 簽章比對寫在 .so、反射呼叫或只在伺服器端驗證者看不到。
         """
         keep = app_class_filter(a)
@@ -739,7 +741,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         檢測: App 自己的程式碼呼叫 Window.addFlags(flags) / setFlags(flags, mask) 且傳入的常數含
               FLAG_SECURE (0x2000) 位元, 或呼叫 SurfaceView.setSecure(true) -> 視為有做。
               追蹤的是「實際傳入的參數暫存器」最近一次被設定的值, 避免附近無關的常數 (-1、8192 緩衝區大小) 造成誤判。
-        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        結果: 都沒有 -> WARNING (缺少防護)。
         限制: flag 經由變數 / 欄位 / 跨 method 傳入、或寫在 Flutter / RN 等框架層的設定看不到。
         """
         FLAG_SECURE = 0x2000
@@ -1165,94 +1167,97 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "count": len(results)
         })
 
-    # TODO: 刪除 lab_039 / lab_040 / lab_041 端點 —— maldroid_main 已不呼叫
-    #   lab_039 (Bangcle)、lab_040 (iJiami) 的特徵已被 lab_042 涵蓋; lab_041 (MonoDroid) 是跨平台框架不是殼, 已決定不檢測
-    #   一併處理: 刪除後 find_so_files 沒人用可刪; find_method_calls 的「使用」清單拿掉 lab_039 / lab_040;
-    #   android_static_*.json 的 AS-lab039 / 040 / 041 也要刪, 否則報表會一直顯示「通過」
+    # 4.1.2.5.1 — 分享聲明
     @app.route('/androguard/lab_039', methods=['GET'])
-    def detect_framework_bangcle():
+    def detect_lab_039():
         """
-        Detect framework bangcle by finding getACall calls.
+        風險: App 自動把資料交給其他 App, 沒告知也沒同意。
+        檢測: 自動分享管道 (見 find_auto_share_channels) 往上追呼叫路徑, 沒經過同意對話框也沒讀使用者開關 -> 有問題。
+              分享選單、拍照等使用者自己觸發的不算。
+        結果: 確定的管道有問題 -> WARNING; 只有接收者不明 / 程式碼看不到的管道有問題 -> UNKNOWN (需人工); 都沒有 -> PASS。
+        限制: 不判斷資料是否敏感; 只追 4 層呼叫; 跨 method 組的 intent、Compose 對話框、.so 看不到。
         """
+        keep = app_class_filter(a)
+        channels = find_auto_share_channels(a, dx, keep)
+        for c in channels:
+            ev = c["evidence"]
+            c["problem"] = None if ev["dialog"] or ev["switch"] else "no consent dialog or user switch"
+        return share_check_result(
+            "lab_039", "Data sharing notice check (automatic sharing channels without consent)", channels, dx, keep)
 
-        results = []
-        for name in find_so_files(a, 'libsecexe.so'):
-            results.append({name: True})
-        
-        # Check ApplicationWrapper
-        target_class = "com.secapk.wrapper.ApplicationWrapper"
-        internal_name = "L" + target_class.replace(".", "/") + ";"
-        if internal_name in dx.classes:
-            results.append({
-                "ApplicationWrapper": True
-            })
-        
-        # Check getACall
-        found_calls = find_method_calls(dx, target_class="Lcom/secapk/wrapper/ACall", target_method="getACall")
-        if found_calls:
-            results.append({
-                "getACall": True
-            })
-
-        return jsonify({
-            "results": results,
-            "count": len(results)
-        })
-
+    # 4.1.2.5.2 — 拒絕分享
     @app.route('/androguard/lab_040', methods=['GET'])
-    def detect_framework_ijiami():
+    def detect_lab_040():
         """
-        Detect iJiami framework by finding specific files and methods.
+        風險: 使用者無法拒絕 App 的自動分享。
+        檢測: 同 lab_039 的自動分享管道, 往上追呼叫路徑: 1. 有沒有讀使用者開關 2. 讀到的值有沒有拿來決定要不要分享;
+              另記錄開關名稱、預設值、設定頁有沒有這個開關 (只放報告細節, 不影響判定)。
+        結果: 確定的管道沒有開關或開關沒拿來判斷 -> WARNING; 開關的值傳到別處判斷 (看不到) 或管道不確定 -> UNKNOWN (需人工); 都沒有 -> PASS。
+        限制: 不確認讀的就是分享開關; DataStore 只能確認有讀, 看不到判斷。
         """
-        results = []
-        for name in find_so_files(a, 'libexec.so', 'libexecmain.so'):
-            results.append({name: True})
-        
-        # Check NativeApplication class
-        target_class = "Lcom/shell/NativeApplication;"
-        if target_class in dx.classes:
-            results.append({
-                "NativeApplication": True
-            })
-        
-        # Check load method
-        found_calls = find_method_calls(dx, target_class="Lcom/shell/NativeApplication;", target_method="load")
-        if found_calls:
-            results.append({
-                "load": True
-            })
-        
-        return jsonify({
-            "results": results,
-            "count": len(results)
-        })
+        keep = app_class_filter(a)
+        channels = find_auto_share_channels(a, dx, keep)
+        for c in channels:
+            ev = c["evidence"]
+            c["problem"] = None
+            if not ev["switch"]:
+                c["problem"] = "no user switch"
+            elif ev["gating"] == "none":
+                c["problem"] = "user switch is read but not used to decide"
+            elif ev["gating"] == "unknown":
+                c["problem"], c["unverified"] = "user switch value is used elsewhere, effect not verified", True
+        return share_check_result(
+            "lab_040", "Data sharing refusal check (automatic sharing channels without an effective user switch)",
+            channels, dx, keep)
 
+    # 4.1.1.1.2 — 發布說明
     @app.route('/androguard/lab_041', methods=['GET'])
-    def detect_framework_monodroid():
+    def detect_lab_041():
         """
-        Detect MonoDroid framework by finding specific files and classes.
+        風險: 用到的敏感資料沒在 Google Play「資料安全性」聲明。
+        檢測: 1. App 自己讀取敏感資料 (有權限 + 真的讀取) 且自己有發網路請求;
+              2. 有會收集資料的第三方 SDK (本身就會傳出)
+              -> 去 Google Play 查該類別有沒有聲明。
+        結果: 確定的資料沒聲明 -> WARNING; 查不到頁面, 或沒聲明的只有待確認的 (相機可能只掃碼、SDK 已關閉收集) -> UNKNOWN (需人工); 其他 -> PASS。
+        限制: 沒追蹤資料流, App 有發網路請求就當作資料會傳出; SDK 只認清單內的。
         """
-        results = []
-        for name in find_so_files(a, 'libmonodroid.so'):
-            results.append({name: True})
-        
-        # Check mono.android.app.Application class
-        target_class = "Lmono/android/app/Application;"
-        if target_class in dx.classes:
-            results.append({
-                "mono_application": True
-            })
-        
-        return jsonify({
-            "results": results,
-            "count": len(results)
-        })
+        keep = app_class_filter(a)
+        package = a.get_package() or ""
+        network, usages = find_sensitive_data_usage(a, dx, keep)
+        result = {
+            "package": package, "network": network, "usages": usages,
+            "lab_id": "lab_041",
+            "description": "Release notes check (Google Play Data safety vs sensitive data used in code)",
+        }
+        # App 自己讀的資料要有網路才算會傳出; SDK 本身就會傳出
+        checked = [u for u in usages if network or u["kind"] == "sdk"]
+        if not checked:
+            result.update(verdict="PASS", has_finding=False,
+                          status="no_sensitive_data" if not usages else "no_network",
+                          declared=[], undeclared=[], review=[])
+            return jsonify(result), 200
+
+        store = fetch_play_data_safety(package)
+        if store["status"] != "ok":
+            # 查不到不代表沒聲明, 交給人工
+            result.update(verdict="UNKNOWN", has_finding=False, status=store["status"],
+                          declared=[], undeclared=[], review=checked)
+            return jsonify(result), 200
+
+        declared = {c.lower() for c in store["declared"]}
+        missing = [u for u in checked if not all(c.lower() in declared for c in u["categories"])]
+        undeclared = [u for u in missing if not u.get("review")]
+        review = [u for u in missing if u.get("review")]
+        result.update(verdict="WARNING" if undeclared else ("UNKNOWN" if review else "PASS"),
+                      has_finding=bool(undeclared), status="ok", declared=sorted(store["declared"]),
+                      undeclared=undeclared, review=review)
+        return jsonify(result), 200
 
     @app.route('/androguard/lab_042', methods=['GET'])
     def detect_lab_042():
         """
         Unified packer / framework identification.
-        Replaces standalone lab_039 (Bangcle), lab_040 (iJiami).
+        (取代舊的 Bangcle / iJiami 獨立端點, 其特徵已併入本端點)
 
         加殼 = 靜態分析看不到 App 的程式碼, 其他檢測項結果不可靠 (由 lab_042 統一判斷)。
         判定為加殼 (任一成立):
@@ -1720,7 +1725,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         檢測: App 自己的程式碼有 su 路徑 / 字串 "su"、root 管理 App 套件名稱、test-keys 等特徵字串,
               或有 RootBeer / Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
               (File.exists() 幾乎每個 App 都有, 單獨出現不算)
-        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        結果: 都沒有 -> WARNING (缺少防護)。
         限制: 字串加密、寫在 .so、動態組字串的偵測邏輯看不到。
         """
         ROOT_BINARY_PATHS = [
@@ -2589,7 +2594,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         風險: App 沒檢查安裝來源, 被重新打包後從非官方管道散布仍可正常執行。
         檢測: App 自己的程式碼呼叫 getInstallerPackageName / getInstallSourceInfo,
               或有 Play Integrity / Google Play Licensing (LVL) / 已知 RASP SDK -> 視為有做。
-        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        結果: 都沒有 -> WARNING (缺少防護)。
         限制: 反射呼叫、寫在 .so 或只在伺服器端驗證者看不到。
         """
         keep = app_class_filter(a)
@@ -4072,7 +4077,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         風險: App 沒偵測模擬器, 攻擊者可用模擬器大量自動化操作或分析 App。
         檢測: App 自己的程式碼有模擬器特徵字串 (MASTG-KNOW-0031 與常見判斷依據),
               或有 Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做。
-        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        結果: 都沒有 -> WARNING (缺少防護)。
         限制: 字串加密、寫在 .so、動態載入的偵測邏輯看不到。
         """
         # 夠獨特, 包含即算
@@ -4121,7 +4126,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         檢測: App 自己的程式碼讀取 adb_enabled / adb_wifi_enabled /
               development_settings_enabled 或 adb 服務屬性, 或有已知 RASP SDK -> 視為有做。
               Play Integrity 不判斷偵錯狀態, 不算。
-        結果: 都沒有 -> WARNING (缺少防護)。加殼由 lab_042 判斷, 加殼時 maldroid_main 不寫入報告。
+        結果: 都沒有 -> WARNING (缺少防護)。
         限制: 字串加密、寫在 .so、動態組字串的偵測邏輯看不到。
         """
         # Settings.Global 常數編譯後會變成字串
@@ -4432,7 +4437,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def find_method_calls(dx, target_class=None, target_method=None):
         """找出呼叫 target_class / target_method 的指令位置 (含函式庫, 不排除), 回傳每個呼叫的 method 與指令索引
-        使用: lab031, lab035, lab038 (lab_039 / lab_040 端點也有用, 但 maldroid_main 已改用 lab_042, 目前不會呼叫)"""
+        使用: lab031, lab035, lab038"""
         found_calls = []
         
         for class_name, cls_value in dx.classes.items():
@@ -4455,18 +4460,12 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def resolve_activity_name(package_name, activity_name):
         """把 Manifest 的簡寫元件名補成完整 class 名: '.MyActivity' / 'MyActivity' -> 'com.example.app.MyActivity', 已是完整名稱則不變
-        使用: lab036, lab_042, lab_077"""
+        使用: lab036, lab_039, lab_042, lab_077"""
         if activity_name.startswith('.'):
             return package_name + activity_name
         elif '.' not in activity_name:
             return package_name + '.' + activity_name
         return activity_name
-
-    def find_so_files(a, *names):
-        """回傳 APK 內存在的 .so 檔名, 例: find_so_files(a, 'libexec.so', 'libexecmain.so')
-        使用: lab_039, lab_040, lab_041 (這三個端點 maldroid_main 已改用 lab_042, 目前不會呼叫)"""
-        all_files = a.get_files()
-        return {name for name in names if any(name in f for f in all_files)}
 
     # ---- App 自己的程式碼範圍 ----
 
@@ -4482,7 +4481,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def app_class_filter(a):
         """回傳 keep(class 名) 判斷函式: 是否為 App 自己的程式碼 (App 套件優先, 再排除 FilteringEngine 與 EXTRA_LIB_PREFIXES)
-        使用: lab_026, lab_027, lab_056, lab_064, lab_082, lab_083; 透過 missing_app_components 也給 lab_042 用"""
+        使用: lab_026, lab_027, lab_039, lab_040, lab_041, lab_056, lab_064, lab_082, lab_083; 透過 missing_app_components 也給 lab_042 用"""
         pkg = (a.get_package() or "").replace(".", "/")
         own = ("L" + pkg + "/") if pkg else None
 
@@ -4498,14 +4497,14 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def count_app_classes(dx, keep):
         """計算 keep 範圍內的 class 數 (回傳結果的 scanned_app_classes, 看掃描範圍是否合理)
-        使用: lab_082, lab_083; 透過 protection_result 也給 lab_026, lab_027, lab_056, lab_064 用"""
+        使用: lab_082, lab_083; 透過 protection_result 也給 lab_026, lab_027, lab_056, lab_064 用, 透過 share_check_result 也給 lab_039, lab_040 用"""
         return sum(1 for c in dx.classes if keep(c))
 
     # ---- 防護證據搜尋 ----
 
     def find_app_const_strings(dx, match, keep):
         """掃 App 自己程式碼的 const-string, match(字串) 回傳命中的特徵或 None; 適合證據是字串的檢測 (su 路徑、套件名)
-        使用: lab_056, lab_082, lab_083"""
+        使用: lab_041, lab_056, lab_082, lab_083"""
         found, seen = [], set()
         for class_name, cls_value in dx.classes.items():
             if not keep(class_name):
@@ -4533,7 +4532,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def find_app_references(dx, keep, targets):
         """掃 App 自己程式碼的指令, 找引用到 targets 的 API 呼叫 / 欄位存取 (substring 比對); 適合證據是 API 的檢測
-        使用: lab_026, lab_027, lab_064"""
+        使用: lab_026, lab_027, lab_041, lab_064"""
         found = []
         for class_name, cls_value in dx.classes.items():
             if not keep(class_name):
@@ -4559,12 +4558,12 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def strip_instructions(refs):
         """拿掉 find_app_references 結果中的 instructions (無法轉 JSON), 只留 class / method / api
-        使用: lab_026, lab_027, lab_064"""
+        使用: lab_026, lab_027, lab_041, lab_064"""
         return [{"class": r["class"], "method": r["method"], "api": r["api"]} for r in refs]
 
     def find_class_prefixes(dx, prefixes):
         """回傳 APK 內出現過的 class 前綴 (含函式庫), 用來判斷有沒有引入某個 SDK
-        使用: lab_026, lab_056, lab_064, lab_082, lab_083"""
+        使用: lab_026, lab_041, lab_056, lab_064, lab_082, lab_083"""
         found = []
         for prefix, name in prefixes:
             for class_name in dx.classes:
@@ -4586,6 +4585,671 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         ("Lcom/google/android/play/core/integrity/", "Google Play Integrity API"),
         ("Lcom/google/android/gms/safetynet/",       "Google SafetyNet API"),
     ]
+
+    # ---- 分享管道與商店聲明 ----
+
+    ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
+
+    # androidx 設定頁 XML 常用 app:key
+    # 使用: lab_040 (透過 settings_switch_keys)
+    APP_NS = "{http://schemas.android.com/apk/res-auto}"
+
+    # provider 會回傳資料的 method
+    # 使用: lab_039, lab_040 (透過 find_auto_share_channels)
+    PROVIDER_DATA_METHODS = {"query", "openFile", "openAssetFile", "openTypedAssetFile", "call"}
+
+    # 送出廣播 / 啟動其他元件的 API (第一個參數是 Intent)
+    # 使用: lab_039, lab_040 (透過 find_intent_channels)
+    BROADCAST_APIS = {"sendBroadcast", "sendOrderedBroadcast", "sendStickyBroadcast",
+                      "sendBroadcastAsUser", "sendOrderedBroadcastAsUser", "sendStickyBroadcastAsUser"}
+    LAUNCH_APIS = {"startActivity", "startActivityForResult", "startService", "startForegroundService", "bindService"}
+
+    # 使用者自己觸發的 intent action (分享選單、拍照、用其他 App 開啟), 對象由使用者選, 不算自動分享
+    # 使用: lab_039, lab_040 (透過 find_intent_channels)
+    USER_INITIATED_ACTIONS = ("android.intent.action.SEND", "android.intent.action.SEND_MULTIPLE",
+                              "android.intent.action.SENDTO", "android.intent.action.VIEW",
+                              "android.intent.action.EDIT", "android.intent.action.CHOOSER",
+                              "android.media.action.IMAGE_CAPTURE", "android.media.action.VIDEO_CAPTURE")
+
+    # 設定頁的開關元件 (只比對類別名稱結尾)
+    # 使用: lab_040 (透過 settings_switch_keys)
+    SETTINGS_SWITCH_TAGS = ("SwitchPreference", "SwitchPreferenceCompat", "CheckBoxPreference", "TwoStatePreference")
+
+    def is_weak_level(level):
+        """protectionLevel 是 normal / dangerous / 沒寫 -> True (其他 App 拿得到, 等於沒保護)
+        androguard 解析自訂權限是 8 位數 hex (例 '0x00000002'), 系統權限是文字 (例 'normal|instant', 只看 | 前的基本等級)
+        使用: lab_039, lab_040 (透過 find_auto_share_channels)"""
+        level = (level or "").strip().lower()
+        if not level.startswith("0x") and not level.isdigit():
+            return level.split("|")[0] in ("", "normal", "dangerous")
+        try:
+            return (int(level, 0) & 0xF) in (0, 1)   # 0 = normal, 1 = dangerous
+        except ValueError:
+            return False
+
+    def platform_permission_levels():
+        """系統權限 -> protectionLevel (androguard 內建資料, API 34); 載入失敗回傳空 dict
+        使用: lab_039, lab_040 (透過 find_auto_share_channels)"""
+        try:
+            from androguard.core.api_specific_resources import load_permissions
+            return {k: v.get("protectionLevel", "") for k, v in load_permissions(34).items()}
+        except Exception:
+            return {}
+
+    def ins_registers(ins):
+        """指令用到的暫存器, 例 ['v0', 'v1']; invoke/range 的 'v1 ... v7' 會展開
+        使用: lab_039, lab_040 (透過 find_intent_channels, switch_reads)"""
+        try:
+            prefix = ins.get_output().split('L', 1)[0]
+        except Exception:
+            return []
+        regs = re.findall(r'\bv\d+\b', prefix)
+        if '/range' in ins.get_name() and len(regs) == 2 and '...' in prefix:
+            return ['v%d' % r for r in range(int(regs[0][1:]), int(regs[1][1:]) + 1)]
+        return regs
+
+    def invoke_args(name, out, regs):
+        """invoke 指令每個參數 (不含 this) 對應的 (型別, 暫存器); long / double 佔兩個暫存器
+        使用: lab_039, lab_040 (透過 find_intent_channels, switch_reads)"""
+        m = re.search(r'\(([^)]*)\)', out)
+        params = re.findall(r'\[*(?:L[^;]+;|[ZBSCIJFD])', m.group(1).replace(' ', '')) if m else []
+        i = 0 if 'static' in name else 1
+        args = []
+        for p in params:
+            args.append((p, regs[i] if i < len(regs) else None))
+            i += 2 if p in ('J', 'D') else 1
+        return args
+
+    def new_intent():
+        """Intent 追蹤狀態: target = None (沒指定接收者) / "self" (自己 App) / 套件名 / "unknown" (指定了但看不出是誰)
+        使用: lab_039, lab_040 (透過 find_intent_channels)"""
+        return {"kind": "intent", "target": None, "payload": False, "action": None, "user": False, "grant": False}
+
+    def update_intent(intent, api, args, own):
+        """依 Intent 的建構子 / setter 更新追蹤狀態 (接收者、是否帶資料、action、URI 授權旗標)
+        args: [(型別, 值)]; 有 Context 參數的建構子 / setClass 一定指向自己 App
+        使用: lab_039, lab_040 (透過 find_intent_channels)"""
+        types = [t for t, _ in args]
+        vals = [v for _, v in args]
+
+        def package_of(value):
+            return ("self" if value == own else value) if isinstance(value, str) else "unknown"
+
+        if api == "<init>":
+            if types == ["Landroid/content/Intent;"]:
+                src = vals[0]
+                intent.update(src if isinstance(src, dict) and src.get("kind") == "intent" else {"target": "unknown"})
+            if "Landroid/content/Context;" in types:
+                intent["target"] = "self"
+            if types and types[0] == "Ljava/lang/String;" and isinstance(vals[0], str):
+                intent["action"] = vals[0]
+            if "Landroid/net/Uri;" in types:
+                intent["payload"] = True
+        elif api in ("setClass", "setClassName") and types and types[0] == "Landroid/content/Context;":
+            intent["target"] = "self"
+        elif api == "setClassName":
+            intent["target"] = package_of(vals[0] if vals else None)
+        elif api == "setComponent":
+            comp = vals[0] if vals else None
+            intent["target"] = comp.get("target") or "unknown" if isinstance(comp, dict) else "unknown"
+        elif api == "setPackage":
+            intent["target"] = package_of(vals[0] if vals else None)
+        elif api == "setAction" and vals and isinstance(vals[0], str):
+            intent["action"] = vals[0]
+        elif api.startswith("put") or api in ("setData", "setDataAndType", "setDataAndNormalize",
+                                               "setDataAndTypeAndNormalize", "setClipData"):
+            intent["payload"] = True
+        elif api in ("addFlags", "setFlags") and vals and isinstance(vals[0], int) and vals[0] & 3:
+            intent["grant"] = True   # FLAG_GRANT_READ / WRITE_URI_PERMISSION
+        intent["user"] = intent["user"] or intent["action"] in USER_INITIATED_ACTIONS
+
+    def find_intent_channels(a, dx, keep, levels):
+        """逐一看 App 自己的 method, 追蹤同一個 method 內組出來的 Intent, 找把資料送到其他 App 的呼叫
+        回傳 [{"type", "where", "target", "confidence", "reason", "method"}]
+          confidence "high"   = 確定會送到其他 App: 沒指定接收者又帶資料的廣播、不是使用者觸發的 grantUriPermission
+                     "review" = 可能送到其他 App, 但接收者不明或 Intent 在其他 method 組成, 需人工確認
+          自己 App 內部 (Intent(context, X.class)、setPackage(自己))、LocalBroadcastManager、分享選單 / 拍照都不算
+        使用: lab_039, lab_040 (透過 find_auto_share_channels)"""
+        own = a.get_package() or ""
+        found, seen = [], {}
+
+        def add(kind, where, target, confidence, reason, ma):
+            # 同一個 method 有多個同類呼叫時合併成一筆, 有確定的就以確定的為準
+            old = seen.get((kind, where))
+            if old is None:
+                seen[(kind, where)] = {"type": kind, "where": where, "target": target,
+                                       "confidence": confidence, "reason": reason, "method": ma}
+                found.append(seen[(kind, where)])
+            elif confidence == "high" and old["confidence"] != "high":
+                old.update(target=target, confidence=confidence, reason=reason)
+
+        for cls, ca in dx.classes.items():
+            if not keep(cls):
+                continue
+            for ma in ca.get_methods():
+                if ma.is_external():
+                    continue
+                try:
+                    instructions = list(ma.get_method().get_instructions())
+                except Exception:
+                    continue
+                outs = [ins.get_output() for ins in instructions]
+                if not any(api in o for o in outs for api in ("Broadcast", "startActivit", "Service(", "grantUriPermission")):
+                    continue
+                where = "%s.%s" % (cls[1:-1].replace("/", "."), ma.name)
+                # user_launch: 這個 method 真的有啟動分享選單 / 拍照等使用者操作的 Intent
+                # branches: 目前經過幾個分支, 用來判斷 setPackage 等是不是只在某條路徑執行
+                values, pending, grants, user_launch, branches = {}, None, [], False, 0
+                for ins, out in zip(instructions, outs):
+                    name = ins.get_name()
+                    regs = ins_registers(ins)
+                    if name.startswith("const-string") and regs:
+                        values[regs[0]] = ins.get_string()
+                    elif name == "const-class" and regs:
+                        values[regs[0]] = None
+                    elif name.startswith("const") and regs:
+                        try:
+                            values[regs[0]] = ins.get_literals()[0]
+                        except Exception:
+                            values[regs[0]] = None
+                    elif name == "new-instance" and regs:
+                        if out.endswith("Landroid/content/Intent;"):
+                            values[regs[0]] = dict(new_intent(), born=branches)
+                        elif out.endswith("Landroid/content/ComponentName;"):
+                            values[regs[0]] = {"kind": "component", "target": None}
+                        else:
+                            values[regs[0]] = None
+                    elif name.startswith("move-result") and regs:
+                        values[regs[0]], pending = pending, None
+                    elif name.startswith("move-object") and len(regs) >= 2:
+                        values[regs[0]] = values.get(regs[1])
+                    elif name.startswith("invoke"):
+                        pending = None
+                        m = re.search(r'(L[^;]+;)->([^(]+)\(', out)
+                        owner, api = (m.group(1), m.group(2)) if m else ("", "")
+                        args = [(t, values.get(r) if r else None) for t, r in invoke_args(name, out, regs)]
+                        obj = values.get(regs[0]) if regs and "static" not in name else None
+                        first = args[0][1] if args else None
+                        if owner == "Landroid/content/Intent;":
+                            if api == "createChooser":
+                                pending = dict(first if isinstance(first, dict) else new_intent(), user=True)
+                            elif isinstance(obj, dict) and obj.get("kind") == "intent":
+                                update_intent(obj, api, args, own)
+                                # 建立 Intent 之後經過分支才指定接收者 -> 可能只有某條路徑有指定, 接收者不確定
+                                if (api in ("setPackage", "setClass", "setClassName", "setComponent")
+                                        and branches > obj.get("born", 0)):
+                                    obj["target"] = "unknown"
+                                if out.endswith(")Landroid/content/Intent;"):
+                                    pending = obj   # builder 寫法 (putExtra 回傳同一個 Intent)
+                        elif owner == "Landroid/content/ComponentName;" and api == "<init>" and isinstance(obj, dict):
+                            types = [t for t, _ in args]
+                            if "Landroid/content/Context;" in types:
+                                obj["target"] = "self"
+                            elif isinstance(first, str):
+                                obj["target"] = "self" if first == own else first
+                            else:
+                                obj["target"] = "unknown"
+                        elif api in BROADCAST_APIS and "LocalBroadcastManager;" not in owner:
+                            intent = first
+                            # 第二個參數是接收者要有的權限; const/4 0 (null) = 沒有
+                            has_perm = len(args) > 1 and args[1][0] == "Ljava/lang/String;" and args[1][1] != 0
+                            perm = args[1][1] if has_perm else None
+                            if isinstance(perm, str) and perm in levels and not is_weak_level(levels[perm]):
+                                continue   # 接收者要有 signature 等級權限, 其他 App 收不到
+                            if not isinstance(intent, dict):
+                                add(api, where, None, "review", "intent built in another method", ma)
+                            elif intent["target"] == "self" or not (intent["payload"] or intent["grant"]):
+                                continue
+                            elif intent["target"] is None and not (has_perm and not isinstance(perm, str)) \
+                                    and not (isinstance(perm, str) and perm not in levels):
+                                add(api, where, None, "high", "broadcast with data and no receiver", ma)
+                            else:
+                                add(api, where, intent["target"], "review", "receiver app or permission not confirmed", ma)
+                        elif api in LAUNCH_APIS:
+                            intent = first
+                            if isinstance(intent, dict) and intent["user"]:
+                                user_launch = True
+                            elif (isinstance(intent, dict) and intent["target"] != "self"
+                                    and (intent["payload"] or intent["grant"])):
+                                add(api, where, intent["target"], "review", "data sent to an app chosen at runtime", ma)
+                        elif api == "grantUriPermission" and first != own:
+                            grants.append(first if isinstance(first, str) else None)
+                    elif name.startswith(("if-", "goto", "packed-switch", "sparse-switch")):
+                        branches += 1
+                    elif name.startswith(("return", "iput", "sput", "aput", "check-cast", "monitor", "throw")):
+                        continue
+                    elif regs:
+                        values.pop(regs[0], None)
+                # grantUriPermission 常寫在 startActivity 之前, 整個 method 看完再判斷
+                for target in grants if not user_launch else []:
+                    add("grantUriPermission", where, target, "high", "URI access granted without user action", ma)
+        return found
+
+    def switch_getter(dx, out, cache):
+        """invoke 的對象是「回傳 boolean 且裡面讀 SharedPreferences.getBoolean」的 App method (例 isShareEnabled()) -> 回傳該讀取
+        使用: lab_039, lab_040 (透過 switch_reads)"""
+        m = re.search(r'(L[^;]+;)->([^(]+)(\([^)]*\)Z)$', out)
+        if not m:
+            return None
+        key = (m.group(1), m.group(2), m.group(3).replace(" ", ""))
+        if key not in cache:
+            cache[key] = None
+            ca = dx.classes.get(key[0])
+            if ca is not None and not ca.is_external():
+                for meth in ca.get_methods():
+                    if meth.name == key[1] and str(meth.descriptor).replace(" ", "") == key[2]:
+                        reads = [r for r in switch_reads(meth, dx, cache, getters=False)
+                                 if r["api"] == "SharedPreferences"]
+                        if reads:
+                            cache[key] = {"key": reads[0]["key"], "default": reads[0]["default"],
+                                          "api": "SharedPreferences"}
+                        break
+        return cache[key]
+
+    def switch_reads(ma, dx, cache, getters=True):
+        """一個 method 裡讀使用者開關的地方, 回傳 [{"key", "default", "api", "use"}]
+        use: "branch" = 讀到的值拿來做 if 判斷; "passed" = 回傳 / 存欄位 / 傳給其他 method (在別處判斷, 看不到); "unused" = 讀了沒用
+        SharedPreferences.getBoolean、回傳開關值的 App method (見 switch_getter) 都算; DataStore 看不到判斷, use 一律 "passed"
+        使用: lab_039, lab_040 (透過 path_evidence)"""
+        try:
+            instructions = [] if ma.is_external() else list(ma.get_method().get_instructions())
+        except Exception:
+            return []
+        reads, consts, values, pending = [], {}, {}, None
+        for ins in instructions:
+            name, out = ins.get_name(), ins.get_output()
+            regs = ins_registers(ins)
+            if name.startswith("const-string") and regs:
+                consts[regs[0]] = ins.get_string()
+                values.pop(regs[0], None)
+            elif name.startswith("const") and name != "const-class" and regs:
+                try:
+                    consts[regs[0]] = ins.get_literals()[0]
+                except Exception:
+                    consts.pop(regs[0], None)
+                values.pop(regs[0], None)
+            elif name.startswith("invoke"):
+                for r in regs:
+                    if r in values:
+                        reads[values[r]]["passed"] = True
+                pending = None
+                args = [r for _, r in invoke_args(name, out, regs)]
+                if "Landroid/content/SharedPreferences;->getBoolean(" in out:
+                    default = consts.get(args[1]) if len(args) > 1 else None
+                    reads.append({"key": consts.get(args[0]) if args else None, "api": "SharedPreferences",
+                                  "default": bool(default) if isinstance(default, int) else None,
+                                  "branch": False, "passed": False})
+                    pending = len(reads) - 1
+                elif "Landroidx/datastore/preferences/core/Preferences;->get(" in out:
+                    # 只建立 key (booleanKey) 不算, 要真的讀值
+                    reads.append({"key": None, "api": "DataStore", "default": None, "branch": False, "passed": True})
+                elif getters and out.endswith(")Z"):
+                    hit = switch_getter(dx, out, cache)
+                    if hit:
+                        reads.append(dict(hit, branch=False, passed=False))
+                        pending = len(reads) - 1
+            elif name.startswith("move-result") and regs:
+                if pending is not None:
+                    values[regs[0]] = pending
+                else:
+                    values.pop(regs[0], None)
+                pending = None
+            elif name.startswith("if-"):
+                for r in regs:
+                    if r in values:
+                        reads[values[r]]["branch"] = True
+            elif name.startswith(("return", "iput", "sput", "aput")):
+                if regs and regs[0] in values:
+                    reads[values[regs[0]]]["passed"] = True
+            elif len(regs) >= 2 and regs[1] in values and name.startswith(("move", "xor-int", "not-int")):
+                values[regs[0]] = values[regs[1]]   # 複製或取反 (!enabled)
+            elif regs:
+                values.pop(regs[0], None)
+                consts.pop(regs[0], None)
+        return [{"key": r["key"], "default": r["default"], "api": r["api"],
+                 "use": "branch" if r["branch"] else ("passed" if r["passed"] else "unused")} for r in reads]
+
+    def path_evidence(dx, start, cache, depth=4, limit=300):
+        """從 start 的 method 往上追呼叫者 depth 層, 收集同意 / 開關證據
+        回傳 {"dialog": 路徑經過對話框按鈕, "switch": 路徑讀了使用者開關,
+              "gating": "used" (開關值拿來判斷) / "unknown" (值傳到別處, 看不到) / "none" (讀了沒用) / None (沒開關),
+              "keys": 開關名稱, "default_on": 有開關預設是開}
+        callback (run / onClick) 沒有呼叫者時, 改從建立該物件的地方 (<init> 的呼叫者) 繼續追
+        使用: lab_039, lab_040 (透過 find_auto_share_channels)"""
+        dialog, reads = False, []
+        frontier, visited = list(start), set()
+        for level in range(depth + 1):
+            nxt = []
+            for ma in frontier:
+                key = (ma.class_name, ma.name, str(ma.descriptor))
+                if key in visited or len(visited) >= limit:
+                    continue
+                visited.add(key)
+                if ma.name == "onClick" and "Landroid/content/DialogInterface;" in str(ma.descriptor):
+                    dialog = True
+                if key not in cache["methods"]:
+                    cache["methods"][key] = switch_reads(ma, dx, cache["getters"])
+                reads += cache["methods"][key]
+                if level == depth:
+                    continue
+                try:
+                    callers = [m for _, m, _ in ma.get_xref_from()]
+                    if not callers and ma.class_name in dx.classes:
+                        callers = [m for init in dx.classes[ma.class_name].get_methods() if init.name == "<init>"
+                                   for _, m, _ in init.get_xref_from() if m.class_name != ma.class_name]
+                except Exception:
+                    callers = []
+                nxt += callers
+            frontier = nxt
+        uses = {r["use"] for r in reads}
+        gating = None
+        if reads:
+            gating = "used" if "branch" in uses else ("unknown" if "passed" in uses else "none")
+        return {"dialog": dialog, "switch": bool(reads), "gating": gating,
+                "keys": sorted({r["key"] for r in reads if r["key"]}),
+                "default_on": any(r["default"] is True for r in reads)}
+
+    def settings_switch_keys(a):
+        """設定頁 XML (res/xml) 裡開關元件 (SwitchPreference 等) 的 key; 用來看程式讀的開關使用者看不看得到
+        使用: lab_040 (透過 find_auto_share_channels)"""
+        try:
+            from androguard.core.axml import AXMLPrinter
+        except ImportError:
+            from androguard.core.bytecodes.axml import AXMLPrinter
+        import xml.etree.ElementTree as ET
+        keys = set()
+        try:
+            arsc = a.get_android_resources()
+        except Exception:
+            arsc = None
+        for f in a.get_files():
+            if not (f.startswith("res/xml") and f.endswith(".xml")):
+                continue
+            try:
+                root = ET.fromstring(AXMLPrinter(a.get_file(f)).get_buff())
+            except Exception:
+                continue
+            for el in root.iter():
+                if not el.tag.split(".")[-1].endswith(SETTINGS_SWITCH_TAGS):
+                    continue
+                value = el.get(ANDROID_NS + "key") or el.get(APP_NS + "key")
+                if value and value.startswith("@") and arsc is not None:
+                    try:
+                        value = arsc.get_resolved_res_configs(int(value[1:], 16))[0][1]
+                    except Exception:
+                        value = None
+                if value:
+                    keys.add(value)
+        return keys
+
+    def find_auto_share_channels(a, dx, keep):
+        """找不用使用者操作就把資料交給其他 App 的管道, 並往上追呼叫路徑收集同意 / 開關證據
+        1. exported provider, 讀取權限沒有或只是 normal / dangerous (其他 App 拿得到)
+        2. 廣播、啟動元件、grantUriPermission (見 find_intent_channels)
+        回傳 [{"type", "where", "target", "confidence" (high / review), "reason", "evidence" (見 path_evidence + in_settings)}]
+        使用: lab_039, lab_040"""
+        root = a.get_android_manifest_xml()
+        application = root.find("application") if root is not None else None
+        if application is not None and application.get(ANDROID_NS + "enabled") == "false":
+            return []
+        levels = platform_permission_levels()
+        for p in root.iter("permission") if root is not None else []:
+            if p.get(ANDROID_NS + "name"):
+                levels[p.get(ANDROID_NS + "name")] = p.get(ANDROID_NS + "protectionLevel") or ""
+        try:
+            target_sdk = int(a.get_target_sdk_version() or 0)
+        except (TypeError, ValueError):
+            target_sdk = 0
+        app_permission = application.get(ANDROID_NS + "permission") if application is not None else None
+
+        channels = []
+        for prov in root.iter("provider") if root is not None else []:
+            name = prov.get(ANDROID_NS + "name")
+            exported = (prov.get(ANDROID_NS + "exported") or "").lower()
+            # 沒寫 exported: targetSdk >= 17 預設 false
+            if not name or prov.get(ANDROID_NS + "enabled") == "false" or exported == "false" \
+                    or (exported != "true" and target_sdk >= 17):
+                continue
+            full = resolve_activity_name(a.get_package() or "", name)
+            internal = "L" + full.replace(".", "/") + ";"
+            if not keep(internal):
+                continue   # 第三方 SDK 的 provider
+            # 讀取權限: readPermission 優先, 沒寫用 permission, 再沒寫用 <application> 的 permission
+            read = prov.get(ANDROID_NS + "readPermission") or prov.get(ANDROID_NS + "permission") or app_permission
+            if read and read in levels and not is_weak_level(levels[read]):
+                continue   # signature 等級, 其他 App 拿不到
+            methods = [m for m in dx.classes[internal].get_methods()
+                       if m.name in PROVIDER_DATA_METHODS] if internal in dx.classes else []
+            if read and read not in levels:
+                confidence, reason = "review", "permission %s level unknown" % read
+            elif not methods:
+                confidence, reason = "review", "provider code not found"
+            else:
+                confidence, reason = "high", "readable by other apps without permission" if not read \
+                    else "permission %s is %s level" % (read, levels[read] or "normal")
+            channels.append({"type": "provider", "where": full, "target": None, "confidence": confidence,
+                             "reason": reason, "method": None, "start": methods})
+
+        for c in find_intent_channels(a, dx, keep, levels):
+            c["start"] = [c["method"]]
+            channels.append(c)
+
+        cache = {"methods": {}, "getters": {}}
+        settings = settings_switch_keys(a) if channels else set()
+        for c in channels:
+            ev = path_evidence(dx, c.pop("start"), cache)
+            ev["in_settings"] = [k for k in ev["keys"] if k in settings]
+            c["evidence"] = ev
+            c.pop("method", None)
+        return channels
+
+    # App 自己讀取的敏感資料 -> 資料安全性類別
+    # permissions: 需要的權限 (None = 不需權限); apis: 真正讀取資料的呼叫; strings: const-string 特徵
+    # 使用: lab_041 (透過 find_sensitive_data_usage)
+    DATA_SAFETY_MAP = [
+        {"name": "Location",
+         "permissions": ["android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
+                         "android.permission.ACCESS_BACKGROUND_LOCATION"],
+         "categories": ["Location"],
+         "apis": ["Landroid/location/LocationManager;->getLastKnownLocation", "Landroid/location/LocationManager;->requestLocationUpdates",
+                  "Landroid/location/LocationManager;->getCurrentLocation", "Landroid/location/LocationManager;->requestSingleUpdate",
+                  "Lcom/google/android/gms/location/FusedLocationProviderClient;->getLastLocation",
+                  "Lcom/google/android/gms/location/FusedLocationProviderClient;->getCurrentLocation",
+                  "Lcom/google/android/gms/location/FusedLocationProviderClient;->requestLocationUpdates",
+                  "Landroid/location/Location;->getLatitude"]},
+        {"name": "Contacts", "permissions": ["android.permission.READ_CONTACTS"],
+         "categories": ["Contacts"], "apis": ["Landroid/provider/ContactsContract"]},
+        {"name": "SMS", "permissions": ["android.permission.READ_SMS", "android.permission.RECEIVE_SMS"],
+         "categories": ["Messages"], "apis": ["Landroid/provider/Telephony$Sms", "Landroid/telephony/SmsMessage;->"]},
+        {"name": "Calendar", "permissions": ["android.permission.READ_CALENDAR"],
+         "categories": ["Calendar"], "apis": ["Landroid/provider/CalendarContract"]},
+        {"name": "Microphone", "permissions": ["android.permission.RECORD_AUDIO"],
+         "categories": ["Audio"],
+         "apis": ["Landroid/media/AudioRecord;->startRecording", "Landroid/media/MediaRecorder;->setAudioSource",
+                  "Landroid/speech/SpeechRecognizer;->startListening"]},
+        {"name": "Audio files", "permissions": ["android.permission.READ_MEDIA_AUDIO", "android.permission.READ_EXTERNAL_STORAGE"],
+         "categories": ["Audio"], "apis": ["Landroid/provider/MediaStore$Audio"]},
+        {"name": "Camera", "permissions": ["android.permission.CAMERA"],
+         "categories": ["Photos and videos"],
+         "apis": ["Landroid/hardware/camera2/CameraManager;->openCamera", "Landroid/hardware/Camera;->open",
+                  "Landroidx/camera/core/ImageCapture;->takePicture", "Landroidx/camera/lifecycle/ProcessCameraProvider;->bindToLifecycle"]},
+        {"name": "Photos", "permissions": ["android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+                                           "android.permission.READ_EXTERNAL_STORAGE"],
+         "categories": ["Photos and videos"], "apis": ["Landroid/provider/MediaStore$Images", "Landroid/provider/MediaStore$Video"]},
+        {"name": "Phone identifiers", "permissions": ["android.permission.READ_PHONE_STATE"],
+         "categories": ["Device or other IDs"],
+         "apis": ["Landroid/telephony/TelephonyManager;->getDeviceId", "Landroid/telephony/TelephonyManager;->getImei",
+                  "Landroid/telephony/TelephonyManager;->getMeid", "Landroid/telephony/TelephonyManager;->getSubscriberId",
+                  "Landroid/telephony/TelephonyManager;->getSimSerialNumber"]},
+        {"name": "Phone number", "permissions": ["android.permission.READ_PHONE_STATE", "android.permission.READ_PHONE_NUMBERS", "android.permission.READ_SMS"],
+         "categories": ["Personal info"], "apis": ["Landroid/telephony/TelephonyManager;->getLine1Number",
+                                                   "Landroid/telephony/SubscriptionManager;->getPhoneNumber"]},
+        {"name": "Accounts", "permissions": ["android.permission.GET_ACCOUNTS"],
+         "categories": ["Personal info"], "apis": ["Landroid/accounts/AccountManager;->getAccounts"]},
+        {"name": "Advertising ID", "permissions": None,
+         "categories": ["Device or other IDs"],
+         "apis": ["Lcom/google/android/gms/ads/identifier/AdvertisingIdClient;->getAdvertisingIdInfo"]},
+        {"name": "Android ID", "permissions": None,
+         "categories": ["Device or other IDs"], "strings": ["android_id"]},
+    ]
+
+    # 第三方 SDK 本身就會收集並傳出的資料類別 (依各 SDK 官方的資料安全性說明, 只列確定會收集的)
+    # 每個類別都要各自聲明
+    # 使用: lab_041 (透過 find_sensitive_data_usage)
+    DATA_SAFETY_SDKS = [
+        ("Lcom/google/firebase/analytics/",         "Firebase Analytics",   ["App activity", "Device or other IDs"]),
+        ("Lcom/google/android/gms/analytics/",      "Google Analytics",     ["App activity", "Device or other IDs"]),
+        ("Lcom/google/firebase/crashlytics/",       "Firebase Crashlytics", ["App info and performance"]),
+        ("Lcom/google/android/gms/ads/MobileAds;",  "Google Mobile Ads",    ["Device or other IDs"]),
+        ("Lcom/facebook/appevents/",                "Facebook App Events",  ["App activity", "Device or other IDs"]),
+        ("Lcom/appsflyer/",                         "AppsFlyer",            ["Device or other IDs"]),
+        ("Lcom/adjust/sdk/",                        "Adjust",               ["Device or other IDs"]),
+        ("Lio/sentry/",                             "Sentry",               ["App info and performance"]),
+        ("Lcom/onesignal/",                         "OneSignal",            ["Device or other IDs"]),
+    ]
+
+    # App 自己的程式碼發出網路請求的呼叫
+    # 使用: lab_041 (透過 find_sensitive_data_usage)
+    NETWORK_API_TOKENS = ("Ljava/net/URL;->openConnection", "Lokhttp3/OkHttpClient;->newCall", "Lretrofit2/Retrofit$Builder;->baseUrl",
+                          "Lcom/android/volley/RequestQueue;->add", "Ljava/net/Socket;-><init>", "Lio/ktor/client/")
+
+    # 資料安全性頁面的類別名稱 (英文); 只認這些, 其他標題不算
+    # 使用: lab_041 (透過 fetch_play_data_safety)
+    PLAY_DATA_CATEGORIES = {
+        "location", "personal info", "financial info", "health and fitness", "messages", "photos and videos",
+        "audio", "files and docs", "calendar", "contacts", "app activity", "web browsing",
+        "app info and performance", "device or other ids",
+    }
+
+    # 掃碼函式庫; 有這些又沒拍照存檔時, 相機可能只用來掃 QR code, 不一定會傳出照片
+    # 使用: lab_041 (透過 find_sensitive_data_usage)
+    BARCODE_SDK_PREFIXES = ("Lcom/google/zxing/", "Lcom/journeyapps/barcodescanner/", "Lcom/google/mlkit/vision/barcode/",
+                            "Lcom/google/android/gms/vision/barcode/", "Lcom/huawei/hms/scankit/", "Lnet/sourceforge/zbar/")
+
+    # 在 Manifest 關閉 SDK 自動收集的 meta-data: (名稱, 代表關閉的值)
+    # 使用: lab_041 (透過 find_sensitive_data_usage)
+    SDK_DISABLE_FLAGS = {
+        "Firebase Analytics":   [("firebase_analytics_collection_deactivated", "true"),
+                                 ("firebase_analytics_collection_enabled", "false")],
+        "Firebase Crashlytics": [("firebase_crashlytics_collection_enabled", "false")],
+        "Facebook App Events":  [("com.facebook.sdk.AutoLogAppEventsEnabled", "false")],
+    }
+
+    def find_sensitive_data_usage(a, dx, keep):
+        """找要在資料安全性聲明的資料, 回傳 (network, usages)
+        network: App 自己的程式碼有發網路請求 (且有 INTERNET 權限)
+        usages: [{"kind": "app" / "sdk", "source", "categories", "where", "review" (有值 = 待確認的原因)}]
+          app = App 自己讀取的敏感資料 (有權限 + 程式碼真的讀取); sdk = 會收集資料的第三方 SDK (每個類別一筆)
+        使用: lab_041"""
+        perms = set(a.get_permissions())
+        network = "android.permission.INTERNET" in perms and bool(find_app_references(dx, keep, NETWORK_API_TOKENS))
+
+        def where_of(cls, meth):
+            return "%s.%s" % (cls[1:-1].replace("/", "."), meth)
+
+        usages = []
+        active = [e for e in DATA_SAFETY_MAP if e["permissions"] is None or perms & set(e["permissions"])]
+        api_tokens = [t for e in active for t in e.get("apis", [])]
+        refs = strip_instructions(find_app_references(dx, keep, api_tokens)) if api_tokens else []
+        str_tokens = {s for e in active for s in e.get("strings", [])}
+        strs = find_app_const_strings(dx, lambda s: s if s in str_tokens else None, keep) if str_tokens else []
+        scanner = bool(find_class_prefixes(dx, [(p, "") for p in BARCODE_SDK_PREFIXES]))
+        for e in active:
+            hits = [r for r in refs if r["api"] in e.get("apis", [])]
+            hit = hits[0] if hits else None
+            if hit:
+                where = where_of(hit["class"], hit["method"])
+            else:
+                s = next((x for x in strs if x["indicator"] in e.get("strings", [])), None)
+                if not s:
+                    continue
+                where = where_of(s["class"], s["method"])
+            source = sorted(perms & set(e["permissions"]))[0] if e["permissions"] else e["name"]
+            usage = {"kind": "app", "source": source, "categories": e["categories"], "where": where,
+                     "locations": len(hits) or 1}
+            if e["name"] == "Camera" and scanner and not any("takePicture" in r["api"] for r in hits):
+                usage["review"] = "camera may only be used to scan codes"
+            usages.append(usage)
+
+        meta = {m.get(ANDROID_NS + "name"): (m.get(ANDROID_NS + "value") or "").lower()
+                for m in a.get_android_manifest_xml().iter("meta-data")}
+        for prefix, sdk, cats in DATA_SAFETY_SDKS:
+            # 只算真的打包進 APK 的 SDK, 只有引用到的不算
+            if not any(cls.startswith(prefix) and not ca.is_external() for cls, ca in dx.classes.items()):
+                continue
+            disabled = any(meta.get(k) == v for k, v in SDK_DISABLE_FLAGS.get(sdk, []))
+            for c in cats:
+                usage = {"kind": "sdk", "source": "SDK " + sdk, "categories": [c], "where": ""}
+                if disabled:
+                    usage["review"] = "collection disabled in manifest"
+                usages.append(usage)
+        return network, usages
+
+    def parse_play_data_safety(html):
+        """解析資料安全性頁面: 從標題 (h1-h4, 可含巢狀標籤) 找出已聲明的類別; 看不懂的頁面回 parse_failed, 不當作沒聲明
+        回傳 {"status": ok / parse_failed, "declared"}
+        使用: lab_041 (透過 fetch_play_data_safety)"""
+        from html.parser import HTMLParser
+
+        class SafetyParser(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.headings, self.text, self.parts, self.heading = [], [], [], None
+                self.hidden = 0
+            def handle_starttag(self, tag, attrs):
+                if tag in ('script', 'style'):
+                    self.hidden += 1
+                if tag in ('h1', 'h2', 'h3', 'h4') and not self.hidden:
+                    self.heading, self.parts = tag, []
+            def handle_endtag(self, tag):
+                if tag in ('script', 'style'):
+                    self.hidden = max(0, self.hidden - 1)
+                if tag == self.heading:
+                    self.headings.append(' '.join(''.join(self.parts).split()))
+                    self.heading = None
+            def handle_data(self, value):
+                if not self.hidden:
+                    self.text.append(value)
+                    if self.heading:
+                        self.parts.append(value)
+
+        parser = SafetyParser()
+        parser.feed(html)
+        visible = ' '.join(' '.join(parser.text).split()).lower()
+        if 'data safety' not in visible:
+            return {"status": "parse_failed", "declared": []}
+        categories = sorted({h for h in parser.headings if h.lower() in PLAY_DATA_CATEGORIES})
+        # 「收集」與「分享」的類別合併計算
+        if categories and ('data collected' in visible or 'data shared' in visible):
+            return {"status": "ok", "declared": categories}
+        if not categories and 'no data collected' in visible and 'no data shared' in visible:
+            return {"status": "ok", "declared": []}
+        return {"status": "parse_failed", "declared": []}
+
+    def fetch_play_data_safety(package):
+        """抓 Google Play 資料安全性頁面, 回傳 {"status", "declared" (已聲明類別), "url", "fetched_at"}
+        status: ok / not_on_play / fetch_failed / parse_failed / invalid_package
+        使用: lab_041"""
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+', package or ''):
+            return {"status": "invalid_package", "declared": []}
+        import hashlib
+        url = "https://play.google.com/store/apps/datasafety?id=%s&hl=en&gl=US" % package
+        metadata = {"url": url, "fetched_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                raw = response.read(4 * 1024 * 1024 + 1)
+            if len(raw) > 4 * 1024 * 1024:
+                return dict(metadata, status="parse_failed", declared=[])
+            html = raw.decode('utf-8', 'replace')
+        except urllib.error.HTTPError as e:
+            return dict(metadata, status="not_on_play" if e.code == 404 else "fetch_failed", declared=[])
+        except Exception:
+            return dict(metadata, status="fetch_failed", declared=[])
+        metadata['content_sha256'] = hashlib.sha256(raw).hexdigest()
+        if re.search(r'<title[^>]*>\s*Not Found\s*</title>', html, re.I):
+            return dict(metadata, status="not_on_play", declared=[])
+        return dict(metadata, **parse_play_data_safety(html))
 
     # ---- 加殼判斷 ----
 
@@ -4619,6 +5283,25 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "api_evidence":  api_evidence,
             "scanned_app_classes": count_app_classes(dx, keep),
             "count":         len(code_evidence) + len(api_evidence),
+            "lab_id":        lab_id,
+            "description":   description,
+        }), 200
+
+    def share_check_result(lab_id, description, channels, dx, keep):
+        """lab_039 / 040 的回傳: 每個管道的 problem 由端點填 (None = 沒問題)
+        確定的管道 (confidence high) 有問題 -> WARNING; 只有待確認的管道有問題 (review 或 unverified) -> UNKNOWN (需人工); 都沒有 -> PASS
+        使用: lab_039, lab_040"""
+        flagged = [c for c in channels if c["problem"]]
+        findings = [c for c in flagged if c["confidence"] == "high" and not c.get("unverified")]
+        review = [c for c in flagged if c not in findings]
+        return jsonify({
+            "verdict":       "WARNING" if findings else ("UNKNOWN" if review else "PASS"),
+            "has_finding":   bool(findings),
+            "channels":      channels,
+            "findings":      findings,
+            "review":        review,
+            "scanned_app_classes": count_app_classes(dx, keep),
+            "count":         len(findings),
             "lab_id":        lab_id,
             "description":   description,
         }), 200

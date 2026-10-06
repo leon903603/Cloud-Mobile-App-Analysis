@@ -257,7 +257,7 @@
         "owasp_mobile": "M8",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally.\n\nThis check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, the signature integrity check is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
+        "desc": "When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally.\n\nThis check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, the signature integrity check is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
     },
     "AS-lab027": {
         "title": "Screen capture prevention settings",
@@ -267,7 +267,7 @@
         "owasp_mobile": "",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data.\n\nThis check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+        "desc": "When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data.\n\nThis check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing.\n\nLimitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime Command Checking",
@@ -380,34 +380,34 @@
         "desc": "Found with native library code loaded (System.loadLibrary(...))"
     },
     "AS-lab039": {
-        "title": "Encryption Framework - Bangcle",
-        "mas": "",
-        "mast": "5.2.5",
-        "real_mstg": "",
-        "owasp_mobile": "M9",
-        "level": "NOTICE",
+        "title": "Data Sharing Notice Check",
+        "mas": "4.1.2.5.1",
+        "mast": "",
+        "real_mstg": "MASVS-STORAGE-2|MASVS-PRIVACY-3",
+        "owasp_mobile": "M6",
+        "level": "WARNING",
         "cve": "",
-        "desc": "This app is using Bangcle Encryption Framework (http://www.bangcle.com/).  Please give us the unencrypted apk file so that we can check it completely"
+        "desc": "The app automatically hands data to other apps on the device without notice or consent, so users don't know who gets their data.\n\nFails when: an automatic sharing channel (ContentProvider reachable by other apps, broadcast with data and no receiver, grantUriPermission) is found and its call path has no consent dialog or user switch. User-triggered actions such as the share sheet or taking a photo are not counted; channels whose receiver or code cannot be resolved need manual review.\n\nFix: if sharing is not needed, set android:exported=\"false\", target the receiver with setPackage(), or use a signature-level permission; if it is needed, get user consent before sharing.\n\nLimitation: data sensitivity is not judged; only 4 levels of callers are traced; Compose dialogs, intents built in other methods and native code are not seen; the wording of store and in-app notices needs manual review.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
     },
     "AS-lab040": {
-        "title": "Encryption Framework - Ijiami",
-        "mas": "",
-        "mast": "5.2.5",
-        "real_mstg": "",
-        "owasp_mobile": "M9",
-        "level": "NOTICE",
+        "title": "Data Sharing Refusal Check",
+        "mas": "4.1.2.5.2",
+        "mast": "",
+        "real_mstg": "MASVS-STORAGE-2|MASVS-PRIVACY-4",
+        "owasp_mobile": "M6",
+        "level": "WARNING",
         "cve": "",
-        "desc": "This app is using Ijiami Encryption Framework (http://www.ijiami.cn/).  Please give us the unencrypted apk file so that we can check it in full"
+        "desc": "The app automatically shares data with other apps but users cannot refuse it.\n\nFails when: an automatic sharing channel from AS-lab039 has no read of a user switch (SharedPreferences, DataStore) on its call path, or the switch is read but not used to decide whether to share. Switches whose value is checked elsewhere and cannot be traced need manual review. The share sheet can be cancelled and is not counted.\n\nFix: add an \"allow data sharing\" switch in settings and check it before sharing; do not share when it is off.\n\nLimitation: does not confirm that the switch is the sharing switch or that the check actually blocks the sharing; DataStore switches can only be confirmed as read. Details list the switch key, its default value and whether it appears in the settings screen.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
     },
     "AS-lab041": {
-        "title": "Framework - MonoDroid",
-        "mas": "",
-        "mast": "5.2.5",
-        "real_mstg": "",
-        "owasp_mobile": "M9",
-        "level": "NOTICE",
+        "title": "Release Notes (Data Safety Declaration) Check",
+        "mas": "4.1.1.1.2",
+        "mast": "",
+        "real_mstg": "MASVS-PLATFORM-1|MASVS-PRIVACY-1",
+        "owasp_mobile": "M6",
+        "level": "WARNING",
         "cve": "",
-        "desc": "This app is using the MonoDroid Framework (http://xamarin.com/android)."
+        "desc": "The app or an SDK it uses obtains sensitive data that is not declared in Google Play Data safety, so users don't know about it before installing.\n\nFails when: the app itself reads sensitive data (holds the permission and actually reads it, e.g. location, contacts, audio, device IDs) and makes network requests, or it bundles a data-collecting SDK (e.g. Firebase Analytics, AdMob), and the Data safety page does not list that category. Apps not on Google Play, pages that cannot be fetched, a camera that may only scan codes, or an SDK whose collection is disabled in the manifest need manual review.\n\nFix: if the data leaves the device, declare the category in the Google Play Console Data safety form; if it is no longer used, remove the permission, related code or SDK.\n\nLimitation: only Data safety categories are compared; permission purposes and the questionnaire of unpublished apps need manual review; referencing a related API counts as reading it; data flow is not traced, network requests are taken to mean the data may leave the device; only SDKs on the built-in list are recognized.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
     },
     "AS-lab042": {
         "title": "Packer / Dynamic Code Loading Detection",
@@ -557,7 +557,7 @@
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow.\n\nThis check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, root detection is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
+        "desc": "When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow.\n\nThis check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, root detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
     },
     "AS-lab057": {
         "title": "Sensitive Device / Subscriber Identifier Read (IMEI / IMSI / Phone Number)",
@@ -627,7 +627,7 @@
         "owasp_mobile": "",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not check its installation source, a repackaged copy can be distributed through third-party stores or websites and still run normally, making it hard for users to tell it from the genuine app.\n\nThis check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection; if neither is found, the installation source check is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
+        "desc": "When the app does not check its installation source, a repackaged copy can be distributed through third-party stores or websites and still run normally, making it hard for users to tell it from the genuine app.\n\nThis check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection; if neither is found, the installation source check is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
     },
     "AS-lab065": {
         "title": "WebView Advanced Configuration Audit",
@@ -807,7 +807,7 @@
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily.\n\nThis check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection; if neither is found, emulator detection is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+        "desc": "When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily.\n\nThis check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection; if neither is found, emulator detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
     },
     "AS-lab083": {
         "title": "USB Debugging Detection Check",
@@ -817,6 +817,6 @@
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access.\n\nThis check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection; if neither is found, USB debugging detection is considered missing. Packed APKs are not reported because the result is unreliable.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+        "desc": "When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access.\n\nThis check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection; if neither is found, USB debugging detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
     }
 }
