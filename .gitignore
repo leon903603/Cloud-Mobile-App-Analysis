@@ -17,3 +17,7 @@ log.txt
 *.flag
 .env
 *.bak*
+
+# lambda update
+ops/
+*.log

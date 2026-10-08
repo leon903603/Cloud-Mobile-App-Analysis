@@ -914,12 +914,21 @@ class Writer:
         global output_pdf_url
         from collections import OrderedDict
         try:
-            # Resolve output dir relative to the Frida directory (not the CWD,
-            # which is '/' when launched by webapp.py) so webapp.py can find it.
+            # Resolve output dir: use /tmp or CWD if parent directory is read-only (Lambda environment)
             _frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if not os.access(_frida_dir, os.W_OK):
+                _frida_dir = os.environ.get("MALDROID_OUTPUT_DIR") or os.getcwd()
             result_dir = os.path.join(_frida_dir, 'static_analysis_result')
-            if not os.path.exists(result_dir):
-                os.makedirs(result_dir)
+            try:
+                if not os.path.exists(result_dir):
+                    os.makedirs(result_dir)
+            except Exception:
+                result_dir = os.path.join(os.getcwd(), 'static_analysis_result')
+                try:
+                    if not os.path.exists(result_dir):
+                        os.makedirs(result_dir)
+                except Exception:
+                    pass
 
             # Get package name from APK
             package_name = "unknown_app"  # Default fallback
@@ -993,25 +1002,33 @@ class Writer:
                 print("Failed to create CMAA JSON report: {}".format(e))
 
             # Create test.json files for both languages (for web UI buttons)
-            # Write to parent directory (Frida/) where webapp.py reads from
             frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if not os.access(frida_dir, os.W_OK):
+                frida_dir = os.environ.get("MALDROID_OUTPUT_DIR") or os.getcwd()
 
-            # English version (default for backward compatibility)
             test_json_path = os.path.join(frida_dir, 'test.json')
-            with codecs.open(test_json_path, 'w', encoding='utf-8') as outfile:
-                json.dump(merge_dict_en, outfile, ensure_ascii=False, indent=2)
-            print("Created test.json (English): {}".format(test_json_path))
+            try:
+                with codecs.open(test_json_path, 'w', encoding='utf-8') as outfile:
+                    json.dump(merge_dict_en, outfile, ensure_ascii=False, indent=2)
+                print("Created test.json (English): {}".format(test_json_path))
+            except Exception as e:
+                print("Warning: Failed writing test.json: {}".format(e))
 
-            # Chinese version
             test_zh_json_path = os.path.join(frida_dir, 'test_zh.json')
-            with codecs.open(test_zh_json_path, 'w', encoding='utf-8') as outfile:
-                json.dump(merge_dict_tw, outfile, ensure_ascii=False, indent=2)
-            print("Created test_zh.json (Chinese): {}".format(test_zh_json_path))
+            try:
+                with codecs.open(test_zh_json_path, 'w', encoding='utf-8') as outfile:
+                    json.dump(merge_dict_tw, outfile, ensure_ascii=False, indent=2)
+                print("Created test_zh.json (Chinese): {}".format(test_zh_json_path))
+            except Exception as e:
+                print("Warning: Failed writing test_zh.json: {}".format(e))
 
             # Load the selected language for further processing
             load_path = test_json_path if lang == 'en' else test_zh_json_path
-            with codecs.open(load_path, 'r', encoding='utf-8') as infile:
-                test = json.load(infile, object_pairs_hook=OrderedDict)
+            try:
+                with codecs.open(load_path, 'r', encoding='utf-8') as infile:
+                    test = json.load(infile, object_pairs_hook=OrderedDict)
+            except Exception:
+                test = data_to_use
 
             # Generate PDF (uncomment to enable)
             # res = req.post(output_pdf_url, json=data_to_use, timeout=5)
@@ -6041,8 +6058,13 @@ def main():
     generate_pdf_state = writer.generate_pdf(args, merge_dict_tw, merge_dict_en)
     # Write state to the Frida dir (not CWD='/') so webapp.py's monitor reads it
     _frida_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(_frida_dir, "maldroid.state"), 'w') as f:
-        f.write("success" if generate_pdf_state else "fail")
+    if not os.access(_frida_dir, os.W_OK):
+        _frida_dir = os.environ.get("MALDROID_OUTPUT_DIR") or os.getcwd()
+    try:
+        with open(os.path.join(_frida_dir, "maldroid.state"), 'w') as f:
+            f.write("success" if generate_pdf_state else "fail")
+    except Exception as e:
+        print("Warning: could not write maldroid.state: {}".format(e))
     print("generate_pdf_state: " + str(generate_pdf_state))
 
 
