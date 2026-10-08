@@ -29,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import TurnstileWidget from "./TurnstileWidget";
 
 type AnalysisType = "static" | "dynamic";
 
@@ -176,6 +177,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
   const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [showGuestConfirmModal, setShowGuestConfirmModal] = useState(false);
   const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string>("");
 
   // Helper function that resets state of variables
   const resetState = () => {
@@ -188,6 +190,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
     setCredentialNotice(null);
     setCredentialError(null);
     setShowGuestConfirmModal(false);
+    setTurnstileToken("");
   };
 
   const handleSelectFile = async (selected: File) => {
@@ -238,6 +241,11 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
 
   const handleConfirmAndUpload = () => {
     if (!stagedFile) return;
+
+    if (!turnstileToken) {
+      setCredentialError("Please complete the human verification challenge.");
+      return;
+    }
 
     if (analysisType === "dynamic") {
       const hasUsername = Boolean(appUsername.trim());
@@ -464,9 +472,13 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
       xhr.open("POST", `${import.meta.env.VITE_BACKEND_URL}/upload`);
       // attach Authorization header so backend receives token for this multipart request
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      if (turnstileToken) {
+        xhr.setRequestHeader("x-turnstile-token", turnstileToken);
+        formData.append("turnstileToken", turnstileToken);
+      }
       xhr.send(formData);
     },
-    [analysisType, appUsername, appPassword, onUpload]
+    [analysisType, appUsername, appPassword, onUpload, turnstileToken]
   );
 
   // Drag and drop handlers
@@ -556,7 +568,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                   <div className="flex items-start gap-2.5 rounded-xl border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     <p className="leading-relaxed">
-                      <b>SMS OTP / 2FA Note</b>: Automated sandboxes cannot bypass SMS verification codes, 2FA, or biometric prompts. If your app requires OTP to enter main screens, please contact our team at <a href="mailto:nthu.islab.appsec@gmail.com" className="text-primary underline font-medium">nthu.islab.appsec@gmail.com</a> for dedicated concierge assisted testing.
+                      <b>SMS OTP / 2FA Note</b>: Automated sandboxes cannot bypass SMS verification codes, 2FA, or biometric prompts. If your app requires OTP to enter main screens, please contact our team at <a href="mailto:suprematechnologiesltd@solitesterror.com" className="text-primary underline font-medium">suprematechnologiesltd@solitesterror.com</a> for dedicated concierge assisted testing.
                     </p>
                   </div>
                 </div>
@@ -584,20 +596,35 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                     </p>
                   </div>
                 </div>
+                <div style={{ position: "absolute", top: -9999, left: -9999, width: 1, height: 1, overflow: "hidden" }} aria-hidden="true">
+                  <input type="text" name="chrome_dummy_username_member" tabIndex={-1} readOnly autoComplete="username" />
+                  <input type="password" name="chrome_dummy_password_member" tabIndex={-1} readOnly autoComplete="current-password" />
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
                     type="text"
+                    name="member_sandbox_user_field"
                     autoComplete="off"
                     placeholder="Username or email"
                     value={appUsername}
                     onChange={(e) => setAppUsername(e.target.value)}
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
                   />
                   <Input
-                    type="password"
-                    autoComplete="new-password"
+                    type="text"
+                    name="member_sandbox_secret_field"
+                    autoComplete="off"
                     placeholder="Password"
+                    style={{ WebkitTextSecurity: "disc" } as any}
                     value={appPassword}
                     onChange={(e) => setAppPassword(e.target.value)}
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
                   />
                 </div>
                 {/* Both or neither — half an account gets the run nowhere */}
@@ -650,6 +677,15 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                     <span>{credentialError}</span>
                   </div>
                 )}
+
+                {/* Turnstile Human Verification Challenge */}
+                <TurnstileWidget
+                  onVerify={(tok) => {
+                    setTurnstileToken(tok);
+                    setCredentialError(null);
+                  }}
+                  onExpire={() => setTurnstileToken("")}
+                />
 
                 <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/50">
                   <Button

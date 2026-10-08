@@ -33,19 +33,42 @@ const friendlyAuthError = (err: any, mode: "login" | "register"): string => {
   }
 };
 
+import TurnstileWidget from "./TurnstileWidget";
+
 const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
   const [mode, setMode] = React.useState<"login" | "register">("login");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [turnstileToken, setTurnstileToken] = React.useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    const hasTurnstileKey = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
+    if (hasTurnstileKey && !turnstileToken) {
+      setError("Please complete the human verification challenge.");
+      return;
+    }
+
     setLoading(true);
 
     try {
+      if (turnstileToken) {
+        // Q4-A: Verify Turnstile Token with backend before proceeding
+        const verifyRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/verify-turnstile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: turnstileToken }),
+        });
+        const verifyData = await verifyRes.json().catch(() => null);
+        if (!verifyRes.ok || !verifyData?.ok) {
+          throw new Error(verifyData?.error || "Human verification failed. Please try again.");
+        }
+      }
+
       if (mode === "login") {
         // App gates on emailVerified and runs initUser once verified.
         await login(email, password);
@@ -140,6 +163,15 @@ const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
             />
           </div>
         </div>
+
+        {/* Turnstile Human Verification Challenge */}
+        <TurnstileWidget
+          onVerify={(tok) => {
+            setTurnstileToken(tok);
+            setError("");
+          }}
+          onExpire={() => setTurnstileToken("")}
+        />
 
         <Button type="submit" disabled={loading} className="w-full">
           {loading ? (

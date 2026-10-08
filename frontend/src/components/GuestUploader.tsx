@@ -66,26 +66,54 @@ const JOBS_STORAGE_KEY = "cmaa_guest_jobs_history";
 const LEGACY_JOB_KEY = "cmaa_guest_job";
 const COOLDOWN_KEY = "cmaa_guest_cooldown_until";
 
+// Q2 TTL rules: Unpaid 24h, Paid 48h
+const UNPAID_TTL_MS = 24 * 60 * 60 * 1000;
+const PAID_TTL_MS = 48 * 60 * 60 * 1000;
+
 function loadStoredJobs(): StoredGuestJob[] {
   try {
     const raw = localStorage.getItem(JOBS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.slice(0, 3).map((item: any) => ({
-          jobId: item.jobId || "",
-          secretKey: item.secretKey || "",
-          filename: item.filename || "Previous Analysis",
-          analysisType: item.analysisType || "static",
-          status: item.status || "pending",
-          createdAt: item.createdAt || item.uploadTime || new Date().toISOString(),
-          uploadTime: item.uploadTime || item.createdAt || new Date().toISOString(),
-          isPaid: Boolean(item.isPaid),
-          downloadToken: item.downloadToken,
-          priceUsd: item.priceUsd,
-          priceTwd: item.priceTwd,
-          summaryPreview: item.summaryPreview,
-        }));
+        const now = Date.now();
+        const activeJobs: StoredGuestJob[] = [];
+        const expiredNames: string[] = [];
+
+        for (const item of parsed.slice(0, 3)) {
+          const createdAt = item.createdAt || item.uploadTime || new Date().toISOString();
+          const jobTime = new Date(createdAt).getTime();
+          const isPaid = Boolean(item.isPaid);
+          const ttl = isPaid ? PAID_TTL_MS : UNPAID_TTL_MS;
+
+          if (jobTime > 0 && now - jobTime > ttl) {
+            expiredNames.push(item.filename || "Previous Analysis");
+          } else {
+            activeJobs.push({
+              jobId: item.jobId || "",
+              secretKey: item.secretKey || "",
+              filename: item.filename || "Previous Analysis",
+              analysisType: item.analysisType || "static",
+              status: item.status || "pending",
+              createdAt,
+              uploadTime: item.uploadTime || createdAt,
+              isPaid,
+              downloadToken: item.downloadToken,
+              priceUsd: item.priceUsd,
+              priceTwd: item.priceTwd,
+              summaryPreview: item.summaryPreview,
+            });
+          }
+        }
+
+        if (expiredNames.length > 0) {
+          saveStoredJobs(activeJobs);
+          setTimeout(() => {
+            alert(`${expiredNames.join(", ")} 已過期並由系統銷毀。`);
+          }, 350);
+        }
+
+        return activeJobs;
       }
     }
     const legacy = localStorage.getItem(LEGACY_JOB_KEY);
@@ -1000,11 +1028,11 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                     </p>
                     <div className="pt-1">
                       <a
-                        href="mailto:nthu.islab.appsec@gmail.com?subject=[CMAA]%20Custom%20Penetration%20Testing%20Inquiry"
+                        href="mailto:suprematechnologiesltd@solitesterror.com?subject=[CMAA]%20Custom%20Penetration%20Testing%20Inquiry"
                         className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
                       >
                         <Mail className="h-3.5 w-3.5" />
-                        For in-depth manual penetration testing, contact our team: nthu.islab.appsec@gmail.com
+                        For in-depth manual penetration testing, contact our team: suprematechnologiesltd@solitesterror.com
                       </a>
                     </div>
                   </div>
@@ -1014,24 +1042,43 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
                 <div className="space-y-2">
                   <p className="font-medium text-foreground">Test Credentials (Optional, for simulated login)</p>
+                  {/* Hidden off-screen dummy fields to absorb aggressive browser autofill algorithms */}
+                  <div style={{ position: "absolute", top: -9999, left: -9999, width: 1, height: 1, overflow: "hidden" }} aria-hidden="true">
+                    <input type="text" name="chrome_dummy_username" tabIndex={-1} readOnly autoComplete="username" />
+                    <input type="password" name="chrome_dummy_password" tabIndex={-1} readOnly autoComplete="current-password" />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="relative">
                       <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
+                        type="text"
+                        name="sandbox_test_user_field"
                         placeholder="Username (optional)"
                         className="h-8 pl-8 text-xs bg-background"
                         value={appUsername}
                         onChange={(e) => setAppUsername(e.target.value)}
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-bwignore="true"
+                        data-form-type="other"
                       />
                     </div>
                     <div className="relative">
                       <Lock className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
-                        type="password"
+                        type="text"
+                        name="sandbox_test_secret_field"
                         placeholder="Password (optional)"
                         className="h-8 pl-8 text-xs bg-background"
+                        style={{ WebkitTextSecurity: "disc" } as any}
                         value={appPassword}
                         onChange={(e) => setAppPassword(e.target.value)}
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-bwignore="true"
+                        data-form-type="other"
                       />
                     </div>
                   </div>

@@ -20,12 +20,15 @@ import {
   startCredentialSweep,
   validateCredentials,
 } from "./models/DynamicCredentials";
-import { putFile, putJson, objectExists, getPresignedDownloadUrl, deleteObject } from "./s3";
+import { putFile, putJson, objectExists, getPresignedDownloadUrl, deleteObject, purgeObjectAllVersions } from "./s3";
 import { analyzeIOSStatic, analyzeAndroidStatic, analyzeAndroidDynamic} from "./dispatch";
 import guestRoutes from "./guest_routes";
+import { GuestJob } from "./models/GuestJob";
+import { verifyTurnstileToken } from "./turnstile";
 import newebpayRouter from "./newebpay";
 import { startFxRefresh } from "./fx";
 import { renderReportPdf } from "./pdf";
+import { startStorageHygieneSchedule } from "./services/storageHygiene";
 import {
   recordCreditChange,
   startCreditAudit,
@@ -154,6 +157,17 @@ app.get("/api/config", (_req: Request, res: Response) => {
   });
 });
 
+// Q4-A: Verify Turnstile Token for Member Authentication & Registration
+app.post("/api/auth/verify-turnstile", async (req: Request, res: Response) => {
+  const { token } = req.body ?? {};
+  const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
+  const result = await verifyTurnstileToken(token, clientIp);
+  if (!result.ok) {
+    return res.status(403).json({ ok: false, error: result.reason || "Human verification failed." });
+  }
+  return res.json({ ok: true });
+});
+
 // Multer buffers the incoming upload to a local temp file; we then stream it to S3
 // and delete the temp file. S3 is the durable store — no local uploads/reports dirs.
 const upload = multer({
@@ -240,6 +254,15 @@ app.post("/upload", verifyToken, requireCredits, upload.single("file"), async (r
   const file = req.file;
   const { type, hash } = req.body;
   if (!file || !type || !hash) return res.status(400).json({ message: "Missing fields" });
+
+  // Q4: Verify Turnstile Token for member uploads (graceful if secret not set)
+  const turnstileToken = (req.headers["x-turnstile-token"] as string) || req.body?.turnstileToken;
+  const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
+  const turnstileCheck = await verifyTurnstileToken(turnstileToken, clientIp);
+  if (!turnstileCheck.ok) {
+    if (file.path) await fs.promises.unlink(file.path).catch(() => {});
+    return res.status(403).json({ message: turnstileCheck.reason || "Human verification failed" });
+  }
 
   // Find user document
   const user = User.findById(req.user.uid);
@@ -655,8 +678,8 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
     const downloadFilename = `${reportMeta.filename.replace(/\.[^/.]+$/, "")}-${type}-${targetLang === "en" ? "en" : "zh"}.pdf`;
 
     if (effectiveKey) {
-      const url = await getPresignedDownloadUrl(effectiveKey, downloadFilename, 300);
-      return res.json({ url, expiresIn: 300 });
+      const url = await getPresignedDownloadUrl(effectiveKey, downloadFilename, 60);
+      return res.json({ url, expiresIn: 60 });
     }
 
     // 2. Fallback: on-demand rendering via Lambda for the requested language
@@ -783,6 +806,7 @@ app.get("/api/getCredits", verifyToken, async (req: AuthRequest, res: Response) 
 // dispatching the work they pay for — a browser that simply never called such an
 // endpoint used to get its analysis for nothing.
 
+
 app.listen(3000, "0.0.0.0", () => {
   console.log("Backend running on http://localhost:3000");
   // Prices are listed in USD but charged in TWD; keep the conversion rate warm.
@@ -793,4 +817,6 @@ app.listen(3000, "0.0.0.0", () => {
   // Drop stored test accounts whose analysis was never run — a password is a
   // liability for exactly as long as it is kept.
   startCredentialSweep();
+  // Storage hygiene: purge expired guest APKs and reports from S3 on schedule
+  startStorageHygieneSchedule();
 });

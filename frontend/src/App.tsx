@@ -89,6 +89,15 @@ function App() {
   // the history list and the credit balance both key off it.
   const refreshAccount = () => setRefresh((prev) => prev + 1);
 
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+    } finally {
+      setAuthMode("auth");
+      setView("main");
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-100 via-background to-indigo-50 dark:from-[#070b16] dark:via-background dark:to-[#0c1226] p-4">
       <div className="w-full max-w-[760px] flex flex-col items-center gap-6 rounded-2xl border border-border bg-card p-7 shadow-2xl shadow-black/50">
@@ -136,7 +145,7 @@ function App() {
                 <Button variant="outline" onClick={() => setView("buy-credits")}>
                   Buy Credits
                 </Button>
-                <Button onClick={() => auth.signOut()}>
+                <Button onClick={handleLogout}>
                   Logout
                 </Button>
               </div>
@@ -156,10 +165,10 @@ function App() {
           <p className="mt-1">
             SUPREMA TECHNOLOGIES LTD ·{" "}
             <a
-              href="mailto:suprematechnologiesltd@gmail.com"
+              href="mailto:suprematechnologiesltd@solitesterror.com"
               className="hover:underline"
             >
-              suprematechnologiesltd@gmail.com
+              suprematechnologiesltd@solitesterror.com
             </a>
           </p>
         </footer>

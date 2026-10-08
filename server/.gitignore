@@ -1,5 +1,7 @@
 serviceAccountKey.json
 node_modules/
 *swp
-tests/
 data/
+tests/*
+!tests/*.test.ts
+!tests/*.test.js

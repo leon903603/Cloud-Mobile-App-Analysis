@@ -63,6 +63,10 @@ export const GuestJob = {
     return findByTokenStmt.get(token) as GuestJobRow | undefined;
   },
 
+  findActiveJobs(): GuestJobRow[] {
+    return db.prepare("SELECT * FROM guest_jobs WHERE status != 'expired'").all() as GuestJobRow[];
+  },
+
   update(jobId: string, patch: Partial<GuestJobRow>): void {
     const keys = Object.keys(patch) as (keyof typeof patch)[];
     if (keys.length === 0) return;

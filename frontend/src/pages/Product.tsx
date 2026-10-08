@@ -14,7 +14,7 @@ import PackedApkNotice from "../components/PackedApkNotice";
 import ThemeToggle from "../components/ThemeToggle";
 
 const COMPANY = "SUPREMA TECHNOLOGIES LTD";
-const CONTACT_EMAIL = "suprematechnologiesltd@gmail.com";
+const CONTACT_EMAIL = "suprematechnologiesltd@solitesterror.com";
 
 const capabilities = [
   {

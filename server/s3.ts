@@ -8,6 +8,9 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectVersionsCommand,
+  PutBucketVersioningCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Upload } from "@aws-sdk/lib-storage";
@@ -176,6 +179,96 @@ export async function deleteObject(key: string): Promise<void> {
       await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     } catch (err: any) {
       console.warn(`[s3] Cloud S3 DeleteObject failed for ${key}:`, err?.message ?? err);
+    }
+  }
+}
+
+/**
+ * Q5/Item 9: Enable AWS S3 Bucket Versioning to guard against ransomware overwrites
+ * and accidental deletions.
+ */
+export async function enableBucketVersioning(): Promise<boolean> {
+  if (!REGION || !bucket) {
+    console.warn("[s3] Cannot enable versioning: AWS_REGION or S3_BUCKET not configured");
+    return false;
+  }
+  try {
+    await client.send(
+      new PutBucketVersioningCommand({
+        Bucket: bucket,
+        VersioningConfiguration: {
+          Status: "Enabled",
+        },
+      })
+    );
+    console.log(`[s3] Successfully enabled versioning on bucket: ${bucket}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[s3] Failed to enable versioning on bucket ${bucket}:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * Q5/Item 9: Thoroughly purge an object and all its historical versions and delete markers.
+ * When S3 Versioning is enabled, standard DeleteObject only leaves a Delete Marker.
+ * This function guarantees true physical erasure and zero zombie storage costs.
+ */
+export async function purgeObjectAllVersions(key: string): Promise<void> {
+  if (!key || typeof key !== "string" || !key.trim()) return;
+
+  // 1. Clean up local fallback file if present
+  const localFile = localFilePath(key);
+  try {
+    if (fs.existsSync(localFile) && fs.statSync(localFile).isFile()) {
+      await fs.promises.unlink(localFile).catch(() => {});
+    }
+  } catch {}
+
+  // 2. Clean up all S3 versions and delete markers in cloud
+  if (REGION && bucket) {
+    try {
+      const versionsRes = await client.send(
+        new ListObjectVersionsCommand({
+          Bucket: bucket,
+          Prefix: key,
+        })
+      );
+
+      const toDelete: { Key: string; VersionId?: string }[] = [];
+
+      // Match exact key for versions
+      for (const v of versionsRes.Versions || []) {
+        if (v.Key === key && v.VersionId) {
+          toDelete.push({ Key: key, VersionId: v.VersionId });
+        }
+      }
+
+      // Match exact key for delete markers
+      for (const dm of versionsRes.DeleteMarkers || []) {
+        if (dm.Key === key && dm.VersionId) {
+          toDelete.push({ Key: key, VersionId: dm.VersionId });
+        }
+      }
+
+      if (toDelete.length > 0) {
+        await client.send(
+          new DeleteObjectsCommand({
+            Bucket: bucket,
+            Delete: {
+              Objects: toDelete,
+              Quiet: true,
+            },
+          })
+        );
+        console.log(`[s3] Purged ${toDelete.length} version(s)/marker(s) for ${key}`);
+      } else {
+        // Fallback standard delete if no version records returned
+        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn(`[s3] purgeObjectAllVersions failed for ${key} (${err?.message ?? err}), falling back to standard delete.`);
+      await deleteObject(key).catch(() => {});
     }
   }
 }
