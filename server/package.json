@@ -37,7 +37,7 @@
     "start": "node dist/index.js",
     "credit-audit": "tsx credit_audit_cli.ts",
     "test": "tsx tests/storageHygiene.test.ts",
-    "test:hygiene-e2e": "tsx tests/verify_task02_e2e.ts",
+    "test:hygiene-e2e": "tsx tests/verify_task02_e2e.test.ts",
     "test:credit-audit": "npm run build && node tests/credit_audit.test.js && node tests/credit_audit_writes.test.js && node tests/credit_audit_gaps.test.js"
   },
   "allowScripts": {
