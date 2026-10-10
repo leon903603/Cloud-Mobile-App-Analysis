@@ -289,7 +289,7 @@ router.post("/guest-checkout", async (req, res) => {
       GuestJob.update(jobId, {
         isPaid: 1,
         downloadToken,
-        downloadsRemaining: 3,
+        downloadsRemaining: 5,
         paidAt: new Date().toISOString(),
       });
       console.log(`[Dev Simulation] Auto-unlocked guest report ${jobId} with token ${downloadToken.slice(0, 8)}...`);
@@ -392,7 +392,7 @@ router.post("/notify", async (req, res) => {
       GuestJob.update(order.jobId, {
         isPaid: 1,
         downloadToken,
-        downloadsRemaining: 3,
+        downloadsRemaining: 5,
         paidAt: new Date().toISOString(),
       });
       console.log(`NewebPay: unlocked guest report ${order.jobId} (${orderNo})`);

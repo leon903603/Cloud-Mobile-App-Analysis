@@ -492,9 +492,15 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                     {/* Display file hash */}
                     <p>Hash: {upload.hash}</p>
 
-                    {/* Why an APK's static report can come back thin */}
-                    {upload.filename.toLowerCase().endsWith(".apk") &&
-                      upload.analysisType === "static" && <PackedApkNotice />}
+                    {/* Weekly System Reset Notice (ADR-0007) */}
+                    {upload.status === "done" && (
+                      <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                        <p className="leading-relaxed">
+                          <span className="font-semibold text-amber-300">⚠️ Weekly System Reset Notice:</span> To maintain cloud security, all report files and binaries are securely wiped every Sunday at 00:00 UTC. Please download your PDF report promptly (up to 5 downloads allowed).
+                        </p>
+                      </div>
+                    )}
 
                     {/* Who the dynamic run signs in as, while it still can be changed */}
                     {upload.analysisType === "dynamic" &&

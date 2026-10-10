@@ -97,3 +97,8 @@ if (!fileMetaColumns.some((c) => c.name === "creditSpent")) {
     UPDATE file_meta SET creditSpent = 1;
   `);
 }
+if (!fileMetaColumns.some((c) => c.name === "downloadsRemaining")) {
+  db.exec(`
+    ALTER TABLE file_meta ADD COLUMN downloadsRemaining INTEGER NOT NULL DEFAULT 5;
+  `);
+}

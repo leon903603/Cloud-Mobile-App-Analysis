@@ -476,9 +476,16 @@ router.get(
         return;
       }
 
-      // Verify authorization secret if job has one
+      // Verify authorization secret
       const clientSecret = (req.headers["x-guest-secret"] as string) || (req.query.secret as string);
-      if (job.secretKey && (!clientSecret || job.secretKey !== clientSecret)) {
+      if (!job.secretKey || !clientSecret) {
+        res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
+        return;
+      }
+
+      const expectedBuf = Buffer.from(job.secretKey, "utf8");
+      const clientBuf = Buffer.from(clientSecret, "utf8");
+      if (expectedBuf.length !== clientBuf.length || !crypto.timingSafeEqual(expectedBuf, clientBuf)) {
         res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
         return;
       }
@@ -493,8 +500,9 @@ router.get(
         return;
       }
 
-      if (!job.isPaid && job.downloadToken !== req.params.token) {
-        res.status(403).json({ message: "Payment required to download this report." });
+      // Strict Payment Gate: Unconditionally reject unpaid download attempts
+      if (!job.isPaid) {
+        res.status(402).json({ error: "payment_required", message: "Payment required to download this report." });
         return;
       }
 

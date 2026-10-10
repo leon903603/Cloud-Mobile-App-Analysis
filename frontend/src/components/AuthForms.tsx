@@ -56,8 +56,8 @@ const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
     setLoading(true);
 
     try {
-      if (turnstileToken) {
-        // Q4-A: Verify Turnstile Token with backend before proceeding
+      if (hasTurnstileKey || turnstileToken) {
+        // Enforce Server Turnstile check before interacting with Firebase
         const verifyRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/verify-turnstile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -210,7 +210,7 @@ const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Continue as guest</p>
               <p className="text-xs text-muted-foreground">
-                Upload once, pay per report. Files auto-delete after 7 days.
+                Upload once, pay per report. Files auto-delete after 24h (unpaid) or at Sunday reset.
               </p>
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />

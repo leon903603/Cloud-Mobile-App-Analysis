@@ -169,6 +169,69 @@ app.post("/api/auth/verify-turnstile", async (req: Request, res: Response) => {
   return res.json({ ok: true });
 });
 
+// ADR-0006: Server-Enforced Turnstile Guarded Authentication
+app.post("/api/auth/login", async (req: Request, res: Response) => {
+  const { email, turnstileToken } = req.body ?? {};
+  if (!email) {
+    return res.status(400).json({ error: "Email is required." });
+  }
+
+  const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
+  const result = await verifyTurnstileToken(turnstileToken, clientIp);
+  if (!result.ok) {
+    const status = result.code === "missing_token" ? 400 : 403;
+    return res.status(status).json({ error: result.reason || "Human verification failed." });
+  }
+
+  try {
+    const userRecord = await getAuth().getUserByEmail(email);
+    const customToken = await getAuth().createCustomToken(userRecord.uid);
+    return res.json({ ok: true, customToken, uid: userRecord.uid });
+  } catch (err: any) {
+    console.error("[Auth Login Error]:", err?.message);
+    return res.status(401).json({ error: "Invalid email or user not found." });
+  }
+});
+
+app.post("/api/auth/register", async (req: Request, res: Response) => {
+  const { email, password, turnstileToken } = req.body ?? {};
+  if (!email || !password || password.length < 6) {
+    return res.status(400).json({ error: "Valid email and password (min 6 chars) are required." });
+  }
+
+  const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
+  const result = await verifyTurnstileToken(turnstileToken, clientIp);
+  if (!result.ok) {
+    const status = result.code === "missing_token" ? 400 : 403;
+    return res.status(status).json({ error: result.reason || "Human verification failed." });
+  }
+
+  try {
+    const userRecord = await getAuth().createUser({
+      email,
+      password,
+    });
+
+    // Grant default signup credits if applicable
+    if (SIGNUP_CREDITS > 0) {
+      await db.collection("users").doc(userRecord.uid).set(
+        { credits: SIGNUP_CREDITS },
+        { merge: true }
+      );
+    }
+
+    User.create(userRecord.uid, email);
+    const customToken = await getAuth().createCustomToken(userRecord.uid);
+    return res.json({ ok: true, customToken, uid: userRecord.uid });
+  } catch (err: any) {
+    console.error("[Auth Register Error]:", err?.message);
+    const message = err?.code === "auth/email-already-exists"
+      ? "An account with this email already exists."
+      : "Could not create account.";
+    return res.status(400).json({ error: message });
+  }
+});
+
 // Multer buffers the incoming upload to a local temp file; we then stream it to S3
 // and delete the temp file. S3 is the durable store — no local uploads/reports dirs.
 const upload = multer({
@@ -680,6 +743,11 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
     const downloadFilename = `${reportMeta.filename.replace(/\.[^/.]+$/, "")}-${type}-${targetLang === "en" ? "en" : "zh"}.pdf`;
 
     if (effectiveKey) {
+      const decremented = FileMeta.decrementDownloadsRemaining(reportMeta.id);
+      if (!decremented) {
+        return res.status(403).json({ error: "Download limit reached for this report (max 5 downloads)." });
+      }
+
       const url = await getPresignedDownloadUrl(effectiveKey, downloadFilename, 60);
       return res.json({ url, expiresIn: 60 });
     }
@@ -695,6 +763,11 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
 
     if (!result.ok) {
       throw new Error(`PDF generation failed: ${result.error}`);
+    }
+
+    const decremented = FileMeta.decrementDownloadsRemaining(reportMeta.id);
+    if (!decremented) {
+      return res.status(403).json({ error: "Download limit reached for this report (max 5 downloads)." });
     }
 
     res.json({ url: result.url, expiresIn: result.expires_in });

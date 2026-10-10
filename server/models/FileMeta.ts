@@ -15,6 +15,7 @@ export interface FileMetaRow {
   creditSpent: number;
   taskId: string | null;
   uploadTime: string; // ISO 8601
+  downloadsRemaining: number;
 }
 
 type Filter = Partial<Pick<FileMetaRow, "user" | "hash" | "analysisType">>;
@@ -37,6 +38,9 @@ const claimStmt = db.prepare(
 );
 const releaseStmt = db.prepare("UPDATE file_meta SET status = 'pending' WHERE id = ?");
 const markCreditSpentStmt = db.prepare("UPDATE file_meta SET creditSpent = 1 WHERE id = ?");
+const decrementDownloadsRemainingStmt = db.prepare(
+  "UPDATE file_meta SET downloadsRemaining = downloadsRemaining - 1 WHERE id = ? AND downloadsRemaining > 0"
+);
 
 export const FileMeta = {
   create(data: {
@@ -87,6 +91,11 @@ export const FileMeta = {
 
   markCreditSpent(id: number): void {
     markCreditSpentStmt.run(id);
+  },
+
+  decrementDownloadsRemaining(id: number): boolean {
+    const info = decrementDownloadsRemainingStmt.run(id);
+    return info.changes === 1;
   },
 
   update(id: number, patch: Partial<Pick<FileMetaRow, "status" | "taskId">>): void {

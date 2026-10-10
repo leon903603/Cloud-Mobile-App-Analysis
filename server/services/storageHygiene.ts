@@ -73,15 +73,77 @@ export async function purgeExpiredGuestJobs(
 }
 
 /**
- * Starts the hourly recurring storage hygiene background worker.
+ * ADR-0007: Sunday Epoch System Reset & Transient Storage Purge.
+ * Purges all transient guest jobs and member files created prior to the Sunday reset cutoff,
+ * deleting S3 objects across all versions and cleaning database records.
+ */
+export async function purgeSundayEpochReset(
+  cutoffMs: number = Date.now()
+): Promise<{ guestPurged: number; memberFilesPurged: number }> {
+  let guestPurged = 0;
+  let memberFilesPurged = 0;
+
+  // 1. Purge all guest jobs created prior to cutoff
+  const allGuestJobs = db.prepare("SELECT * FROM guest_jobs WHERE status != 'expired'").all() as GuestJobRow[];
+  for (const job of allGuestJobs) {
+    const jobTime = job.createdAt ? new Date(job.createdAt).getTime() : 0;
+    if (jobTime <= cutoffMs) {
+      const keys = getAssociatedStorageKeys(job);
+      for (const key of keys) {
+        await purgeObjectAllVersions(key).catch((err) => {
+          console.warn(`[Sunday Reset] Warning deleting key ${key}:`, err?.message ?? err);
+        });
+      }
+      db.transaction(() => {
+        GuestJob.update(job.jobId, {
+          status: "expired",
+          uploadPath: null,
+          reportPath: null,
+        });
+      })();
+      guestPurged++;
+    }
+  }
+
+  // 2. Purge member file_meta records created prior to cutoff
+  const cutoffIso = new Date(cutoffMs).toISOString();
+  const oldMemberFiles = db.prepare("SELECT * FROM file_meta WHERE uploadTime <= ?").all(cutoffIso) as { id: number; filePath: string; reportPath: string }[];
+  for (const file of oldMemberFiles) {
+    if (file.filePath) {
+      await purgeObjectAllVersions(file.filePath).catch(() => {});
+    }
+    if (file.reportPath) {
+      await purgeObjectAllVersions(file.reportPath).catch(() => {});
+    }
+    db.prepare("DELETE FROM file_meta WHERE id = ?").run(file.id);
+    memberFilesPurged++;
+  }
+
+  return { guestPurged, memberFilesPurged };
+}
+
+/**
+ * Starts the recurring storage hygiene and Sunday reset background worker.
  */
 export function startStorageHygieneSchedule(): { initialTimer: NodeJS.Timeout; intervalTimer: NodeJS.Timeout } {
+  let lastSundayResetDate = "";
+
   const runCleanup = async () => {
     try {
       console.log("[Storage Hygiene] Scanning for expired guest jobs...");
       const result = await purgeExpiredGuestJobs();
       if (result.purged > 0) {
         console.log(`[Storage Hygiene] Successfully purged ${result.purged} expired guest job(s) from S3 & DB.`);
+      }
+
+      // Check if current time is Sunday (UTC Day 0) and hasn't run today
+      const now = new Date();
+      const todayDateStr = now.toISOString().slice(0, 10);
+      if (now.getUTCDay() === 0 && lastSundayResetDate !== todayDateStr) {
+        console.log(`[Sunday Reset] Initiating scheduled Sunday Epoch System Reset for ${todayDateStr}...`);
+        const resetResult = await purgeSundayEpochReset(Date.now());
+        lastSundayResetDate = todayDateStr;
+        console.log(`[Sunday Reset] Completed: ${resetResult.guestPurged} guest jobs and ${resetResult.memberFilesPurged} member files purged.`);
       }
     } catch (err) {
       console.error("[Storage Hygiene] Scheduled cleanup error:", err);

@@ -75,9 +75,11 @@ export function isJobExpiredClient(
   job: Pick<StoredGuestJob, "createdAt" | "uploadTime" | "isPaid">,
   nowMs = Date.now()
 ): boolean {
-  const createdAt = job.createdAt || job.uploadTime || new Date().toISOString();
-  const jobTime = new Date(createdAt).getTime();
-  if (isNaN(jobTime) || jobTime <= 0) return false;
+  const rawTime = job.createdAt || job.uploadTime;
+  if (!rawTime) return false;
+  const parsedMs = Date.parse(rawTime);
+  const jobTime = !isNaN(parsedMs) ? parsedMs : new Date(rawTime).getTime();
+  if (isNaN(jobTime) || jobTime <= 0) return true; // Corrupted or unparseable timestamps should be pruned
   const ttl = Boolean(job.isPaid) ? PAID_TTL_MS : UNPAID_TTL_MS;
   return nowMs - jobTime > ttl;
 }
@@ -105,7 +107,7 @@ function loadStoredJobs(): StoredGuestJob[] {
               status: item.status || "pending",
               createdAt,
               uploadTime: item.uploadTime || createdAt,
-              isPaid,
+              isPaid: Boolean(item.isPaid),
               downloadToken: item.downloadToken,
               priceUsd: item.priceUsd,
               priceTwd: item.priceTwd,
@@ -954,6 +956,9 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                 Recent Tasks ({jobsList.length}/3)
               </span>
             </div>
+            <span className="text-[10px] text-muted-foreground">
+              Max 3 preserved · Oldest auto-evicted on 4th upload
+            </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {jobsList.map((item) => {
@@ -984,6 +989,9 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
               );
             })}
           </div>
+          <p className="text-[11px] text-muted-foreground/90 pt-1 leading-relaxed border-t border-border/40">
+            ℹ️ Up to 3 apps preserved. Exceeding 3 will evict the oldest job (please download promptly). Unpaid files are retained for 24 hours; unlocked reports are retained until Sunday reset (up to 5 downloads).
+          </p>
         </div>
       )}
 
