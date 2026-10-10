@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { getIdToken } from "../firebase/auth";
 import PackedApkNotice from "./PackedApkNotice";
+import { AutofillBlocker } from "./AutofillBlocker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -596,15 +597,12 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                     </p>
                   </div>
                 </div>
-                <div style={{ position: "absolute", top: -9999, left: -9999, width: 1, height: 1, overflow: "hidden" }} aria-hidden="true">
-                  <input type="text" name="chrome_dummy_username_member" tabIndex={-1} readOnly autoComplete="username" />
-                  <input type="password" name="chrome_dummy_password_member" tabIndex={-1} readOnly autoComplete="current-password" />
-                </div>
+                <AutofillBlocker />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
                     type="text"
                     name="member_sandbox_user_field"
-                    autoComplete="off"
+                    autoComplete="new-password"
                     placeholder="Username or email"
                     value={appUsername}
                     onChange={(e) => setAppUsername(e.target.value)}
@@ -616,7 +614,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                   <Input
                     type="text"
                     name="member_sandbox_secret_field"
-                    autoComplete="off"
+                    autoComplete="new-password"
                     placeholder="Password"
                     style={{ WebkitTextSecurity: "disc" } as any}
                     value={appPassword}

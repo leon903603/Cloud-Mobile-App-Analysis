@@ -36,8 +36,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "credit-audit": "tsx credit_audit_cli.ts",
-    "test": "tsx tests/storageHygiene.test.ts",
+    "test": "tsx tests/storageHygiene.test.ts && tsx tests/turnstile.test.ts && tsx tests/atomic_downloads.test.ts && tsx --test tests/download_token_ttl.test.ts",
+    "test:unit": "tsx tests/storageHygiene.test.ts && tsx tests/turnstile.test.ts && tsx tests/atomic_downloads.test.ts && tsx --test tests/download_token_ttl.test.ts",
     "test:hygiene-e2e": "tsx tests/verify_task02_e2e.test.ts",
+    "test:s3-live": "tsx tests/verify_s3_live.test.ts",
+    "test:s3-lifecycle": "tsx tests/verify_s3_lifecycle.test.ts",
     "test:credit-audit": "npm run build && node tests/credit_audit.test.js && node tests/credit_audit_writes.test.js && node tests/credit_audit_gaps.test.js"
   },
   "allowScripts": {

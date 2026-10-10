@@ -26,6 +26,7 @@ import {
   PlusCircle,
 } from "lucide-react";
 import PackedApkNotice from "./PackedApkNotice";
+import { AutofillBlocker } from "./AutofillBlocker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,17 @@ const COOLDOWN_KEY = "cmaa_guest_cooldown_until";
 const UNPAID_TTL_MS = 24 * 60 * 60 * 1000;
 const PAID_TTL_MS = 48 * 60 * 60 * 1000;
 
+export function isJobExpiredClient(
+  job: Pick<StoredGuestJob, "createdAt" | "uploadTime" | "isPaid">,
+  nowMs = Date.now()
+): boolean {
+  const createdAt = job.createdAt || job.uploadTime || new Date().toISOString();
+  const jobTime = new Date(createdAt).getTime();
+  if (isNaN(jobTime) || jobTime <= 0) return false;
+  const ttl = Boolean(job.isPaid) ? PAID_TTL_MS : UNPAID_TTL_MS;
+  return nowMs - jobTime > ttl;
+}
+
 function loadStoredJobs(): StoredGuestJob[] {
   try {
     const raw = localStorage.getItem(JOBS_STORAGE_KEY);
@@ -81,14 +93,10 @@ function loadStoredJobs(): StoredGuestJob[] {
         const expiredNames: string[] = [];
 
         for (const item of parsed.slice(0, 3)) {
-          const createdAt = item.createdAt || item.uploadTime || new Date().toISOString();
-          const jobTime = new Date(createdAt).getTime();
-          const isPaid = Boolean(item.isPaid);
-          const ttl = isPaid ? PAID_TTL_MS : UNPAID_TTL_MS;
-
-          if (jobTime > 0 && now - jobTime > ttl) {
+          if (isJobExpiredClient(item, now)) {
             expiredNames.push(item.filename || "Previous Analysis");
           } else {
+            const createdAt = item.createdAt || item.uploadTime || new Date().toISOString();
             activeJobs.push({
               jobId: item.jobId || "",
               secretKey: item.secretKey || "",
@@ -336,6 +344,27 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
   const activeJob: StoredGuestJob | null =
     jobsList.find((j) => j.jobId === activeJobId) || jobsList[0] || null;
+
+  const handleSelectJob = (targetJob: StoredGuestJob) => {
+    if (isJobExpiredClient(targetJob)) {
+      alert(`${targetJob.filename || "Previous Analysis"} 已過期並由系統銷毀。`);
+      const remaining = jobsList.filter((j) => j.jobId !== targetJob.jobId);
+      setJobsList(remaining);
+      saveStoredJobs(remaining);
+      if (activeJobId === targetJob.jobId) {
+        if (remaining.length > 0) {
+          setActiveJobId(remaining[0].jobId);
+          setStep("tracking");
+        } else {
+          setActiveJobId(null);
+          setStep("idle");
+        }
+      }
+      return;
+    }
+    setActiveJobId(targetJob.jobId);
+    setStep("tracking");
+  };
 
   // Clean up all polling timers on unmount
   useEffect(() => () => {
@@ -933,10 +962,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                 <button
                   key={item.jobId}
                   type="button"
-                  onClick={() => {
-                    setActiveJobId(item.jobId);
-                    setStep("tracking");
-                  }}
+                  onClick={() => handleSelectJob(item)}
                   className={`flex items-center justify-between gap-2 rounded-lg border p-2.5 text-left transition-all ${
                     isSelected
                       ? "border-primary bg-primary/10 ring-1 ring-primary/40 shadow-sm"
@@ -1042,11 +1068,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
                 <div className="space-y-2">
                   <p className="font-medium text-foreground">Test Credentials (Optional, for simulated login)</p>
-                  {/* Hidden off-screen dummy fields to absorb aggressive browser autofill algorithms */}
-                  <div style={{ position: "absolute", top: -9999, left: -9999, width: 1, height: 1, overflow: "hidden" }} aria-hidden="true">
-                    <input type="text" name="chrome_dummy_username" tabIndex={-1} readOnly autoComplete="username" />
-                    <input type="password" name="chrome_dummy_password" tabIndex={-1} readOnly autoComplete="current-password" />
-                  </div>
+                  <AutofillBlocker />
                   <div className="grid grid-cols-2 gap-2">
                     <div className="relative">
                       <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -1057,7 +1079,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                         className="h-8 pl-8 text-xs bg-background"
                         value={appUsername}
                         onChange={(e) => setAppUsername(e.target.value)}
-                        autoComplete="off"
+                        autoComplete="new-password"
                         data-lpignore="true"
                         data-1p-ignore="true"
                         data-bwignore="true"
@@ -1074,7 +1096,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                         style={{ WebkitTextSecurity: "disc" } as any}
                         value={appPassword}
                         onChange={(e) => setAppPassword(e.target.value)}
-                        autoComplete="off"
+                        autoComplete="new-password"
                         data-lpignore="true"
                         data-1p-ignore="true"
                         data-bwignore="true"

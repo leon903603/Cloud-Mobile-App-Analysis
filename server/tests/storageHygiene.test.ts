@@ -2,8 +2,6 @@ import assert from "assert";
 import {
   isJobExpired,
   getAssociatedStorageKeys,
-  UNPAID_TTL_MS,
-  PAID_TTL_MS,
 } from "../services/storageHygiene";
 
 console.log("==================================================");
@@ -12,10 +10,15 @@ console.log("==================================================");
 
 const BASE_NOW = 1700000000000;
 
+// Anti-Tautological Decoupling: Use independent domain literals rather than
+// importing the production constants being tested.
+const INDEPENDENT_UNPAID_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const INDEPENDENT_PAID_TTL_MS = 48 * 60 * 60 * 1000;   // 48 hours
+
 // Test 1: Unpaid job boundary checks (24h TTL)
 {
-  const justBeforeTtl = new Date(BASE_NOW - UNPAID_TTL_MS + 60 * 1000).toISOString(); // 23h 59m ago
-  const justAfterTtl = new Date(BASE_NOW - UNPAID_TTL_MS - 60 * 1000).toISOString();  // 24h 01m ago
+  const justBeforeTtl = new Date(BASE_NOW - INDEPENDENT_UNPAID_TTL_MS + 60 * 1000).toISOString(); // 23h 59m ago
+  const justAfterTtl = new Date(BASE_NOW - INDEPENDENT_UNPAID_TTL_MS - 60 * 1000).toISOString();  // 24h 01m ago
 
   assert.strictEqual(
     isJobExpired({ createdAt: justBeforeTtl, isPaid: 0 }, BASE_NOW),
@@ -33,8 +36,8 @@ const BASE_NOW = 1700000000000;
 
 // Test 2: Paid job boundary checks (48h TTL)
 {
-  const justBeforeTtl = new Date(BASE_NOW - PAID_TTL_MS + 60 * 1000).toISOString(); // 47h 59m ago
-  const justAfterTtl = new Date(BASE_NOW - PAID_TTL_MS - 60 * 1000).toISOString();  // 48h 01m ago
+  const justBeforeTtl = new Date(BASE_NOW - INDEPENDENT_PAID_TTL_MS + 60 * 1000).toISOString(); // 47h 59m ago
+  const justAfterTtl = new Date(BASE_NOW - INDEPENDENT_PAID_TTL_MS - 60 * 1000).toISOString();  // 48h 01m ago
 
   assert.strictEqual(
     isJobExpired({ createdAt: justBeforeTtl, isPaid: 1 }, BASE_NOW),

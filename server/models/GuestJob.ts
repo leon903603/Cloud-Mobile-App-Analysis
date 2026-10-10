@@ -74,6 +74,15 @@ export const GuestJob = {
       .run(...keys.map((k) => patch[k]), jobId);
   },
 
+  decrementDownloadsRemaining(jobId: string): boolean {
+    const res = db
+      .prepare(
+        "UPDATE guest_jobs SET downloadsRemaining = downloadsRemaining - 1 WHERE jobId = ? AND downloadsRemaining > 0"
+      )
+      .run(jobId);
+    return res.changes > 0;
+  },
+
   delete(jobId: string): void {
     db.prepare("DELETE FROM guest_jobs WHERE jobId = ?").run(jobId);
   },

@@ -163,7 +163,8 @@ app.post("/api/auth/verify-turnstile", async (req: Request, res: Response) => {
   const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
   const result = await verifyTurnstileToken(token, clientIp);
   if (!result.ok) {
-    return res.status(403).json({ ok: false, error: result.reason || "Human verification failed." });
+    const status = result.code === "missing_token" ? 400 : 403;
+    return res.status(status).json({ ok: false, error: result.reason || "Human verification failed." });
   }
   return res.json({ ok: true });
 });
@@ -261,7 +262,8 @@ app.post("/upload", verifyToken, requireCredits, upload.single("file"), async (r
   const turnstileCheck = await verifyTurnstileToken(turnstileToken, clientIp);
   if (!turnstileCheck.ok) {
     if (file.path) await fs.promises.unlink(file.path).catch(() => {});
-    return res.status(403).json({ message: turnstileCheck.reason || "Human verification failed" });
+    const status = turnstileCheck.code === "missing_token" ? 400 : 403;
+    return res.status(status).json({ message: turnstileCheck.reason || "Human verification failed" });
   }
 
   // Find user document

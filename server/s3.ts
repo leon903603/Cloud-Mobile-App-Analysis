@@ -225,43 +225,62 @@ export async function purgeObjectAllVersions(key: string): Promise<void> {
     }
   } catch {}
 
-  // 2. Clean up all S3 versions and delete markers in cloud
+  // 2. Clean up all S3 versions and delete markers in cloud (with pagination support)
   if (REGION && bucket) {
     try {
-      const versionsRes = await client.send(
-        new ListObjectVersionsCommand({
-          Bucket: bucket,
-          Prefix: key,
-        })
-      );
+      let keyMarker: string | undefined = undefined;
+      let versionIdMarker: string | undefined = undefined;
+      let totalPurged = 0;
 
-      const toDelete: { Key: string; VersionId?: string }[] = [];
-
-      // Match exact key for versions
-      for (const v of versionsRes.Versions || []) {
-        if (v.Key === key && v.VersionId) {
-          toDelete.push({ Key: key, VersionId: v.VersionId });
-        }
-      }
-
-      // Match exact key for delete markers
-      for (const dm of versionsRes.DeleteMarkers || []) {
-        if (dm.Key === key && dm.VersionId) {
-          toDelete.push({ Key: key, VersionId: dm.VersionId });
-        }
-      }
-
-      if (toDelete.length > 0) {
-        await client.send(
-          new DeleteObjectsCommand({
+      do {
+        const versionsRes = await client.send(
+          new ListObjectVersionsCommand({
             Bucket: bucket,
-            Delete: {
-              Objects: toDelete,
-              Quiet: true,
-            },
+            Prefix: key,
+            KeyMarker: keyMarker,
+            VersionIdMarker: versionIdMarker,
           })
         );
-        console.log(`[s3] Purged ${toDelete.length} version(s)/marker(s) for ${key}`);
+
+        const toDelete: { Key: string; VersionId?: string }[] = [];
+
+        // Match exact key for versions
+        for (const v of versionsRes.Versions || []) {
+          if (v.Key === key && v.VersionId) {
+            toDelete.push({ Key: key, VersionId: v.VersionId });
+          }
+        }
+
+        // Match exact key for delete markers
+        for (const dm of versionsRes.DeleteMarkers || []) {
+          if (dm.Key === key && dm.VersionId) {
+            toDelete.push({ Key: key, VersionId: dm.VersionId });
+          }
+        }
+
+        if (toDelete.length > 0) {
+          await client.send(
+            new DeleteObjectsCommand({
+              Bucket: bucket,
+              Delete: {
+                Objects: toDelete,
+                Quiet: true,
+              },
+            })
+          );
+          totalPurged += toDelete.length;
+        }
+
+        if (versionsRes.IsTruncated) {
+          keyMarker = versionsRes.NextKeyMarker;
+          versionIdMarker = versionsRes.NextVersionIdMarker;
+        } else {
+          break;
+        }
+      } while (keyMarker || versionIdMarker);
+
+      if (totalPurged > 0) {
+        console.log(`[s3] Purged ${totalPurged} version(s)/marker(s) for ${key}`);
       } else {
         // Fallback standard delete if no version records returned
         await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => {});
@@ -276,7 +295,7 @@ export async function purgeObjectAllVersions(key: string): Promise<void> {
 export async function getPresignedDownloadUrl(
   key: string,
   filename?: string,
-  expiresIn = 300 // 5 minutes default
+  expiresIn = 60 // 60 seconds default
 ): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: bucket,

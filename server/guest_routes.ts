@@ -7,8 +7,9 @@ import express, { Request, Response, Router } from "express";
 import multer, { FileFilterCallback, StorageEngine } from "multer";
 import rateLimit from "express-rate-limit";
 import { v4 as uuidv4 } from "uuid";
-import { putFile, getStream, deleteObject, objectExists } from "./s3";
+import { putFile, getStream, deleteObject, objectExists, getPresignedDownloadUrl, purgeObjectAllVersions } from "./s3";
 import { GuestJob, GuestJobRow, AnalysisType, FileType, JobStatus } from "./models/GuestJob";
+import { getAssociatedStorageKeys } from "./services/storageHygiene";
 import { dispatchGuestJob } from "./dispatch";
 import { renderReportPdf } from "./pdf";
 import { getTwdPerUsd } from "./fx";
@@ -115,7 +116,8 @@ router.post(
       const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
       const turnstileCheck = await verifyTurnstileToken(turnstileToken, clientIp);
       if (!turnstileCheck.ok) {
-        res.status(403).json({ error: "turnstile_failed", message: turnstileCheck.reason });
+        const status = turnstileCheck.code === "missing_token" ? 400 : 403;
+        res.status(status).json({ error: "turnstile_failed", message: turnstileCheck.reason });
         return;
       }
 
@@ -333,20 +335,11 @@ router.post(
         return;
       }
 
-      // Physical S3 file deletion
-      const filesToDelete = new Set<string>();
-      if (job.uploadPath) filesToDelete.add(job.uploadPath);
-      filesToDelete.add(`guest/uploads/${job.jobId}.apk`);
-      filesToDelete.add(`guest/uploads/${job.jobId}.ipa`);
-      if (job.reportPath) filesToDelete.add(job.reportPath);
-      filesToDelete.add(`guest/reports/${job.jobId}.pdf`);
-      filesToDelete.add(`guest/reports/${job.jobId}_zh.pdf`);
-      filesToDelete.add(`guest/reports/${job.jobId}_en.pdf`);
-      filesToDelete.add(`guest/reports/${job.jobId}.json`);
-
-      for (const key of filesToDelete) {
-        await deleteObject(key).catch((e) => {
-          console.warn(`[discard-job] Warning deleting S3 key ${key}:`, e);
+      // Physical S3 file version-aware purge
+      const keysToDelete = getAssociatedStorageKeys(job);
+      for (const key of keysToDelete) {
+        await purgeObjectAllVersions(key).catch((e) => {
+          console.warn(`[discard-job] Warning purging S3 key ${key}:`, e);
         });
       }
 
@@ -397,20 +390,11 @@ router.post(
         return;
       }
 
-      // Physical S3 deletion
-      const filesToDelete = new Set<string>();
-      if (job.uploadPath) filesToDelete.add(job.uploadPath);
-      filesToDelete.add(`guest/uploads/${job.jobId}.apk`);
-      filesToDelete.add(`guest/uploads/${job.jobId}.ipa`);
-      if (job.reportPath) filesToDelete.add(job.reportPath);
-      filesToDelete.add(`guest/reports/${job.jobId}.pdf`);
-      filesToDelete.add(`guest/reports/${job.jobId}_zh.pdf`);
-      filesToDelete.add(`guest/reports/${job.jobId}_en.pdf`);
-      filesToDelete.add(`guest/reports/${job.jobId}.json`);
-
-      for (const key of filesToDelete) {
-        await deleteObject(key).catch((e) => {
-          console.warn(`[cleanup-job] Warning deleting S3 key ${key}:`, e);
+      // Physical S3 file version-aware purge
+      const keysToDelete = getAssociatedStorageKeys(job);
+      for (const key of keysToDelete) {
+        await purgeObjectAllVersions(key).catch((e) => {
+          console.warn(`[cleanup-job] Warning purging S3 key ${key}:`, e);
         });
       }
 
@@ -456,19 +440,10 @@ router.post(
           continue;
         }
 
-        const filesToDelete = new Set<string>();
-        if (job.uploadPath) filesToDelete.add(job.uploadPath);
-        filesToDelete.add(`guest/uploads/${job.jobId}.apk`);
-        filesToDelete.add(`guest/uploads/${job.jobId}.ipa`);
-        if (job.reportPath) filesToDelete.add(job.reportPath);
-        filesToDelete.add(`guest/reports/${job.jobId}.pdf`);
-        filesToDelete.add(`guest/reports/${job.jobId}_zh.pdf`);
-        filesToDelete.add(`guest/reports/${job.jobId}_en.pdf`);
-        filesToDelete.add(`guest/reports/${job.jobId}.json`);
-
-        for (const key of filesToDelete) {
-          await deleteObject(key).catch((e) => {
-            console.warn(`[cleanup-old-jobs] Warning deleting S3 key ${key}:`, e);
+        const keysToDelete = getAssociatedStorageKeys(job);
+        for (const key of keysToDelete) {
+          await purgeObjectAllVersions(key).catch((e) => {
+            console.warn(`[cleanup-old-jobs] Warning purging S3 key ${key}:`, e);
           });
         }
 
@@ -562,26 +537,30 @@ router.get(
         targetKey = legacyPdfKey;
       }
 
-      // Fetch from S3 first so a missing object doesn't consume a download.
-      let stream;
-      try {
-        stream = await getStream(targetKey);
-      } catch (e) {
-        console.error("guest report fetch error:", e);
+      // Check if client expects JSON or direct redirect
+      const downloadFilename = `${(job.filename || "security-report").replace(/\.[^/.]+$/, "")}-${job.analysisType}-${reqLang === "en" ? "en" : "zh"}-report.pdf`;
+
+      // Check S3 object existence first so a missing object doesn't consume quota
+      const exists = await objectExists(targetKey);
+      if (!exists) {
         res.status(500).json({ message: "Report file missing." });
         return;
       }
 
-      GuestJob.update(job.jobId, { downloadsRemaining: job.downloadsRemaining - 1 });
+      const decremented = GuestJob.decrementDownloadsRemaining(job.jobId);
+      if (!decremented) {
+        res.status(403).json({ message: "Download limit reached." });
+        return;
+      }
 
-      const downloadFilename = `${(job.filename || "security-report").replace(/\.[^/.]+$/, "")}-${job.analysisType}-${reqLang === "en" ? "en" : "zh"}-report.pdf`;
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${downloadFilename}"`);
-      stream.on("error", (err) => {
-        console.error("guest report stream error:", err);
-        if (!res.headersSent) res.status(500).json({ message: "Report file missing." });
-      });
-      stream.pipe(res);
+      const presignedUrl = await getPresignedDownloadUrl(targetKey, downloadFilename, 60);
+
+      const acceptHeader = req.headers.accept || "";
+      if (req.query.json === "true" || acceptHeader.includes("application/json")) {
+        res.json({ url: presignedUrl, expiresIn: 60 });
+      } else {
+        res.redirect(302, presignedUrl);
+      }
     } catch (err) {
       console.error("report download error:", err);
       res.status(500).json({ message: "Internal server error." });

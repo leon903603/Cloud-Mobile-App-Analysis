@@ -1,5 +1,6 @@
 import { GuestJob, GuestJobRow } from "../models/GuestJob";
 import { purgeObjectAllVersions } from "../s3";
+import { db } from "../db";
 
 export const ONE_HOUR_MS = 60 * 60 * 1000;
 export const UNPAID_TTL_MS = 24 * 60 * 60 * 1000;
@@ -57,11 +58,13 @@ export async function purgeExpiredGuestJobs(
         });
       }
 
-      GuestJob.update(job.jobId, {
-        status: "expired",
-        uploadPath: null,
-        reportPath: null,
-      });
+      db.transaction(() => {
+        GuestJob.update(job.jobId, {
+          status: "expired",
+          uploadPath: null,
+          reportPath: null,
+        });
+      })();
       purgedCount++;
     }
   }
