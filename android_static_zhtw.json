@@ -254,17 +254,17 @@
         "mas": "",
         "mast": "5.2.5",
         "real_mstg": "MSTG-ARCH-12",
-        "owasp_mobile": "M8",
+        "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。\n\n本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少簽章完整性檢查。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
+        "desc": "App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。\n\n本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少簽章完整性檢查。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
     },
     "AS-lab027": {
         "title": "防止螢幕擷取的設定",
         "mas": "4.1.2.3.9",
         "mast": "5.2.3",
-        "real_mstg": "MSTG-STORAGE-7",
-        "owasp_mobile": "",
+        "real_mstg": "MASVS-PLATFORM-3",
+        "owasp_mobile": "M6",
         "level": "NOTICE",
         "cve": "",
         "desc": "App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。\n\n本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。\n\n限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
@@ -387,7 +387,7 @@
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 自動把資料交給裝置上其他 App，卻沒有告知或取得同意，使用者不知道資料被誰拿走。\n\n判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），往上追呼叫路徑也沒經過同意對話框或使用者開關，即不符合。分享選單、拍照等使用者自己觸發的不算；接收者不明或程式碼看不到的管道列為需人工確認。\n\n修正：不需要分享就設 android:exported=\"false\"、用 setPackage() 指定接收的 App，或改用 signature 等級的權限；需要分享就在分享前先取得使用者同意。\n\n限制：不判斷資料是否敏感；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
+        "desc": "App 自動把敏感資料交給裝置上其他 App，卻沒有告知或取得同意，使用者不知道資料被誰拿走。\n\n判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），且確定是敏感資料（extra 或欄位名稱含密碼、帳號、電話、定位、通訊錄等，或讀取了定位、通訊錄、裝置 ID 等 API），往上追呼叫路徑也沒經過同意對話框或分享開關，即不符合。開啟畫面、分享選單、拍照等使用者看得到的操作，送給系統的固定廣播（媒體掃描等），以及程式內比對呼叫者簽章的 provider 都不算。看不出是否為敏感資料、接收者不明、程式碼看不到或開關名稱看不出來的管道列為 Not evaluated，細節會列出原因。\n\n修正：不需要分享就設 android:exported=\"false\"、用 setPackage() 指定接收的 App，或改用 signature 等級的權限；需要分享就在分享前先取得使用者同意。\n\n限制：敏感資料只看名稱與 API，不追蹤資料流；分享開關只認名稱含 share、consent、privacy 等字的設定；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
     },
     "AS-lab040": {
         "title": "拒絕資料分享檢查",
@@ -397,7 +397,7 @@
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 自動把資料分享給其他 App，使用者卻無法拒絕。\n\n判定：AS-lab039 找到的自動分享管道中，呼叫路徑上沒有讀取使用者開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合。開關的值傳到其他地方才判斷、看不出效果的，列為需人工確認。分享選單可取消，不算。\n\n修正：在設定頁提供「允許分享資料」開關，分享前先讀取開關，關閉時不分享。\n\n限制：不確認讀到的就是分享開關，也不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
+        "desc": "App 自動把敏感資料分享給其他 App，使用者卻無法拒絕。\n\n判定：AS-lab039 找到的自動分享管道（確定是敏感資料）中，呼叫路徑上沒有讀取分享開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合；只有同意對話框、沒有可事後關閉的開關，使用者同意後無法撤回，也不符合。開關的值傳到其他地方才判斷、開關名稱看不出來，或看不出是否為敏感資料的，列為 Not evaluated。分享選單可取消，不算。\n\n修正：在設定頁提供「允許分享資料」開關，分享前先讀取開關，關閉時不分享。\n\n限制：分享開關只認名稱含 share、consent、privacy 等字的設定；不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
     },
     "AS-lab041": {
         "title": "發布說明（資料安全性聲明）檢查",
@@ -407,7 +407,7 @@
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 或其使用的 SDK 會取得敏感資料，但 Google Play「資料安全性」沒有聲明，使用者下載前不知道。\n\n判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面，或相機可能只用來掃碼、SDK 已在 Manifest 關閉收集的，列為需人工確認。\n\n修正：資料會傳出就在 Google Play Console「資料安全性」補聲明該類別；不再使用就移除權限、相關程式碼或 SDK。\n\n限制：只比對資料安全性的資料類別，權限用途說明及未上架 App 的調查表需人工確認；引用到相關 API 就算讀取；沒有追蹤資料流，App 有發網路請求就推定資料會傳出；SDK 只認內建清單。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
+        "desc": "App 或其使用的 SDK 會取得敏感資料，但 Google Play「資料安全性」沒有聲明，使用者下載前不知道。\n\n判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面、相機可能只用來掃碼、SDK 已在 Manifest 關閉收集，或有 INTERNET 權限但 App 程式碼看不到網路請求的，列為 Not evaluated。\n\n修正：資料會傳出就在 Google Play Console「資料安全性」補聲明該類別；不再使用就移除權限、相關程式碼或 SDK。\n\n限制：只比對資料安全性的資料類別，權限用途說明及未上架 App 的調查表需人工確認；引用到相關 API 就算讀取；沒有追蹤資料流，App 有發網路請求就推定資料會傳出；SDK 只認內建清單。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
     },
     "AS-lab042": {
         "title": "加殼/動態載入程式碼偵測",
@@ -557,7 +557,7 @@
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少 root 偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
+        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
     },
     "AS-lab057": {
         "title": "讀取裝置/用戶敏感識別碼 (IMEI / IMSI / 門號)",
@@ -624,10 +624,10 @@
         "mas": "",
         "mast": "",
         "real_mstg": "",
-        "owasp_mobile": "",
+        "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未檢查安裝來源時，被重新打包的 App 可經由第三方市集或網站散布並正常執行，使用者難以分辨真偽。\n\n本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK；皆未發現即判定缺少安裝來源檢查。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
+        "desc": "App 未檢查安裝來源時，被重新打包的 App 可經由第三方市集或網站散布並正常執行，使用者難以分辨真偽。\n\n本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少安裝來源檢查。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
     },
     "AS-lab065": {
         "title": "WebView 進階配置檢查",
@@ -743,11 +743,11 @@
         "title": "Deep Link 安全檢查 — scheme / autoVerify / host",
         "mas": "4.1.2.3.12",
         "mast": "",
-        "real_mstg": "MASVS-PLATFORM-3",
-        "owasp_mobile": "M1",
+        "real_mstg": "MASVS-PLATFORM-1",
+        "owasp_mobile": "M8",
         "level": "WARNING",
         "cve": "CWE-939",
-        "desc": "Deep Link 是 App 對外曝露的入口之一。當 <activity> 含 action.VIEW + category.BROWSABLE + <data scheme=...> 的 intent-filter，外部 App、瀏覽器或惡意連結即可觸發此 Activity 並夾帶 URI 參數。\n\n本檢查只掃描 AndroidManifest 設定，回報下列三種風險：\n1. HIGH — scheme=\"http\"：明文傳輸，路徑與 query 易遭 MITM 竄改或竊取。\n2. MEDIUM — http/https scheme 未設定 android:autoVerify=\"true\"：未經 Digital Asset Links 驗證，其他 App 可以宣告相同 host，搶先攔截使用者的 deep link 流量（host hijack）。\n3. MEDIUM — 自訂 scheme（非 http/https）未設定 host：任何 App 都能註冊相同 scheme，且系統不會阻止重複，可能造成 scheme hijack 或選擇器衝突。\n\n本檢查不掃描 bytecode source→sink 流向，因此不涵蓋 Deep Link 參數未驗證即流入 WebView.loadUrl / Intent.parseUri / File / SQL 等情境，這部分由 lab_077 處理。\n\n參考：\n- https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw\n- https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/\n- https://developer.android.com/training/app-links/verify-android-applinks"
+        "desc": "風險：Deep Link 是 App 對外的入口，外部 App、瀏覽器或惡意連結都能帶著 URI 參數開啟它。設定不當時，其他 App 可攔截原本要交給本 App 的連結（例如登入、付款連結裡的參數），或連結在傳輸中被竄改。\n\n判定：只看 AndroidManifest。對外開放（沒有設 exported=\"false\"）的 activity / activity-alias，intent-filter 含 action.VIEW + category.BROWSABLE + scheme，符合任一項即不符合：(1) scheme 是 http，明文傳輸可被竄改（HIGH）；(2) http / https 沒設 android:autoVerify=\"true\"，其他 App 可宣告相同 host 攔截（MEDIUM）；(3) 自訂 scheme，無法做網域驗證，任何 App 都能註冊相同 scheme 攔截，有沒有 host 都一樣（MEDIUM）。mailto、tel、file、content、market 等多個 App 共用的系統 scheme 不算。\n\n修正：敏感流程改用 https App Links 並設 android:autoVerify=\"true\"，在網站放 assetlinks.json；不需要對外的 Activity 設 android:exported=\"false\"；不要在 Deep Link 參數放 token、密碼等敏感資料。\n\n限制：不判斷連結是否帶敏感資料、接收端有沒有驗證參數，需動態測試複驗；看不到 assetlinks.json 是否正確部署；參數流入 WebView、SQL 等危險操作由 AS-lab077 檢查。\n\n參考: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks"
     },
     "AS-lab077": {
         "title": "Deep Link Injection — sink method 檢查",
@@ -807,7 +807,7 @@
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。\n\n本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK；皆未發現即判定缺少模擬器偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+        "desc": "App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。\n\n本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少模擬器偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
     },
     "AS-lab083": {
         "title": "USB 偵錯模式偵測檢查",
@@ -817,6 +817,26 @@
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。\n\n本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK；皆未發現即判定缺少 USB 偵錯偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+        "desc": "App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。\n\n本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 USB 偵錯偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+    },
+    "AS-lab084": {
+        "title": "程式碼混淆檢查",
+        "mas": "4.1.5.5.6",
+        "mast": "",
+        "real_mstg": "MASVS-RESILIENCE-3",
+        "owasp_mobile": "M7",
+        "level": "WARNING",
+        "cve": "",
+        "desc": "App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。\n\n判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。\n\n修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。\n\n限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
+    },
+    "AS-lab085": {
+        "title": "交易資源使用聲明檢查",
+        "mas": "4.1.3.1.1",
+        "mast": "",
+        "real_mstg": "",
+        "owasp_mobile": "",
+        "level": "WARNING",
+        "cve": "",
+        "desc": "交易前沒有告知商品名稱、金額與付款方式，使用者可能在不清楚的情況下付款。\n\n判定：App 用 Google Pay 付款，自己組的付款請求卻沒有金額（totalPrice），即不符合。Google Play 內購由平台畫面顯示交易資訊，視為符合；請求沒有商品明細、第三方支付 SDK、NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。\n\n修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 totalPrice 與 displayItems。\n\n限制：支付 SDK 只認內建清單，自建交易畫面只看 Activity 名稱，金融 App 只看套件名與 App 名稱；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。\n\n參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
     }
 }

@@ -854,14 +854,14 @@ class Writer:
                             "details": v["vector_details"] if "vector_details" in v else '',
                         }
                     )
-        # 需人工確認的檢測項 (server 回 UNKNOWN): 報告顯示 Not evaluated (isDetected = None), 不算通過也不算不符合
-        # 由 writer.review_required 傳入 (目前 AS-lab039 / 040 / 041); 已寫入 (Failed) 的不覆蓋
+        # 無法判定的檢測項 (server 回 NOT_EVALUATED): 報告顯示 Not evaluated (isDetected = None), 不算通過也不算不符合
+        # 由 writer.review_required 傳入 (目前 AS-lab039 / 040 / 041 / 084 / 085); 已寫入 (Failed) 的不覆蓋
         for review_lab, review_details in getattr(self, 'review_required', {}).items():
             for report in (report_dict_zhtw, report_dict_en):
                 if report["mast_report"].get(review_lab, {}).get("isDetected"):
                     continue
                 report["mast_report"][review_lab] = {
-                    "isDetected": None, "status": "UNKNOWN", "type": ["ManualReview"],
+                    "isDetected": None, "status": "NOT_EVALUATED", "type": ["ManualReview"],
                     "data": [{"description": "", "details": review_details}]}
 
         for k,v in report_dict_zhtw["mast_report"].items():
@@ -2931,14 +2931,14 @@ Please modify the following code:"""
     if isinstance(result_lab026, dict) and result_lab026.get('verdict') == 'WARNING':
         writer.startWriter(
             "HACKER_SIGNATURE_CHECK", LEVEL_NOTICE,
-            u"[AS-lab026][OWASP-V1.12][MAST-4.2.5][M10] 檢查是否獲取 package 簽名",
+            u"[AS-lab026][OWASP-V1.12][MAST-4.2.5][M7] 檢查是否獲取 package 簽名",
             u"App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。" u"\n\n"
-            u"本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少簽章完整性檢查。" u"\n\n"
+            u"本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少簽章完整性檢查。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
             + "||" +
             u"When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally." u"\n\n"
-            u"This check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, the signature integrity check is considered missing." u"\n\n"
+            u"This check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, the signature integrity check is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo",
             [u"Signature", u"Hacker"])
@@ -2951,7 +2951,7 @@ Please modify the following code:"""
     if isinstance(result_lab027, dict) and result_lab027.get('verdict') == 'WARNING':
         writer.startWriter(
             "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_NOTICE,
-            u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][M4] 防止螢幕擷取的設定",
+            u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][MASVS-PLATFORM-3][M6] 防止螢幕擷取的設定",
             u"App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。" u"\n\n"
             u"本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。" u"\n\n"
             u"限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。" u"\n\n"
@@ -3741,18 +3741,22 @@ Vulnerable Codes:""", ["SSL_Security"])
 
     # ------------------------------------------------------------------------
     # [AS-lab039] 4.1.2.5.1 分享聲明 / [AS-lab040] 4.1.2.5.2 拒絕分享 / [AS-lab041] 4.1.1.1.2 發布說明
-    # WARNING -> 寫入 (Failed); UNKNOWN -> 報告顯示 Not evaluated (需人工確認, 由 Writer 處理); PASS -> 不寫入
+    # WARNING -> 寫入 (Failed); NOT_EVALUATED -> 報告顯示 Not evaluated (由 Writer 處理); PASS -> 不寫入
     writer.review_required = {}
 
     def _share_line(c):
         ev = c.get('evidence', {})
-        switch = u""
+        notes = [c.get('problem') or u""]
+        if c.get('confidence') != 'high' and c.get('reason'):
+            notes.append(c['reason'])
+        notes.append((u"data: sensitive, %s" % c['sensitive_evidence']) if c.get('sensitive')
+                     else u"data: sensitivity not determined")
         if ev.get('keys'):
-            switch = u"; switch: %s%s, %s" % (
+            notes.append(u"switch: %s%s, %s" % (
                 u", ".join(ev['keys'][:3]), u" (default on)" if ev.get('default_on') else u"",
-                u"shown in settings screen" if ev.get('in_settings') else u"not found in settings screen")
+                u"shown in settings screen" if ev.get('in_settings') else u"not found in settings screen"))
         target = u" -> %s" % c['target'] if c.get('target') not in (None, 'unknown') else u""
-        return u"[%s] %s%s (%s%s)" % (c.get('type', ''), c.get('where', ''), target, c.get('problem', ''), switch)
+        return u"[%s] %s%s (%s)" % (c.get('type', ''), c.get('where', ''), target, u"; ".join(n for n in notes if n))
 
     def _usage_line(u):
         where = u.get('where', '')
@@ -3775,21 +3779,21 @@ Vulnerable Codes:""", ["SSL_Security"])
         writer.startWriter(
             "SHARE_NOTICE_MISSING", LEVEL_WARNING,
             u"[AS-lab039][MAS-4.1.2.5.1][MASVS-PRIVACY-3][M6] 資料分享聲明檢查",
-            u"App 自動把資料交給裝置上其他 App，卻沒有告知或取得同意，使用者不知道資料被誰拿走。" u"\n\n"
-            u"判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），往上追呼叫路徑也沒經過同意對話框或使用者開關，即不符合。分享選單、拍照等使用者自己觸發的不算；接收者不明或程式碼看不到的管道列為需人工確認。" u"\n\n"
+            u"App 自動把敏感資料交給裝置上其他 App，卻沒有告知或取得同意，使用者不知道資料被誰拿走。" u"\n\n"
+            u"判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），且確定是敏感資料（extra 或欄位名稱含密碼、帳號、電話、定位、通訊錄等，或讀取了定位、通訊錄、裝置 ID 等 API），往上追呼叫路徑也沒經過同意對話框或分享開關，即不符合。開啟畫面、分享選單、拍照等使用者看得到的操作，送給系統的固定廣播（媒體掃描等），以及程式內比對呼叫者簽章的 provider 都不算。看不出是否為敏感資料、接收者不明、程式碼看不到或開關名稱看不出來的管道列為 Not evaluated，細節會列出原因。" u"\n\n"
             u"修正：不需要分享就設 android:exported=\"false\"、用 setPackage() 指定接收的 App，或改用 signature 等級的權限；需要分享就在分享前先取得使用者同意。" u"\n\n"
-            u"限制：不判斷資料是否敏感；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。" u"\n\n"
+            u"限制：敏感資料只看名稱與 API，不追蹤資料流；分享開關只認名稱含 share、consent、privacy 等字的設定；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
             + "||" +
-            u"The app automatically hands data to other apps on the device without notice or consent, so users don't know who gets their data." u"\n\n"
-            u"Fails when: an automatic sharing channel (ContentProvider reachable by other apps, broadcast with data and no receiver, grantUriPermission) is found and its call path has no consent dialog or user switch. User-triggered actions such as the share sheet or taking a photo are not counted; channels whose receiver or code cannot be resolved need manual review." u"\n\n"
+            u"The app automatically hands sensitive data to other apps on the device without notice or consent, so users don't know who gets their data." u"\n\n"
+            u"Fails when: an automatic sharing channel (ContentProvider reachable by other apps, broadcast with data and no receiver, grantUriPermission) carries sensitive data (extra or field names such as password, account, phone, location, contacts, or location / contacts / device ID APIs are read) and its call path has no consent dialog or sharing switch. Actions the user sees (opening a screen, the share sheet, taking a photo), fixed system broadcasts (e.g. media scanner) and providers that verify the caller's signature in code are not counted. Channels whose data sensitivity, receiver, code or switch key cannot be determined are reported as Not evaluated, with the reason in the details." u"\n\n"
             u"Fix: if sharing is not needed, set android:exported=\"false\", target the receiver with setPackage(), or use a signature-level permission; if it is needed, get user consent before sharing." u"\n\n"
-            u"Limitation: data sensitivity is not judged; only 4 levels of callers are traced; Compose dialogs, intents built in other methods and native code are not seen; the wording of store and in-app notices needs manual review." u"\n\n"
+            u"Limitation: sensitive data is judged only by names and APIs, data flow is not traced; only settings whose key contains share, consent, privacy, etc. count as sharing switches; only 4 levels of callers are traced; Compose dialogs, intents built in other methods and native code are not seen; the wording of store and in-app notices needs manual review." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send",
             [u"Privacy", u"Share"])
         _write_lines([_share_line(c) for c in result_lab039.get('findings', [])])
-    elif isinstance(result_lab039, dict) and result_lab039.get('verdict') == 'UNKNOWN':
-        _review_required('AS-lab039', u"sharing channels whose receiver or code could not be resolved have no consent dialog or user switch.",
+    elif isinstance(result_lab039, dict) and result_lab039.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab039', u"these sharing channels have no consent dialog or sharing switch, but the data sensitivity, receiver, code or switch key could not be determined.",
                          [_share_line(c) for c in result_lab039.get('review', [])])
     elif not isinstance(result_lab039, dict):
         _review_required('AS-lab039', u"the analysis service returned no result.", [])
@@ -3799,21 +3803,21 @@ Vulnerable Codes:""", ["SSL_Security"])
         writer.startWriter(
             "SHARE_REFUSAL_MISSING", LEVEL_WARNING,
             u"[AS-lab040][MAS-4.1.2.5.2][MASVS-PRIVACY-4][M6] 拒絕資料分享檢查",
-            u"App 自動把資料分享給其他 App，使用者卻無法拒絕。" u"\n\n"
-            u"判定：AS-lab039 找到的自動分享管道中，呼叫路徑上沒有讀取使用者開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合。開關的值傳到其他地方才判斷、看不出效果的，列為需人工確認。分享選單可取消，不算。" u"\n\n"
+            u"App 自動把敏感資料分享給其他 App，使用者卻無法拒絕。" u"\n\n"
+            u"判定：AS-lab039 找到的自動分享管道（確定是敏感資料）中，呼叫路徑上沒有讀取分享開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合；只有同意對話框、沒有可事後關閉的開關，使用者同意後無法撤回，也不符合。開關的值傳到其他地方才判斷、開關名稱看不出來，或看不出是否為敏感資料的，列為 Not evaluated。分享選單可取消，不算。" u"\n\n"
             u"修正：在設定頁提供「允許分享資料」開關，分享前先讀取開關，關閉時不分享。" u"\n\n"
-            u"限制：不確認讀到的就是分享開關，也不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。" u"\n\n"
+            u"限制：分享開關只認名稱含 share、consent、privacy 等字的設定；不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
             + "||" +
-            u"The app automatically shares data with other apps but users cannot refuse it." u"\n\n"
-            u"Fails when: an automatic sharing channel from AS-lab039 has no read of a user switch (SharedPreferences, DataStore) on its call path, or the switch is read but not used to decide whether to share. Switches whose value is checked elsewhere and cannot be traced need manual review. The share sheet can be cancelled and is not counted." u"\n\n"
+            u"The app automatically shares sensitive data with other apps but users cannot refuse it." u"\n\n"
+            u"Fails when: an automatic sharing channel from AS-lab039 that carries sensitive data has no read of a sharing switch (SharedPreferences, DataStore) on its call path, or the switch is read but not used to decide whether to share; a consent dialog without a switch that can be turned off later also fails, because users cannot withdraw consent. Switches whose value is checked elsewhere, switches whose key cannot be identified, and data whose sensitivity cannot be determined are reported as Not evaluated. The share sheet can be cancelled and is not counted." u"\n\n"
             u"Fix: add an \"allow data sharing\" switch in settings and check it before sharing; do not share when it is off." u"\n\n"
-            u"Limitation: does not confirm that the switch is the sharing switch or that the check actually blocks the sharing; DataStore switches can only be confirmed as read. Details list the switch key, its default value and whether it appears in the settings screen." u"\n\n"
+            u"Limitation: only settings whose key contains share, consent, privacy, etc. count as sharing switches; does not confirm that the check actually blocks the sharing; DataStore switches can only be confirmed as read. Details list the switch key, its default value and whether it appears in the settings screen." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send",
             [u"Privacy", u"Share"])
         _write_lines([_share_line(c) for c in result_lab040.get('findings', [])])
-    elif isinstance(result_lab040, dict) and result_lab040.get('verdict') == 'UNKNOWN':
-        _review_required('AS-lab040', u"the effect of the user switch, or the receiver of the channel, could not be verified.",
+    elif isinstance(result_lab040, dict) and result_lab040.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab040', u"the sharing switch, the receiver or the data sensitivity of these channels could not be verified.",
                          [_share_line(c) for c in result_lab040.get('review', [])])
     elif not isinstance(result_lab040, dict):
         _review_required('AS-lab040', u"the analysis service returned no result.", [])
@@ -3824,24 +3828,29 @@ Vulnerable Codes:""", ["SSL_Security"])
             "RELEASE_NOTES_UNDECLARED", LEVEL_WARNING,
             u"[AS-lab041][MAS-4.1.1.1.2][MASVS-PRIVACY-1][M6] 發布說明（資料安全性聲明）檢查",
             u"App 或其使用的 SDK 會取得敏感資料，但 Google Play「資料安全性」沒有聲明，使用者下載前不知道。" u"\n\n"
-            u"判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面，或相機可能只用來掃碼、SDK 已在 Manifest 關閉收集的，列為需人工確認。" u"\n\n"
+            u"判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面、相機可能只用來掃碼、SDK 已在 Manifest 關閉收集，或有 INTERNET 權限但 App 程式碼看不到網路請求的，列為 Not evaluated。" u"\n\n"
             u"修正：資料會傳出就在 Google Play Console「資料安全性」補聲明該類別；不再使用就移除權限、相關程式碼或 SDK。" u"\n\n"
             u"限制：只比對資料安全性的資料類別，權限用途說明及未上架 App 的調查表需人工確認；引用到相關 API 就算讀取；沒有追蹤資料流，App 有發網路請求就推定資料會傳出；SDK 只認內建清單。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
             + "||" +
             u"The app or an SDK it uses obtains sensitive data that is not declared in Google Play Data safety, so users don't know about it before installing." u"\n\n"
-            u"Fails when: the app itself reads sensitive data (holds the permission and actually reads it, e.g. location, contacts, audio, device IDs) and makes network requests, or it bundles a data-collecting SDK (e.g. Firebase Analytics, AdMob), and the Data safety page does not list that category. Apps not on Google Play, pages that cannot be fetched, a camera that may only scan codes, or an SDK whose collection is disabled in the manifest need manual review." u"\n\n"
+            u"Fails when: the app itself reads sensitive data (holds the permission and actually reads it, e.g. location, contacts, audio, device IDs) and makes network requests, or it bundles a data-collecting SDK (e.g. Firebase Analytics, AdMob), and the Data safety page does not list that category. Apps not on Google Play, pages that cannot be fetched, a camera that may only scan codes, an SDK whose collection is disabled in the manifest, or an app with INTERNET permission whose own code shows no network request are reported as Not evaluated." u"\n\n"
             u"Fix: if the data leaves the device, declare the category in the Google Play Console Data safety form; if it is no longer used, remove the permission, related code or SDK." u"\n\n"
             u"Limitation: only Data safety categories are compared; permission purposes and the questionnaire of unpublished apps need manual review; referencing a related API counts as reading it; data flow is not traced, network requests are taken to mean the data may leave the device; only SDKs on the built-in list are recognized." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469",
             [u"Privacy", u"DataSafety"])
         _write_lines([_usage_line(u) for u in result_lab041.get('undeclared', [])])
-    elif isinstance(result_lab041, dict) and result_lab041.get('verdict') == 'UNKNOWN':
-        if result_lab041.get('status') != 'ok':
+    elif isinstance(result_lab041, dict) and result_lab041.get('verdict') == 'NOT_EVALUATED':
+        if result_lab041.get('status') == 'network_not_found':
+            _review_required('AS-lab041', u"sensitive data is read and the app has INTERNET permission, but no network request was found in app code; check whether the data leaves the device.",
+                             [u"%s -> %s%s" % (u.get('source', ''), u"/".join(u.get('categories', [])),
+                                               (u" (used in %s)" % u['where']) if u.get('where') else u"")
+                              for u in result_lab041.get('review', [])])
+        elif result_lab041.get('status') != 'ok':
             _review_required('AS-lab041', u"Google Play Data safety page unavailable (%s); compare the release notes manually." % result_lab041.get('status', ''),
                              [u"%s -> %s" % (u.get('source', ''), u"/".join(u.get('categories', []))) for u in result_lab041.get('review', [])])
         else:
-            _review_required('AS-lab041', u"undeclared data that may not leave the device.",
+            _review_required('AS-lab041', u"undeclared data that cannot be confirmed to leave the device (reason after each item).",
                              [_usage_line(u) for u in result_lab041.get('review', [])])
     elif not isinstance(result_lab041, dict):
         _review_required('AS-lab041', u"the analysis service returned no result.", [])
@@ -4639,12 +4648,12 @@ Proof-Of-Concept reference:
             "COMMAND_MAYBE_SYSTEM", LEVEL_NOTICE,
             u"[AS-lab056][MAS-4.1.5.5.1][MASVS-RESILIENCE-1][M7] Root Detection 實作檢查",
             u"App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。" u"\n\n"
-            u"本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK；皆未發現即判定缺少 root 偵測。" u"\n\n"
+            u"本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
             + "||" +
             u"When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow." u"\n\n"
-            u"This check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection; if neither is found, root detection is considered missing." u"\n\n"
+            u"This check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, root detection is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/",
             [u"Resilience", u"Root"])
@@ -4994,12 +5003,12 @@ Proof-Of-Concept reference:
             "EMULATOR_DETECTION_MISSING", LEVEL_WARNING,
             u"[AS-lab082][MAS-4.1.5.5.7][MASVS-RESILIENCE-1][M7] 模擬器偵測檢查",
             u"App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。" u"\n\n"
-            u"本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK；皆未發現即判定缺少模擬器偵測。" u"\n\n"
+            u"本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少模擬器偵測。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。" u"\n\n"
             u"參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
             + "||" +
             u"When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily." u"\n\n"
-            u"This check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection; if neither is found, emulator detection is considered missing." u"\n\n"
+            u"This check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, emulator detection is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/",
             [u"Resilience", u"Emulator"])
@@ -5011,16 +5020,82 @@ Proof-Of-Concept reference:
             "USB_DEBUG_DETECTION_MISSING", LEVEL_WARNING,
             u"[AS-lab083][MAS-4.1.5.5.8][MASVS-RESILIENCE-2][M7] USB 偵錯模式偵測檢查",
             u"App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。" u"\n\n"
-            u"本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK；皆未發現即判定缺少 USB 偵錯偵測。" u"\n\n"
+            u"本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 USB 偵錯偵測。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。" u"\n\n"
             u"參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
             + "||" +
             u"When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access." u"\n\n"
-            u"This check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection; if neither is found, USB debugging detection is considered missing." u"\n\n"
+            u"This check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, USB debugging detection is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED",
             [u"Resilience", u"Debug"])
         _write_detail(u"No USB or wireless debugging detection found in app code")
+
+    #-----------------------------------------------------------------------------------
+    # [AS-lab084] 4.1.5.5.6 程式碼混淆 / [AS-lab085] 4.1.3.1.1 交易資源使用聲明
+    # WARNING -> 寫入 (Failed); NOT_EVALUATED -> 報告顯示 Not evaluated; PASS -> 不寫入
+    def _class_name(c):
+        return c[1:-1].replace(u"/", u".") if c.startswith(u"L") and c.endswith(u";") else c
+
+    result_lab084 = get_androguard('/lab_084')
+    if isinstance(result_lab084, dict) and result_lab084.get('verdict') == 'WARNING':
+        writer.startWriter(
+            "CODE_OBFUSCATION_MISSING", LEVEL_WARNING,
+            u"[AS-lab084][MAS-4.1.5.5.6][MASVS-RESILIENCE-3][M7] 程式碼混淆檢查",
+            u"App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。" u"\n\n"
+            u"判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。" u"\n\n"
+            u"修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。" u"\n\n"
+            u"限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
+            + "||" +
+            u"The app code is not obfuscated, so decompiled code is easy to read and protections are easy to find and bypass." u"\n\n"
+            u"Fails when: in the app's own packages (the manifest package and the package of the launcher activity), excluding compiler-generated code and names that must be kept such as JNI, the ratios of short names like a, b, aa for classes, methods and fields are all below 30%. When these packages have fewer than 10 classes, code moved into short packages such as o or a.b (DexGuard, R8 repackaging) counts as obfuscated; otherwise (e.g. packed apps) the result is Not evaluated." u"\n\n"
+            u"Fix: enable R8/ProGuard for release builds (minifyEnabled true) and remove -dontobfuscate." u"\n\n"
+            u"Limitation: only name obfuscation is checked; string encryption and control-flow obfuscation are not; when the app's own packages are visible, code moved to other packages is not counted; criterion (2), whether the code can be deobfuscated, needs manual testing." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code",
+            [u"Resilience", u"Obfuscation"])
+        _write_detail(u"Scanned %d classes in %s; short names: classes %d%%, methods %d%%, fields %d%% (threshold %d%%)" % (
+            result_lab084.get('scanned_app_classes', 0),
+            u", ".join(p[1:].rstrip(u"/").replace(u"/", u".") for p in result_lab084.get('own_prefixes', [])),
+            result_lab084.get('class_ratio', 0) * 100, result_lab084.get('method_ratio', 0) * 100,
+            result_lab084.get('field_ratio', 0) * 100, result_lab084.get('threshold', 0) * 100))
+        examples = result_lab084.get('plain_examples', [])[:5]
+        if examples:
+            _write_detail(u"Readable class names, e.g. " + u", ".join(_class_name(c) for c in examples))
+    elif isinstance(result_lab084, dict) and result_lab084.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab084', u"only %d classes are visible in the app's own packages (the code may be packed or loaded at runtime)." %
+                         result_lab084.get('scanned_app_classes', 0), [])
+    elif not isinstance(result_lab084, dict):
+        _review_required('AS-lab084', u"the analysis service returned no result.", [])
+
+    def _payment_line(c):
+        fields = c.get('evidence', {}).get('request_fields')
+        return u"[%s] %s (%s%s)" % (c.get('type', ''), c.get('where', ''), c.get('problem', ''),
+                                   (u"; request fields: %s" % u", ".join(fields)) if fields else u"")
+
+    result_lab085 = get_androguard('/lab_085')
+    if isinstance(result_lab085, dict) and result_lab085.get('verdict') == 'WARNING':
+        writer.startWriter(
+            "TRANSACTION_NOTICE_MISSING", LEVEL_WARNING,
+            u"[AS-lab085][MAS-4.1.3.1.1] 交易資源使用聲明檢查",
+            u"交易前沒有告知商品名稱、金額與付款方式，使用者可能在不清楚的情況下付款。" u"\n\n"
+            u"判定：App 用 Google Pay 付款，自己組的付款請求卻沒有金額（totalPrice），即不符合。Google Play 內購由平台畫面顯示交易資訊，視為符合；請求沒有商品明細、第三方支付 SDK、NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。" u"\n\n"
+            u"修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 totalPrice 與 displayItems。" u"\n\n"
+            u"限制：支付 SDK 只認內建清單，自建交易畫面只看 Activity 名稱，金融 App 只看套件名與 App 名稱；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。" u"\n\n"
+            u"參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
+            + "||" +
+            u"The app does not show the item name, amount and payment method before a transaction, so users may pay without knowing the details." u"\n\n"
+            u"Fails when: the app pays with Google Pay and the payment request built in its code has no amount (totalPrice). Google Play in-app purchases show the details on the platform screen and pass; requests without an item list, third-party payment SDKs, NFC contactless payment, custom transaction screens and financial apps (e.g. banks, brokers) whose transaction screens are not found cannot be seen statically and are reported as Not evaluated." u"\n\n"
+            u"Fix: show a confirmation screen with the item name, amount and payment method before paying; fill totalPrice and displayItems in Google Pay requests." u"\n\n"
+            u"Limitation: only payment SDKs on the built-in list are recognized and custom transaction screens are found by activity name and financial apps by package and app name only; receive-only apps (not applicable) and the up-front notice exception for forex, futures and crypto need manual judgment." u"\n\n"
+            u"Ref: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate",
+            [u"Transaction"])
+        _write_lines([_payment_line(c) for c in result_lab085.get('findings', [])])
+    elif isinstance(result_lab085, dict) and result_lab085.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab085', u"check that these transaction screens show the item name, amount and payment method.",
+                         [_payment_line(c) for c in result_lab085.get('review', [])])
+    elif not isinstance(result_lab085, dict):
+        _review_required('AS-lab085', u"the analysis service returned no result.", [])
 
     #-----------------------------------------------------------------------------------
     # [lab_061] - Checking shared_user_id
@@ -5082,14 +5157,14 @@ See this video: https://www.youtube.com/watch?v=tGw1fxUD-uY""",
     if isinstance(result_lab064, dict) and result_lab064.get('verdict') == 'WARNING':
         writer.startWriter(
             "HACKER_INSTALL_SOURCE_CHECK", LEVEL_NOTICE,
-            u"[AS-lab064] APP安裝來源檢查",
+            u"[AS-lab064][M7] APP安裝來源檢查",
             u"App 未檢查安裝來源時，被重新打包的 App 可經由第三方市集或網站散布並正常執行，使用者難以分辨真偽。" u"\n\n"
-            u"本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK；皆未發現即判定缺少安裝來源檢查。" u"\n\n"
+            u"本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少安裝來源檢查。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
             u"參考: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
             + "||" +
             u"When the app does not check its installation source, a repackaged copy can be distributed through third-party stores or websites and still run normally, making it hard for users to tell it from the genuine app." u"\n\n"
-            u"This check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection; if neither is found, the installation source check is considered missing." u"\n\n"
+            u"This check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, the installation source check is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
             u"Ref: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity",
             [u"Hacker"])
@@ -5694,28 +5769,26 @@ refer to:
 
         writer.startWriter(
             "LAB_076_DEEP_LINK_SECURITY", level_076,
-            u"[AS-lab076][MASVS-PLATFORM-3][CWE-939] Deep Link 安全檢查",
-            u"偵測到 Deep Link intent-filter 設定風險:"
-            u"(1) HTTP scheme 易遭 MITM "
-            u"(2) http(s) App Link 缺 autoVerify=\"true\",其他 App 可註冊同 host 攔截 "
-            u"(3) 自訂 scheme 未限制 host,任何 App 可註冊同 scheme。"
-            u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw"
-            u" | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/"
+            u"[AS-lab076][MAS-4.1.2.3.12][MASVS-PLATFORM-1][M8][CWE-939] Deep Link 安全檢查",
+            u"風險：Deep Link 是 App 對外的入口，外部 App、瀏覽器或惡意連結都能帶著 URI 參數開啟它。設定不當時，其他 App 可攔截原本要交給本 App 的連結（例如登入、付款連結裡的參數），或連結在傳輸中被竄改。" u"\n\n"
+            u"判定：只看 AndroidManifest。對外開放（沒有設 exported=\"false\"）的 activity / activity-alias，intent-filter 含 action.VIEW + category.BROWSABLE + scheme，符合任一項即不符合：(1) scheme 是 http，明文傳輸可被竄改（HIGH）；(2) http / https 沒設 android:autoVerify=\"true\"，其他 App 可宣告相同 host 攔截（MEDIUM）；(3) 自訂 scheme，無法做網域驗證，任何 App 都能註冊相同 scheme 攔截，有沒有 host 都一樣（MEDIUM）。mailto、tel、file、content、market 等多個 App 共用的系統 scheme 不算。" u"\n\n"
+            u"修正：敏感流程改用 https App Links 並設 android:autoVerify=\"true\"，在網站放 assetlinks.json；不需要對外的 Activity 設 android:exported=\"false\"；不要在 Deep Link 參數放 token、密碼等敏感資料。" u"\n\n"
+            u"限制：不判斷連結是否帶敏感資料、接收端有沒有驗證參數，需動態測試複驗；看不到 assetlinks.json 是否正確部署；參數流入 WebView、SQL 等危險操作由 AS-lab077 檢查。" u"\n\n"
+            u"參考: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks"
             + "||" +
-            u"Deep link intent-filter risks detected: "
-            u"(1) http scheme exposed to MITM "
-            u"(2) http(s) App Link missing autoVerify=\"true\" — other apps may intercept "
-            u"(3) Custom scheme without host restriction — scheme hijack possible."
-            u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks"
-            u" | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/",
+            u"Deep links are a public entry point: other apps, browsers or malicious links can open them with URI parameters. When misconfigured, another app can intercept links meant for this app (e.g. parameters in login or payment links), or the link can be tampered with in transit." u"\n\n"
+            u"Fails when: only the AndroidManifest is checked. An activity / activity-alias reachable from outside (not exported=\"false\") whose intent-filter has action.VIEW + category.BROWSABLE + a scheme fails if any of these holds: (1) the scheme is http, plaintext that can be tampered with (HIGH); (2) http / https without android:autoVerify=\"true\", so other apps can declare the same host and intercept it (MEDIUM); (3) a custom scheme, which cannot be domain-verified, so any app can register the same scheme and intercept it, with or without a host (MEDIUM). Public schemes shared by many apps (mailto, tel, file, content, market, etc.) are not counted." u"\n\n"
+            u"Fix: use https App Links with android:autoVerify=\"true\" for sensitive flows and publish assetlinks.json on the website; set android:exported=\"false\" on activities that need no external access; do not put tokens, passwords or other sensitive data in deep link parameters." u"\n\n"
+            u"Limitation: whether a link carries sensitive data and whether the receiver validates parameters are not judged and need dynamic testing; correct deployment of assetlinks.json cannot be seen; parameters flowing into WebView, SQL or other dangerous operations are checked by AS-lab077." u"\n\n"
+            u"Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks",
             ["DeepLink", "IntentFilter"]
         )
 
+        # Detail 一律英文並先 encode (同 lab_081), 否則報告會出現字面上的 \\n 與 \\xe2
         for e in findings_076:
-            uri_str = "{}://{}".format(e.get('scheme', ''), e.get('host', '') or '*')
+            uri_str = u"%s://%s" % (e.get('scheme', ''), e.get('host', '') or u'*')
             for sev, msg in e.get('risks', []):
-                writer.write(u"  [{}] {} -> {}  ({})".format(
-                    sev, e.get('activity', ''), uri_str, msg))
+                _write_detail(u"[%s] %s -> %s (%s)" % (sev, e.get('activity', ''), uri_str, msg))
 
     # [lab_077] - Deep Link Injection (source -> sink in same method, heuristic)
     result_lab077 = get_androguard('/lab_077')
