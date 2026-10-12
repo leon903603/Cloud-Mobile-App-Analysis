@@ -114,6 +114,30 @@ async function consumeCredit(uid: string, ref: string, note?: string) {
   return { success: true, remainingCredits: remaining };
 }
 
+// ADR-0005 & Platform Hardening v4: Atomically restore one credit on analysis failure.
+// Runs in a Firestore transaction and records an audit entry to maintain balance integrity.
+export async function refundCredit(uid: string, ref: string, reason: string): Promise<number> {
+  const docRef = db.collection("users").doc(uid);
+  const newBalance = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    const current = snap.exists ? Number(snap.data()?.credits ?? 0) : 0;
+    tx.update(docRef, { credits: current + 1 });
+    return current + 1;
+  });
+
+  recordCreditChange({
+    uid,
+    delta: +1,
+    reason: "refund",
+    ref,
+    balanceAfter: newBalance,
+    note: reason,
+  });
+
+  console.log(`[Credit Refund] Restored 1 credit to user ${uid} (ref: ${ref}, new balance: ${newBalance})`);
+  return newBalance;
+}
+
 const app = express();
 app.set("trust proxy", true);
 // Allow configured client origin and local development origins
@@ -677,9 +701,20 @@ function analyzeHandler(opts: {
     // paid for, and a hash can belong to more than one user's upload.
     opts.run(upload.id)
       .then(() => console.log(`${opts.label} completed`))
-      .catch(err => {
+      .catch(async (err) => {
         console.error(`${opts.label} error:`, err);
-        FileMeta.update(upload.id, { status: "error" });
+        // On analysis failure, automatically refund the credit and reset creditSpent
+        try {
+          await refundCredit(
+            req.user!.uid,
+            `analysis:${upload.id}`,
+            `${opts.label} failure refund`
+          );
+          FileMeta.update(upload.id, { status: "error", creditSpent: 0 });
+        } catch (refundErr) {
+          console.error(`Failed to refund credit for failed analysis ${upload.id}:`, refundErr);
+          FileMeta.update(upload.id, { status: "error" });
+        }
       });
 
     res.json({ message: "Analysis triggered", remainingCredits });

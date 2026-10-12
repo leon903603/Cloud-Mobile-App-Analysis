@@ -98,7 +98,7 @@ export const FileMeta = {
     return info.changes === 1;
   },
 
-  update(id: number, patch: Partial<Pick<FileMetaRow, "status" | "taskId">>): void {
+  update(id: number, patch: Partial<Pick<FileMetaRow, "status" | "taskId" | "creditSpent">>): void {
     const keys = Object.keys(patch) as (keyof typeof patch)[];
     if (keys.length === 0) return;
     db.prepare(`UPDATE file_meta SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`)

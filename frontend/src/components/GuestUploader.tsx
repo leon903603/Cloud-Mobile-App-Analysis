@@ -261,6 +261,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
   const [paying, setPaying] = useState(false);
   const [paymentNotice, setPaymentNotice] = useState<{ type: "success" | "failed"; text: string } | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+  const [receiptEmail, setReceiptEmail] = useState("");
 
   // Dynamic analysis optional test credentials
   const [appUsername, setAppUsername] = useState("");
@@ -808,7 +809,10 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
       const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/newebpay/guest-checkout`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ jobId: activeJob.jobId }),
+        body: JSON.stringify({
+          jobId: activeJob.jobId,
+          receiptEmail: receiptEmail.trim() || undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -1381,6 +1385,21 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                         </div>
                       </div>
                     )}
+
+                    {/* Receipt Email Input */}
+                    <div className="space-y-1 pt-1">
+                      <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Mail className="h-3 w-3" />
+                        收據寄送信箱 / Receipt Email (藍新自動發送交易憑證):
+                      </label>
+                      <Input
+                        type="email"
+                        placeholder="your-receipt@example.com"
+                        value={receiptEmail}
+                        onChange={(e) => setReceiptEmail(e.target.value)}
+                        className="h-8 text-xs bg-background/80"
+                      />
+                    </div>
 
                     <p className="text-muted-foreground leading-relaxed">
                       The full report includes alignment with OWASP MASVS and Taiwan Mobile App Security Standards, decompiled vulnerabilities, and remediation advice. Click above to unlock via NewebPay.

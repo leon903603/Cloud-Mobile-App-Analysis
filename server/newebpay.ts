@@ -68,6 +68,7 @@ for (const [col, decl] of [
   ["paidAt", "TEXT"],
   ["jobId", "TEXT"],
   ["orderType", "TEXT DEFAULT 'credits'"],
+  ["receiptEmail", "TEXT"],
 ] as const) {
   const exists = (db.prepare("PRAGMA table_info(newebpay_orders)").all() as {
     name: string;
@@ -86,12 +87,12 @@ db.exec(`
 `);
 
 const insertOrder = db.prepare(
-  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate, orderType)
-   VALUES (?, ?, ?, ?, ?, ?, 'credits')`
+  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate, orderType, receiptEmail)
+   VALUES (?, ?, ?, ?, ?, ?, 'credits', ?)`
 );
 const insertGuestOrder = db.prepare(
-  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate, jobId, orderType)
-   VALUES (?, 'guest', 0, ?, ?, ?, ?, 'guest_report')`
+  `INSERT INTO newebpay_orders (orderNo, uid, credits, amt, usdAmt, fxRate, jobId, orderType, receiptEmail)
+   VALUES (?, 'guest', 0, ?, ?, ?, ?, 'guest_report', ?)`
 );
 const findOrder = db.prepare("SELECT * FROM newebpay_orders WHERE orderNo = ?");
 // Atomic pending→paid transition makes the notify handler idempotent.
@@ -218,7 +219,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
   // MerchantOrderNo: unique, ≤30 chars, [A-Za-z0-9_] only.
   const orderNo = `CMAA${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
-  insertOrder.run(orderNo, uid, credits, amt, usd, rate);
+  const receiptEmail = (req.body?.receiptEmail as string)?.trim() || (email ?? "");
+  insertOrder.run(orderNo, uid, credits, amt, usd, rate, receiptEmail);
 
   const tradeInfoPlain = new URLSearchParams({
     MerchantID: MERCHANT_ID,
@@ -231,7 +233,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
     // ItemDesc is Varchar(50); the USD price is included so the gateway page and
     // the customer's receipt both show what the TWD figure was derived from.
     ItemDesc: `${credits} Analysis Credits (US$${usd})`,
-    Email: email ?? "",
+    Email: receiptEmail,
     NotifyURL: `${CLIENT_URL}/api/newebpay/notify`,
     ReturnURL: `${CLIENT_URL}/api/newebpay/return`,
     ClientBackURL: `${CLIENT_URL}/app`,
@@ -307,7 +309,8 @@ router.post("/guest-checkout", async (req, res) => {
   const { usd, twd: amt, rate } = priceFor(1);
 
   const orderNo = `CMAAG${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
-  insertGuestOrder.run(orderNo, amt, usd, rate, jobId);
+  const receiptEmail = (req.body?.receiptEmail as string)?.trim() || (email as string)?.trim() || "";
+  insertGuestOrder.run(orderNo, amt, usd, rate, jobId, receiptEmail);
 
   const tradeInfoPlain = new URLSearchParams({
     MerchantID: MERCHANT_ID,
@@ -318,7 +321,7 @@ router.post("/guest-checkout", async (req, res) => {
     MerchantOrderNo: orderNo,
     Amt: String(amt),
     ItemDesc: `Security Report: ${job.filename || "App Analysis"} (US$${usd})`,
-    Email: email ?? "",
+    Email: receiptEmail,
     NotifyURL: `${CLIENT_URL}/api/newebpay/notify`,
     ReturnURL: `${CLIENT_URL}/api/newebpay/return`,
     ClientBackURL: `${CLIENT_URL}/app`,

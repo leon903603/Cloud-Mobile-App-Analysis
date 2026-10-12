@@ -292,11 +292,27 @@ export async function purgeObjectAllVersions(key: string): Promise<void> {
   }
 }
 
+/**
+ * Canonical S3 key whitelist for client report downloads.
+ * Only allows generated PDFs under `reports/{uid}/{hash}/...` or `guest/reports/{jobId}...`.
+ * Strictly rejects directory traversal, APK binaries, and arbitrary keys.
+ */
+export function isAllowedReportKey(key: string): boolean {
+  if (!key || typeof key !== "string") return false;
+  const memberReportPattern = /^reports\/[a-zA-Z0-9_-]+\/[a-f0-9]{32,64}\/(static|dynamic)(_[a-z-]+)?\.pdf$/i;
+  const guestReportPattern = /^guest\/(reports\/)?[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_-]+)*\.pdf$/i;
+  return memberReportPattern.test(key) || guestReportPattern.test(key);
+}
+
 export async function getPresignedDownloadUrl(
   key: string,
   filename?: string,
   expiresIn = 60 // 60 seconds default
 ): Promise<string> {
+  if (!isAllowedReportKey(key)) {
+    throw new Error(`Access denied: S3 key '${key}' is not an authorized downloadable report.`);
+  }
+
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -306,3 +322,4 @@ export async function getPresignedDownloadUrl(
   });
   return getSignedUrl(client, command, { expiresIn });
 }
+
