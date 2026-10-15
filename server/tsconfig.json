@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["index.ts", "credit_audit_cli.ts", "models/**/*.ts", "routes/**/*.ts"]
+  "include": ["index.ts", "credit_audit_cli.ts", "models/**/*.ts", "routes/**/*.ts", "services/**/*.ts"]
 }

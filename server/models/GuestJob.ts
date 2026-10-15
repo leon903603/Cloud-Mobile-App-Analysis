@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { unseal, sealingAvailable } from "../secretbox";
 
 export type AnalysisType = "static" | "dynamic";
 export type FileType = "apk" | "ipa";
@@ -85,5 +86,18 @@ export const GuestJob = {
 
   delete(jobId: string): void {
     db.prepare("DELETE FROM guest_jobs WHERE jobId = ?").run(jobId);
+  },
+
+  revealCredentials(job: GuestJobRow): { username: string; password: string } | null {
+    if (!job.appUsername || !job.appPassword) return null;
+    let pwd = job.appPassword;
+    try {
+      if (sealingAvailable() && pwd.startsWith("v1.")) {
+        pwd = unseal(pwd);
+      }
+    } catch {
+      // Fallback to raw pwd
+    }
+    return { username: job.appUsername, password: pwd };
   },
 };

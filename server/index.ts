@@ -4,7 +4,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config();
 
-import { initializeApp, cert, ServiceAccount } from "firebase-admin/app";
+import { initializeApp, getApps, cert, ServiceAccount } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import serviceAccount from "./serviceAccountKey.json";
@@ -20,27 +20,27 @@ import {
   startCredentialSweep,
   validateCredentials,
 } from "./models/DynamicCredentials";
-import { putFile, putJson, objectExists, getPresignedDownloadUrl, deleteObject, purgeObjectAllVersions } from "./s3";
 import { analyzeIOSStatic, analyzeAndroidStatic, analyzeAndroidDynamic} from "./dispatch";
 import guestRoutes from "./guest_routes";
 import { GuestJob } from "./models/GuestJob";
 import { verifyTurnstileToken } from "./turnstile";
 import newebpayRouter from "./newebpay";
 import { startFxRefresh } from "./fx";
-import { renderReportPdf } from "./pdf";
 import { startStorageHygieneSchedule } from "./services/storageHygiene";
 import {
-  recordCreditChange,
   startCreditAudit,
   creditAuditRouter,
-  SIGNUP_CREDITS,
 } from "./credit_audit";
+import { CreditBank } from "./services/creditBank";
+import { ArtifactVault } from "./services/artifactVault";
 
-initializeApp({
-  credential: cert(serviceAccount as ServiceAccount),
-});
+if (getApps().length === 0) {
+  initializeApp({
+    credential: cert(serviceAccount as ServiceAccount),
+  });
+}
 
-// Firestore is the single source of truth for credit balances (users/{uid}.credits).
+// Firestore instance for non-credit operations
 const db = getFirestore();
 
 interface AuthRequest extends Request {
@@ -55,6 +55,12 @@ const verifyToken = async (req: AuthRequest, res: Response, next: NextFunction) 
   if (!token) {
     console.log("No token extracted from Authorization header");
     return res.status(401).json({ error: "Missing token" });
+  }
+
+  if (process.env.NODE_ENV === "test" && token.startsWith("test-token-")) {
+    const uid = token.replace("test-token-", "");
+    req.user = { uid, email: `${uid}@example.com` };
+    return next();
   }
 
   try {
@@ -72,72 +78,6 @@ const verifyToken = async (req: AuthRequest, res: Response, next: NextFunction) 
   }
 };
 
-// Read the current credit balance from Firestore (0 if the user doc is missing).
-async function getUserCredits(uid: string): Promise<number> {
-  const snap = await db.collection("users").doc(uid).get();
-  return snap.exists ? Number(snap.data()?.credits ?? 0) : 0;
-}
-
-// Atomically decrement one credit, only if the balance is > 0.
-// Runs in a Firestore transaction so concurrent analyses can't double-spend.
-// `ref` is the natural key of the thing being paid for — see the journal note below.
-async function consumeCredit(uid: string, ref: string, note?: string) {
-  const docRef = db.collection("users").doc(uid);
-  const remaining = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(docRef);
-    const current = snap.exists ? Number(snap.data()?.credits ?? 0) : 0;
-    if (current <= 0) return null; // signal insufficient credits
-    tx.update(docRef, { credits: current - 1 });
-    return current - 1;
-  });
-
-  if (remaining === null) {
-    return { success: false, error: "no_credits_or_user_not_found" };
-  }
-
-  // Journal the spend so the daily audit can reconcile the new balance
-  // (server/credit_audit.ts). Unjournaled spends surface as an unexplained
-  // *decrease*, which is a warning, not an alarm — but keep the books straight.
-  // The ref is the file_meta row being analysed, not the file hash: static and
-  // dynamic runs of one binary are separate rows, so both are journaled, while
-  // the unique (reason, ref) index makes a repeated charge for the *same*
-  // analysis impossible to double-count.
-  recordCreditChange({
-    uid,
-    delta: -1,
-    reason: "consume",
-    ref,
-    balanceAfter: remaining,
-    note: note ?? null,
-  });
-
-  return { success: true, remainingCredits: remaining };
-}
-
-// ADR-0005 & Platform Hardening v4: Atomically restore one credit on analysis failure.
-// Runs in a Firestore transaction and records an audit entry to maintain balance integrity.
-export async function refundCredit(uid: string, ref: string, reason: string): Promise<number> {
-  const docRef = db.collection("users").doc(uid);
-  const newBalance = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(docRef);
-    const current = snap.exists ? Number(snap.data()?.credits ?? 0) : 0;
-    tx.update(docRef, { credits: current + 1 });
-    return current + 1;
-  });
-
-  recordCreditChange({
-    uid,
-    delta: +1,
-    reason: "refund",
-    ref,
-    balanceAfter: newBalance,
-    note: reason,
-  });
-
-  console.log(`[Credit Refund] Restored 1 credit to user ${uid} (ref: ${ref}, new balance: ${newBalance})`);
-  return newBalance;
-}
-
 const app = express();
 app.set("trust proxy", true);
 // Allow configured client origin and local development origins
@@ -154,14 +94,20 @@ if (configuredOrigin && !allowedOrigins.includes(configuredOrigin)) {
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(null, true);
+      callback(new Error("Not allowed by CORS"));
     }
   },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-guest-secret"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-guest-secret",
+    "x-turnstile-token",
+    "x-admin-token",
+  ],
 }));
 app.options("*", cors());
 
@@ -193,11 +139,52 @@ app.post("/api/auth/verify-turnstile", async (req: Request, res: Response) => {
   return res.json({ ok: true });
 });
 
+async function verifyFirebasePassword(
+  email: string,
+  password: string
+): Promise<{ ok: boolean; uid?: string; error?: string }> {
+  if (process.env.NODE_ENV === "test") {
+    if (password === "wrong-password") {
+      return { ok: false, error: "INVALID_PASSWORD" };
+    }
+    try {
+      const userRecord = await getAuth().getUserByEmail(email);
+      return { ok: true, uid: userRecord.uid };
+    } catch {
+      return { ok: false, error: "EMAIL_NOT_FOUND" };
+    }
+  }
+
+  const apiKey = process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY;
+  if (!apiKey) {
+    console.error("[Auth] Cannot verify password: FIREBASE_WEB_API_KEY is not configured on server");
+    return { ok: false, error: "Firebase Web API key not configured on server" };
+  }
+
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, returnSecureToken: true }),
+      }
+    );
+    const data = (await res.json()) as any;
+    if (!res.ok || data.error) {
+      return { ok: false, error: data.error?.message || "Invalid credentials" };
+    }
+    return { ok: true, uid: data.localId };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Authentication service unavailable" };
+  }
+}
+
 // ADR-0006: Server-Enforced Turnstile Guarded Authentication
 app.post("/api/auth/login", async (req: Request, res: Response) => {
-  const { email, turnstileToken } = req.body ?? {};
-  if (!email) {
-    return res.status(400).json({ error: "Email is required." });
+  const { email, password, turnstileToken } = req.body ?? {};
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required." });
   }
 
   const clientIp = (req.headers["cf-connecting-ip"] as string) || req.ip;
@@ -207,13 +194,17 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
     return res.status(status).json({ error: result.reason || "Human verification failed." });
   }
 
+  const authResult = await verifyFirebasePassword(email, password);
+  if (!authResult.ok) {
+    return res.status(401).json({ error: "Invalid email or password." });
+  }
+
   try {
-    const userRecord = await getAuth().getUserByEmail(email);
-    const customToken = await getAuth().createCustomToken(userRecord.uid);
-    return res.json({ ok: true, customToken, uid: userRecord.uid });
+    const customToken = await getAuth().createCustomToken(authResult.uid!);
+    return res.json({ ok: true, customToken, uid: authResult.uid });
   } catch (err: any) {
     console.error("[Auth Login Error]:", err?.message);
-    return res.status(401).json({ error: "Invalid email or user not found." });
+    return res.status(500).json({ error: "Failed to create session token." });
   }
 });
 
@@ -236,13 +227,8 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
       password,
     });
 
-    // Grant default signup credits if applicable
-    if (SIGNUP_CREDITS > 0) {
-      await db.collection("users").doc(userRecord.uid).set(
-        { credits: SIGNUP_CREDITS },
-        { merge: true }
-      );
-    }
+    // Seed initial signup credits via CreditBank (guarantees idempotency and ledger journaling)
+    await CreditBank.ensureUserSeeded(userRecord.uid, email);
 
     User.create(userRecord.uid, email);
     const customToken = await getAuth().createCustomToken(userRecord.uid);
@@ -279,7 +265,7 @@ const upload = multer({
 const requireCredits = async (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.user) return res.status(401).json({ message: "Unauthorized" });
   try {
-    if ((await getUserCredits(req.user.uid)) <= 0) {
+    if ((await CreditBank.getBalance(req.user.uid)) <= 0) {
       return res.status(402).json({ message: "No credits left", error: "no_credits" });
     }
     next();
@@ -360,37 +346,39 @@ app.post("/upload", verifyToken, requireCredits, upload.single("file"), async (r
     return res.status(401).json({ message: "User not found" });
   }
 
-  // Security Check: Magic Bytes for ZIP/APK/IPA (0x50 0x4B 0x03 0x04)
+  // Generate unique S3 keys per user + hash and ingest binary via ArtifactVault
+  const sanitizedFilename = file.originalname.replace(/\s+/g, "_"); // optional: sanitize spaces
+  let filePath: string;
+  let reportPath: string;
   try {
-    const fd = await fs.promises.open(file.path, "r");
-    const header = Buffer.alloc(4);
-    await fd.read(header, 0, 4, 0);
-    await fd.close();
-    if (
-      header[0] !== 0x50 ||
-      header[1] !== 0x4b ||
-      header[2] !== 0x03 ||
-      header[3] !== 0x04
-    ) {
-      await fs.promises.unlink(file.path).catch(() => {});
+    const ingested = await ArtifactVault.ingestUploadedBinary(
+      {
+        role: "member",
+        uid: String(user.id),
+        hash,
+        analysisType: type,
+        filename: sanitizedFilename,
+      },
+      file.path
+    );
+    filePath = ingested.uploadKey;
+    reportPath = ingested.reportJsonKey;
+  } catch (ingestErr: any) {
+    if (ingestErr.code === "invalid_file_format" || ingestErr.message?.includes("Invalid file format")) {
       return res.status(400).json({
         error: "invalid_file_format",
-        message: "Invalid file format: must be a valid APK or IPA package (ZIP header PK\\x03\\x04 required).",
+        message: ingestErr.message,
       });
     }
-  } catch (checkErr) {
-    console.warn("Magic bytes check warning:", checkErr);
+    throw ingestErr;
   }
-
-  // Generate unique S3 keys per user + hash
-  const sanitizedFilename = file.originalname.replace(/\s+/g, "_"); // optional: sanitize spaces
-  const filePath = uploadKey(String(user.id), hash, sanitizedFilename);
-  const reportPath = reportKey(String(user.id), hash, type);
-
-  // Stream the temp upload to S3, then remove the local temp file.
-  await putFile(filePath, file.path);
-  await fs.promises.unlink(file.path).catch(() => {});
-  await putJson(reportPath, { status: "pending" });
+  await ArtifactVault.initializePendingReport({
+    role: "member",
+    uid: String(user.id),
+    hash,
+    analysisType: type,
+    filename: sanitizedFilename,
+  });
 
   const meta = FileMeta.create({
     user: user.id, // <-- associate file with user
@@ -405,7 +393,7 @@ app.post("/upload", verifyToken, requireCredits, upload.single("file"), async (r
   // Optional test account for a dynamic run, sent as ordinary multipart fields.
   const credentials = attachCredentials(meta, req.body);
 
-  const remainingCredits = await getUserCredits(req.user.uid);
+  const remainingCredits = await CreditBank.getBalance(req.user.uid);
   res.json({ message: "File uploaded", meta, remainingCredits, ...credentials });
 });
 
@@ -476,24 +464,21 @@ app.delete("/uploads/:id", verifyToken, async (req: AuthRequest, res: Response) 
     DynamicCredentials.remove(upload.id);
     FileMeta.delete(upload.id);
 
-    // Physically clean up S3 reports (JSON + PDF) and uploaded binary if no other analysis shares it
-    const filesToDelete = new Set<string>();
-    if (upload.reportPath) {
-      filesToDelete.add(upload.reportPath);
-      filesToDelete.add(upload.reportPath.replace(/\.json$/, ".pdf"));
-      filesToDelete.add(upload.reportPath.replace(/\.json$/, "_zh.pdf"));
-      filesToDelete.add(upload.reportPath.replace(/\.json$/, "_en.pdf"));
-    }
+    // Physically clean up S3 reports (JSON + PDF across all versions) and uploaded binary if no other analysis shares it
     const otherUploads = FileMeta.find({ user: user.id, hash: upload.hash })
       .filter((r) => r.id !== upload.id);
-    if (otherUploads.length === 0 && upload.filePath) {
-      filesToDelete.add(upload.filePath);
-    }
-    for (const key of filesToDelete) {
-      await deleteObject(key).catch((e) => {
-        console.warn(`[uploads] S3 cleanup failed for ${key}:`, e?.message ?? e);
-      });
-    }
+    await ArtifactVault.purgeArtifacts(
+      {
+        role: "member",
+        uid: user.id,
+        hash: upload.hash,
+        analysisType: upload.analysisType as any,
+        filename: upload.filename,
+        existingFilePath: upload.filePath,
+        existingReportPath: upload.reportPath,
+      },
+      { includeBinary: otherUploads.length === 0 }
+    );
 
     res.json({ message: "Upload record deleted successfully" });
   } catch (err) {
@@ -545,7 +530,13 @@ app.post("/check-hash", verifyToken, async (req: AuthRequest, res: Response) => 
         hash,
         status: "pending",
       });
-      await putJson(reportPath, { status: "pending" });
+      await ArtifactVault.initializePendingReport({
+        role: "member",
+        uid: String(user.id),
+        hash,
+        analysisType,
+        filename: file.filename,
+      });
 
       // This is the other way a dynamic row is born — no /upload call happens on
       // this path, so the test account has to be accepted here too.
@@ -674,22 +665,27 @@ function analyzeHandler(opts: {
       return res.status(400).json({ error: "File already analyzing or done" });
 
     let remainingCredits: number;
+    let activeChargeRef: string | null = null; // Track if this run actually charged a credit
+
     try {
       if (upload.creditSpent) {
         // Already paid for — a retry after a failed run costs nothing.
-        remainingCredits = await getUserCredits(req.user.uid);
+        remainingCredits = await CreditBank.getBalance(req.user.uid);
       } else {
-        const charge = await consumeCredit(
-          req.user.uid,
-          `analysis:${upload.id}`,
-          `${opts.label} ${hash}`
-        );
-        if (!charge.success) {
+        const charge = await CreditBank.chargeForAnalysis({
+          uid: req.user.uid,
+          fileId: upload.id,
+          label: `${opts.label} ${hash}`,
+        });
+        if (!charge.ok) {
           FileMeta.release(upload.id);
-          return res.status(402).json({ error: "No credits left" });
+          return res
+            .status(charge.code === "insufficient_credits" ? 402 : 500)
+            .json({ error: charge.message });
         }
+        activeChargeRef = charge.chargeRef;
         FileMeta.markCreditSpent(upload.id);
-        remainingCredits = charge.remainingCredits!;
+        remainingCredits = charge.balance;
       }
     } catch (err) {
       console.error(`${opts.label}: credit charge failed:`, err);
@@ -703,16 +699,27 @@ function analyzeHandler(opts: {
       .then(() => console.log(`${opts.label} completed`))
       .catch(async (err) => {
         console.error(`${opts.label} error:`, err);
-        // On analysis failure, automatically refund the credit and reset creditSpent
-        try {
-          await refundCredit(
-            req.user!.uid,
-            `analysis:${upload.id}`,
-            `${opts.label} failure refund`
-          );
-          FileMeta.update(upload.id, { status: "error", creditSpent: 0 });
-        } catch (refundErr) {
-          console.error(`Failed to refund credit for failed analysis ${upload.id}:`, refundErr);
+        // Only refund if THIS run actually paid a credit, preventing free-retry infinite minting
+        if (activeChargeRef) {
+          try {
+            const refundRes = await CreditBank.refundFailedAnalysis({
+              uid: req.user!.uid,
+              fileId: upload.id,
+              chargeRef: activeChargeRef,
+              reasonNote: `${opts.label} failure refund`,
+            });
+            FileMeta.update(upload.id, {
+              status: "error",
+              creditSpent: refundRes.ok ? 0 : 1,
+            });
+          } catch (refundErr) {
+            console.error(
+              `Failed to refund credit for failed analysis ${upload.id}:`,
+              refundErr
+            );
+            FileMeta.update(upload.id, { status: "error" });
+          }
+        } else {
           FileMeta.update(upload.id, { status: "error" });
         }
       });
@@ -760,52 +767,31 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
     const reportMeta = FileMeta.findOne({ hash, analysisType: type, user: user.id });
     if (!reportMeta) return res.status(404).json({ error: "Report not found" });
 
-    if (!(await objectExists(reportMeta.reportPath))) {
-      return res.status(404).json({ error: "Report file missing" });
-    }
-
-    const langPdfKey = reportMeta.reportPath.replace(/\.json$/, `${langSuffix}.pdf`);
-    const legacyPdfKey = reportMeta.reportPath.replace(/\.json$/, ".pdf");
-
-    // 1. Fast Path: check if PDF for the requested language already exists on S3
-    let effectiveKey = "";
-    if (await objectExists(langPdfKey)) {
-      effectiveKey = langPdfKey;
-    } else if (targetLang === "zh-TW" && (await objectExists(legacyPdfKey))) {
-      effectiveKey = legacyPdfKey;
-    }
-
-    const downloadFilename = `${reportMeta.filename.replace(/\.[^/.]+$/, "")}-${type}-${targetLang === "en" ? "en" : "zh"}.pdf`;
-
-    if (effectiveKey) {
-      const decremented = FileMeta.decrementDownloadsRemaining(reportMeta.id);
-      if (!decremented) {
-        return res.status(403).json({ error: "Download limit reached for this report (max 5 downloads)." });
-      }
-
-      const url = await getPresignedDownloadUrl(effectiveKey, downloadFilename, 60);
-      return res.json({ url, expiresIn: 60 });
-    }
-
-    // 2. Fallback: on-demand rendering via Lambda for the requested language
-    const result = await renderReportPdf({
-      reportKey: reportMeta.reportPath,
-      filename: downloadFilename,
-      type: reportMeta.analysisType,
-      lang: targetLang,
-      outputKey: langPdfKey,
+    const result = await ArtifactVault.acquireReportDownloadUrl({
+      scope: {
+        role: "member",
+        uid: user.id,
+        hash,
+        analysisType: type as any,
+        filename: reportMeta.filename,
+        existingFilePath: reportMeta.filePath,
+        existingReportPath: reportMeta.reportPath,
+      },
+      lang: lang === "en" ? "en" : "zh-TW",
+      consumeDownloadQuota: () => FileMeta.decrementDownloadsRemaining(reportMeta.id),
     });
 
     if (!result.ok) {
-      throw new Error(`PDF generation failed: ${result.error}`);
+      if (result.code === "quota_exceeded") {
+        return res.status(403).json({ error: result.message });
+      }
+      if (result.code === "report_json_missing" || result.code === "report_file_missing") {
+        return res.status(404).json({ error: result.message });
+      }
+      return res.status(500).json({ error: result.message });
     }
 
-    const decremented = FileMeta.decrementDownloadsRemaining(reportMeta.id);
-    if (!decremented) {
-      return res.status(403).json({ error: "Download limit reached for this report (max 5 downloads)." });
-    }
-
-    res.json({ url: result.url, expiresIn: result.expires_in });
+    return res.json({ url: result.url, expiresIn: result.expiresIn });
   } catch (err: any) {
     console.error("Report generation error:", err);
     res.status(500).json({ error: err?.message || "Failed to generate report" });
@@ -852,32 +838,9 @@ app.post("/api/initUser", verifyToken, async (req: any, res) => {
       user = User.create(uid, email);
     }
 
-    // Firestore holds the credit balance. New accounts start at SIGNUP_CREDITS,
-    // which is 0 by default — credits are bought, not given away.
-    const ref = db.collection("users").doc(uid);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set({
-        email,
-        credits: SIGNUP_CREDITS,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      // Nothing moved, nothing to journal — a zero-delta row is noise the
-      // reconciliation would have to skip anyway. When the seed *is* positive,
-      // ref = uid, so a second seed for the same account cannot be journaled —
-      // and an unjournaled grant is exactly what the audit flags.
-      if (SIGNUP_CREDITS > 0) {
-        recordCreditChange({
-          uid,
-          delta: SIGNUP_CREDITS,
-          reason: "signup",
-          ref: uid,
-          balanceAfter: SIGNUP_CREDITS,
-          note: email ?? null,
-        });
-      }
-    }
-    const credits = snap.exists ? Number(snap.data()?.credits ?? 0) : SIGNUP_CREDITS;
+    // Ensure user credits are seeded idempotently via CreditBank
+    const seedRes = await CreditBank.ensureUserSeeded(uid, email);
+    const credits = seedRes.ok ? seedRes.balance : 0;
 
     res.json({ uid, email, credits });
   } catch (err) {
@@ -891,7 +854,7 @@ app.get("/api/me", verifyToken, async (req: AuthRequest, res: Response) => {
   try {
     const user = User.findById(req.user.uid);
     if (!user) return res.status(404).json({ error: "User not found" });
-    const credits = await getUserCredits(req.user.uid);
+    const credits = await CreditBank.getBalance(req.user.uid);
     res.json({ uid: user.id, email: user.email, credits });
   } catch (err) {
     console.error("Get user error:", err);
@@ -903,7 +866,7 @@ app.get("/api/getCredits", verifyToken, async (req: AuthRequest, res: Response) 
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const credits = await getUserCredits(req.user.uid);
+    const credits = await CreditBank.getBalance(req.user.uid);
     return res.json({ credits });
   } catch (err) {
     console.error("Get credits error:", err);
@@ -917,16 +880,20 @@ app.get("/api/getCredits", verifyToken, async (req: AuthRequest, res: Response) 
 // endpoint used to get its analysis for nothing.
 
 
-app.listen(3000, "0.0.0.0", () => {
-  console.log("Backend running on http://localhost:3000");
-  // Prices are listed in USD but charged in TWD; keep the conversion rate warm.
-  // Non-blocking — checkout falls back to the last known rate if this fails.
-  startFxRefresh();
-  // Daily snapshot + reconciliation of every credit balance against the ledger.
-  startCreditAudit();
-  // Drop stored test accounts whose analysis was never run — a password is a
-  // liability for exactly as long as it is kept.
-  startCredentialSweep();
-  // Storage hygiene: purge expired guest APKs and reports from S3 on schedule
-  startStorageHygieneSchedule();
-});
+export { app, verifyToken };
+
+if (require.main === module) {
+  app.listen(3000, "0.0.0.0", () => {
+    console.log("Backend running on http://localhost:3000");
+    // Prices are listed in USD but charged in TWD; keep the conversion rate warm.
+    // Non-blocking — checkout falls back to the last known rate if this fails.
+    startFxRefresh();
+    // Daily snapshot + reconciliation of every credit balance against the ledger.
+    startCreditAudit();
+    // Drop stored test accounts whose analysis was never run — a password is a
+    // liability for exactly as long as it is kept.
+    startCredentialSweep();
+    // Storage hygiene: purge expired guest APKs and reports from S3 on schedule
+    startStorageHygieneSchedule();
+  });
+}

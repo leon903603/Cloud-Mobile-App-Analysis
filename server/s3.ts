@@ -10,6 +10,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectVersionsCommand,
+  ListObjectVersionsCommandOutput,
   PutBucketVersioningCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -19,11 +20,11 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const REGION = process.env.AWS_REGION;
-const BUCKET = process.env.S3_BUCKET;
+const REGION = process.env.AWS_REGION || "ap-southeast-2";
+const BUCKET = process.env.S3_BUCKET || "cmaa-s3-islab-sydney";
 
-if (!REGION) console.warn("[s3] AWS_REGION is not set");
-if (!BUCKET) console.warn("[s3] S3_BUCKET is not set");
+if (!process.env.AWS_REGION) console.warn("[s3] AWS_REGION is not set, defaulting to " + REGION);
+if (!process.env.S3_BUCKET) console.warn("[s3] S3_BUCKET is not set, defaulting to " + BUCKET);
 
 const client = new S3Client({ region: REGION });
 
@@ -150,6 +151,7 @@ export async function downloadToTemp(key: string): Promise<string> {
 export async function objectExists(key: string): Promise<boolean> {
   const localFile = localFilePath(key);
   if (fs.existsSync(localFile)) return true;
+  if (!REGION || !bucket) return false;
   try {
     await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
     return true;
@@ -233,7 +235,7 @@ export async function purgeObjectAllVersions(key: string): Promise<void> {
       let totalPurged = 0;
 
       do {
-        const versionsRes = await client.send(
+        const versionsRes: ListObjectVersionsCommandOutput = await client.send(
           new ListObjectVersionsCommand({
             Bucket: bucket,
             Prefix: key,

@@ -35,6 +35,8 @@ services:
       # Also used to build the NewebPay Notify/Return callback URLs, so it must be
       # the public HTTPS origin NewebPay can reach.
       - CLIENT_URL=${CLIENT_URL}
+      # Firebase Web API Key for server-side verifyFirebasePassword (Google Identity Toolkit)
+      - FIREBASE_WEB_API_KEY=${FIREBASE_WEB_API_KEY:-}
       # AWS S3 — durable store for uploaded binaries + report artifacts
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET=${S3_BUCKET}

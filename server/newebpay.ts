@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { getAuth } from "firebase-admin/auth";
 import { db } from "./db";
 import { getTwdPerUsd } from "./fx";
-import { recordCreditChange } from "./credit_audit";
+import { CreditBank } from "./services/creditBank";
 
 import { GuestJob } from "./models/GuestJob";
 
@@ -195,15 +195,11 @@ router.post("/checkout", requireAuth, async (req, res) => {
   // If NewebPay keys are not configured, allow local development testing simulation
   if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
     if (process.env.NODE_ENV !== "production") {
-      const { getFirestore, FieldValue } = await import("firebase-admin/firestore");
-      const ref = getFirestore().collection("users").doc(uid);
-      await ref.set({ credits: FieldValue.increment(credits) }, { merge: true });
       const simOrderNo = `SIM${Date.now()}`;
-      recordCreditChange({
+      await CreditBank.grantPurchase({
         uid,
-        delta: credits,
-        reason: "purchase",
-        ref: simOrderNo,
+        orderNo: simOrderNo,
+        credits,
         note: `Dev simulation · ${credits} credits`,
       });
       console.log(`[Dev Simulation] Auto-credited ${credits} to user ${uid}`);
@@ -255,6 +251,31 @@ router.post("/checkout", requireAuth, async (req, res) => {
     rate,
   });
 });
+
+export function buildGuestTradeInfoParams(params: {
+  merchantId: string;
+  orderNo: string;
+  amt: number;
+  itemDesc: string;
+  receiptEmail?: string;
+  clientUrl?: string;
+}): URLSearchParams {
+  return new URLSearchParams({
+    MerchantID: params.merchantId,
+    RespondType: "JSON",
+    TimeStamp: String(Math.floor(Date.now() / 1000)),
+    Version: "2.0",
+    LangType: "en",
+    MerchantOrderNo: params.orderNo,
+    Amt: String(params.amt),
+    ItemDesc: params.itemDesc,
+    Email: (params.receiptEmail ?? "").trim(),
+    NotifyURL: `${params.clientUrl ?? CLIENT_URL}/api/newebpay/notify`,
+    ReturnURL: `${params.clientUrl ?? CLIENT_URL}/api/newebpay/return`,
+    ClientBackURL: `${params.clientUrl ?? CLIENT_URL}/app`,
+    CREDIT: "1",
+  });
+}
 
 // ── POST /api/newebpay/guest-checkout ─────────────────────────────────────────
 // Public endpoint for anonymous users to pay for a completed analysis report.
@@ -312,20 +333,12 @@ router.post("/guest-checkout", async (req, res) => {
   const receiptEmail = (req.body?.receiptEmail as string)?.trim() || (email as string)?.trim() || "";
   insertGuestOrder.run(orderNo, amt, usd, rate, jobId, receiptEmail);
 
-  const tradeInfoPlain = new URLSearchParams({
-    MerchantID: MERCHANT_ID,
-    RespondType: "JSON",
-    TimeStamp: String(Math.floor(Date.now() / 1000)),
-    Version: "2.0",
-    LangType: "en",
-    MerchantOrderNo: orderNo,
-    Amt: String(amt),
-    ItemDesc: `Security Report: ${job.filename || "App Analysis"} (US$${usd})`,
-    Email: receiptEmail,
-    NotifyURL: `${CLIENT_URL}/api/newebpay/notify`,
-    ReturnURL: `${CLIENT_URL}/api/newebpay/return`,
-    ClientBackURL: `${CLIENT_URL}/app`,
-    CREDIT: "1",
+  const tradeInfoPlain = buildGuestTradeInfoParams({
+    merchantId: MERCHANT_ID,
+    orderNo,
+    amt,
+    itemDesc: `Security Report: ${job.filename || "App Analysis"} (US$${usd})`,
+    receiptEmail,
   }).toString();
 
   const encrypted = aesEncrypt(tradeInfoPlain);
@@ -400,26 +413,13 @@ router.post("/notify", async (req, res) => {
       });
       console.log(`NewebPay: unlocked guest report ${order.jobId} (${orderNo})`);
     } else {
-      const { getFirestore, FieldValue } = await import("firebase-admin/firestore");
-      const ref = getFirestore().collection("users").doc(order.uid);
-      await ref.set({ credits: FieldValue.increment(order.credits) }, { merge: true });
-      console.log(`NewebPay: credited ${order.credits} to ${order.uid} (${orderNo})`);
-
-      // Journal the grant so the daily audit can account for the new balance.
-      // After the Firestore write, and never allowed to fail the request: an
-      // unjournaled grant is detected and backfilled from this paid order tomorrow.
-      const balanceAfter = await ref
-        .get()
-        .then((s) => Number(s.data()?.credits ?? 0))
-        .catch(() => null);
-      recordCreditChange({
+      await CreditBank.grantPurchase({
         uid: order.uid,
-        delta: order.credits,
-        reason: "purchase",
-        ref: orderNo,
-        balanceAfter,
+        orderNo,
+        credits: order.credits,
         note: `NewebPay ${result.TradeNo ?? "?"} · NT$${order.amt}`,
       });
+      console.log(`NewebPay: credited ${order.credits} to ${order.uid} (${orderNo})`);
     }
   }
 

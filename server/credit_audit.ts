@@ -86,7 +86,7 @@ db.exec(`
     uid          TEXT NOT NULL,
     delta        INTEGER NOT NULL,          -- + granted, - spent
     reason       TEXT NOT NULL CHECK (reason IN
-                   ('signup','purchase','consume','admin_adjust','reconcile_correction')),
+                   ('signup','purchase','consume','refund','admin_adjust','reconcile_correction')),
     ref          TEXT,                      -- orderNo / upload id / anomaly id
     balanceAfter INTEGER,                   -- balance observed right after the write
     note         TEXT,
@@ -174,16 +174,46 @@ if (
   db.exec("ALTER TABLE credit_snapshots ADD COLUMN runId INTEGER");
 }
 
+// Migration: ensure credit_ledger CHECK constraint supports 'refund'
+const ledgerTableInfo = db
+  .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='credit_ledger'")
+  .get() as { sql: string } | undefined;
+if (ledgerTableInfo && !ledgerTableInfo.sql.includes("'refund'")) {
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE credit_ledger_migration_new (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid          TEXT NOT NULL,
+        delta        INTEGER NOT NULL,
+        reason       TEXT NOT NULL CHECK (reason IN
+                       ('signup','purchase','consume','refund','admin_adjust','reconcile_correction')),
+        ref          TEXT,
+        balanceAfter INTEGER,
+        note         TEXT,
+        createdAt    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+      INSERT INTO credit_ledger_migration_new (id, uid, delta, reason, ref, balanceAfter, note, createdAt)
+        SELECT id, uid, delta, reason, ref, balanceAfter, note, createdAt FROM credit_ledger;
+      DROP TABLE credit_ledger;
+      ALTER TABLE credit_ledger_migration_new RENAME TO credit_ledger;
+      CREATE UNIQUE INDEX IF NOT EXISTS credit_ledger_ref
+        ON credit_ledger (reason, ref) WHERE ref IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS credit_ledger_uid_time ON credit_ledger (uid, createdAt);
+    `);
+  })();
+}
+
 // ── Ledger ──────────────────────────────────────────────────────────────────
 export type LedgerReason =
   | "signup"
   | "purchase"
   | "consume"
+  | "refund"
   | "admin_adjust"
   | "reconcile_correction";
 
 /** Reasons allowed to hand out credits. Anything else with delta > 0 is an anomaly. */
-const GRANT_REASONS: LedgerReason[] = ["signup", "purchase", "admin_adjust"];
+const GRANT_REASONS: LedgerReason[] = ["signup", "purchase", "refund", "admin_adjust"];
 
 const insertLedger = db.prepare(
   `INSERT INTO credit_ledger (uid, delta, reason, ref, balanceAfter, note, createdAt)
@@ -415,7 +445,7 @@ interface PaidOrder {
  * Reconcile one user against the previous snapshot.
  * `windowStart` is the previous snapshot's instant, `windowEnd` this run's instant.
  */
-function reconcileUser(
+export function reconcileUser(
   user: FsUser,
   previousCredits: number,
   windowStart: string,
@@ -496,6 +526,35 @@ function reconcileUser(
           severity: "critical",
           drift: e.delta - SIGNUP_CREDITS,
           detail: { ledgerId: e.id, granted: e.delta, expected: SIGNUP_CREDITS },
+        });
+      }
+    }
+
+    if (e.reason === "refund") {
+      const matchedConsume = e.ref
+        ? (db
+            .prepare(
+              `SELECT id, createdAt FROM credit_ledger 
+               WHERE uid = ? AND reason = 'consume' AND ref = ? AND delta = -1`
+            )
+            .get(user.uid, e.ref) as { id: number; createdAt: string } | undefined)
+        : undefined;
+
+      if (!e.ref || e.delta !== 1 || !matchedConsume || matchedConsume.createdAt > e.createdAt) {
+        found.push({
+          ...base,
+          kind: "unbacked_grant",
+          severity: "critical",
+          drift: e.delta,
+          detail: {
+            ledgerId: e.id,
+            reason: "refund",
+            ref: e.ref,
+            grantedCredits: e.delta,
+            consumeFound: !!matchedConsume,
+            consumeCreatedAt: matchedConsume?.createdAt ?? null,
+            refundCreatedAt: e.createdAt,
+          },
         });
       }
     }

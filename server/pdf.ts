@@ -37,6 +37,21 @@ export async function renderReportPdf(opts: {
   type?: string;
   functionName?: string;
 }): Promise<RenderPdfResult> {
+  if (process.env.MOCK_PDF === "true") {
+    if (opts.outputKey) {
+      const { putObject } = await import("./s3");
+      const dummy = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>startxref\n0\n%%EOF");
+      await putObject(opts.outputKey, dummy, "application/pdf").catch(() => {});
+    }
+    return {
+      ok: true,
+      url: `https://${process.env.S3_BUCKET || "cmaa-s3"}.s3.amazonaws.com/${opts.outputKey || "report.pdf"}`,
+      key: opts.outputKey || "report.pdf",
+      bytes: 1024,
+      expires_in: 60,
+    };
+  }
+
   const isDynamic = opts.type === "dynamic" || opts.type === "android-dynamic";
   const defaultTarget = isDynamic ? DYNAMIC_PDF_LAMBDA_NAME : STATIC_PDF_LAMBDA_NAME;
   const targetFunction = opts.functionName || defaultTarget;

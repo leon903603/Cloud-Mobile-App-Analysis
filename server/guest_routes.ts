@@ -7,11 +7,9 @@ import express, { Request, Response, Router } from "express";
 import multer, { FileFilterCallback, StorageEngine } from "multer";
 import rateLimit from "express-rate-limit";
 import { v4 as uuidv4 } from "uuid";
-import { putFile, getStream, deleteObject, objectExists, getPresignedDownloadUrl, purgeObjectAllVersions } from "./s3";
 import { GuestJob, GuestJobRow, AnalysisType, FileType, JobStatus } from "./models/GuestJob";
-import { getAssociatedStorageKeys } from "./services/storageHygiene";
 import { dispatchGuestJob } from "./dispatch";
-import { renderReportPdf } from "./pdf";
+import { ArtifactVault } from "./services/artifactVault";
 import { getTwdPerUsd } from "./fx";
 import { seal, sealingAvailable } from "./secretbox";
 import { verifyTurnstileToken } from "./turnstile";
@@ -219,33 +217,28 @@ router.post(
         return;
       }
 
-      // Security Check: Magic Bytes for ZIP/APK/IPA (0x50 0x4B 0x03 0x04)
+      let key: string;
       try {
-        const fd = await fs.promises.open(file.path, "r");
-        const header = Buffer.alloc(4);
-        await fd.read(header, 0, 4, 0);
-        await fd.close();
-        if (
-          header[0] !== 0x50 ||
-          header[1] !== 0x4b ||
-          header[2] !== 0x03 ||
-          header[3] !== 0x04
-        ) {
-          await fs.promises.unlink(file.path).catch(() => {});
+        const ingested = await ArtifactVault.ingestUploadedBinary(
+          {
+            role: "guest",
+            jobId: job.jobId,
+            analysisType: job.analysisType,
+            filename: file.originalname,
+          },
+          file.path
+        );
+        key = ingested.uploadKey;
+      } catch (ingestErr: any) {
+        if (ingestErr.code === "invalid_file_format" || ingestErr.message?.includes("Invalid file format")) {
           res.status(400).json({
-            message: "Invalid file format: must be a valid APK or IPA package (ZIP header PK\\x03\\x04 required).",
+            error: "invalid_file_format",
+            message: ingestErr.message,
           });
           return;
         }
-      } catch (checkErr) {
-        console.warn("Magic bytes check warning:", checkErr);
+        throw ingestErr;
       }
-
-      // Include original extension in the key so analysis tools can identify it
-      const ext = fileType === "ipa" ? ".ipa" : ".apk";
-      const key = guestUploadKey(job.jobId, ext);
-      await putFile(key, file.path);
-      await fs.promises.unlink(file.path).catch(() => {});
 
       GuestJob.update(job.jobId, {
         uploadPath: key,
@@ -335,13 +328,14 @@ router.post(
         return;
       }
 
-      // Physical S3 file version-aware purge
-      const keysToDelete = getAssociatedStorageKeys(job);
-      for (const key of keysToDelete) {
-        await purgeObjectAllVersions(key).catch((e) => {
-          console.warn(`[discard-job] Warning purging S3 key ${key}:`, e);
-        });
-      }
+      // Physical S3 file version-aware purge via ArtifactVault
+      await ArtifactVault.purgeAllJobArtifacts({
+        role: "guest",
+        jobId,
+        analysisType: job.analysisType,
+        existingUploadPath: job.uploadPath,
+        existingReportPath: job.reportPath,
+      });
 
       const nowIso = new Date().toISOString();
       GuestJob.update(jobId, {
@@ -390,13 +384,14 @@ router.post(
         return;
       }
 
-      // Physical S3 file version-aware purge
-      const keysToDelete = getAssociatedStorageKeys(job);
-      for (const key of keysToDelete) {
-        await purgeObjectAllVersions(key).catch((e) => {
-          console.warn(`[cleanup-job] Warning purging S3 key ${key}:`, e);
-        });
-      }
+      // Physical S3 file version-aware purge via ArtifactVault
+      await ArtifactVault.purgeAllJobArtifacts({
+        role: "guest",
+        jobId,
+        analysisType: job.analysisType,
+        existingUploadPath: job.uploadPath,
+        existingReportPath: job.reportPath,
+      });
 
       GuestJob.update(jobId, {
         status: "expired",
@@ -440,12 +435,13 @@ router.post(
           continue;
         }
 
-        const keysToDelete = getAssociatedStorageKeys(job);
-        for (const key of keysToDelete) {
-          await purgeObjectAllVersions(key).catch((e) => {
-            console.warn(`[cleanup-old-jobs] Warning purging S3 key ${key}:`, e);
-          });
-        }
+        await ArtifactVault.purgeAllJobArtifacts({
+          role: "guest",
+          jobId: id,
+          analysisType: job.analysisType,
+          existingUploadPath: job.uploadPath,
+          existingReportPath: job.reportPath,
+        });
 
         GuestJob.update(id, {
           status: "expired",
@@ -517,51 +513,31 @@ router.get(
       }
 
       const reqLang = (req.query.lang as string) === "en" ? "en" : "zh-TW";
-      const langSuffix = reqLang === "en" ? "_en" : "_zh";
-      const langPdfKey = `guest/reports/${job.jobId}${langSuffix}.pdf`;
-      const legacyPdfKey = job.reportPath || `guest/reports/${job.jobId}.pdf`;
-      const jsonKey = `guest/reports/${job.jobId}.json`;
 
-      let targetKey = "";
-      if (await objectExists(langPdfKey)) {
-        targetKey = langPdfKey;
-      } else if (reqLang === "zh-TW" && (await objectExists(legacyPdfKey))) {
-        targetKey = legacyPdfKey;
-      } else if (await objectExists(jsonKey)) {
-        // Render on demand for requested language
-        const pdfRes = await renderReportPdf({
-          reportKey: jsonKey,
-          filename: `${job.filename || "security-report"}.pdf`,
-          type: job.analysisType,
-          lang: reqLang,
-          outputKey: langPdfKey,
-        });
-        if (pdfRes.ok) {
-          targetKey = langPdfKey;
+      const downloadResult = await ArtifactVault.acquireReportDownloadUrl({
+        scope: {
+          role: "guest",
+          jobId: job.jobId,
+          analysisType: job.analysisType as any,
+          filename: job.filename || "security-report",
+          fileType: job.fileType,
+          existingUploadPath: job.uploadPath,
+          existingReportPath: job.reportPath,
+        },
+        lang: reqLang as any,
+        consumeDownloadQuota: () => GuestJob.decrementDownloadsRemaining(job.jobId),
+      });
+
+      if (!downloadResult.ok) {
+        if (downloadResult.code === "quota_exceeded") {
+          res.status(403).json({ message: "Download limit reached." });
+          return;
         }
-      }
-
-      if (!targetKey) {
-        targetKey = legacyPdfKey;
-      }
-
-      // Check if client expects JSON or direct redirect
-      const downloadFilename = `${(job.filename || "security-report").replace(/\.[^/.]+$/, "")}-${job.analysisType}-${reqLang === "en" ? "en" : "zh"}-report.pdf`;
-
-      // Check S3 object existence first so a missing object doesn't consume quota
-      const exists = await objectExists(targetKey);
-      if (!exists) {
-        res.status(500).json({ message: "Report file missing." });
+        res.status(500).json({ message: downloadResult.message || "Report file missing." });
         return;
       }
 
-      const decremented = GuestJob.decrementDownloadsRemaining(job.jobId);
-      if (!decremented) {
-        res.status(403).json({ message: "Download limit reached." });
-        return;
-      }
-
-      const presignedUrl = await getPresignedDownloadUrl(targetKey, downloadFilename, 60);
+      const presignedUrl = downloadResult.url;
 
       const acceptHeader = req.headers.accept || "";
       if (req.query.json === "true" || acceptHeader.includes("application/json")) {
