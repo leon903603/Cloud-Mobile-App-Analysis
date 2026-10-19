@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pdf
+lambda_res.json
+test_payload.json
+dynamic_latest.json

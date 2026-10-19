@@ -1,0 +1,5 @@
+reportlab==3.6.11
+Pillow==9.2.0
+python-i18n==0.3.9
+boto3
+awslambdaric

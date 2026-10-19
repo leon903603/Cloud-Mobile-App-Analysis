@@ -20,6 +20,8 @@ def handler(event, context):
         # 1. Read JSON report from S3
         resp = s3.get_object(Bucket=REPORT_BUCKET, Key=report_key)
         rawdata = json.loads(resp['Body'].read().decode('utf-8'))
+        while isinstance(rawdata, str):
+            rawdata = json.loads(rawdata)
         rawdata['lang'] = lang
 
         # 2. Render PDF bytes

@@ -1,3 +1,4 @@
+import os
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, PageBreak, Image, Spacer, Table, TableStyle)
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER, TA_JUSTIFY
@@ -13,7 +14,7 @@ import i18n
 
 i18n.set('fallback', 'en')
 i18n.set('file_format', 'json')
-i18n.load_path.append('./translations')
+i18n.load_path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'translations'))
 
 class PDFPSReporte:
 
