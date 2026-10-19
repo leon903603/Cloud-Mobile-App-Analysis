@@ -4,24 +4,42 @@ import { GuestJob, GuestJobRow } from "./models/GuestJob";
 import { ArtifactVault } from "./services/artifactVault";
 import { SandboxAdapter, SandboxExecutionError } from "./services/sandboxAdapter";
 
+const isTestEnv = () => process.env.NODE_ENV === "test";
+
 /**
- * Submit a static-analysis job via SandboxAdapter and poll it to completion.
- * The report JSON and pre-warmed dual-language PDFs are saved via ArtifactVault.
+ * Defensive unpacking: prevents single or double JSON serialized strings from crash in downstream PDF Lambda
  */
+export function normalizeReportObject(raw: unknown): Record<string, any> {
+  let current = raw;
+  for (let i = 0; i < 3 && typeof current === "string"; i++) {
+    try {
+      current = JSON.parse(current);
+    } catch {
+      break;
+    }
+  }
+  if (!current || typeof current !== "object" || Array.isArray(current)) {
+    throw new Error("Invalid report data structure: expected a JSON object");
+  }
+  return current as Record<string, any>;
+}
+
 async function runStaticJob(fileDoc: FileMetaRow, platform: "android" | "ios") {
   FileMeta.update(fileDoc.id, { status: "analyzing" });
 
-  const { reportData } = await SandboxAdapter.runStaticAnalysis({
+  const { reportData: rawReportData } = await SandboxAdapter.runStaticAnalysis({
     platform,
     s3UploadKey: fileDoc.filePath,
     filename: fileDoc.filename,
     fileHash: fileDoc.hash,
+    allowSimulationFallback: isTestEnv(),
     onTaskQueued: (taskId) => {
       FileMeta.update(fileDoc.id, { taskId });
     },
   });
 
-  // Store parsed JSON and pre-warm dual-language PDFs via ArtifactVault
+  const reportData = normalizeReportObject(rawReportData);
+
   await ArtifactVault.storeCompletedReport(
     {
       role: "member",
@@ -33,19 +51,13 @@ async function runStaticJob(fileDoc: FileMetaRow, platform: "android" | "ios") {
       existingReportPath: fileDoc.reportPath,
     },
     reportData,
-    { allowDummyPdfFallback: process.env.NODE_ENV === "test" }
+    { allowDummyPdfFallback: isTestEnv() }
   );
 
   FileMeta.update(fileDoc.id, { status: "done" });
   return reportData;
 }
 
-// Every analyze function takes the `file_meta` row id, never the file hash. Two
-// users can upload the same binary — the table is unique on (user, hash,
-// analysisType), not on the hash — so a lookup by hash alone would resolve to
-// whichever row was created first and analyse, and overwrite, the wrong user's
-// report while the caller's own row sat in `analyzing` forever. The caller has
-// already paid a credit for a specific row, so that row is what runs.
 export async function analyzeIOSStatic(fileId: number) {
   try {
     const fileDoc = FileMeta.findById(fileId);
@@ -92,13 +104,16 @@ export async function analyzeAndroidDynamic(fileId: number) {
       filename: fileDoc.filename,
       fileHash: fileDoc.hash,
       credentials,
+      allowSimulationFallback: isTestEnv(),
       onPhaseChange: (phase) => {
         const substatus = phase === "generating_pdf" ? "generating_report" : phase;
         FileMeta.update(fileDoc.id, { taskId: `substatus:${substatus}` });
       },
     });
 
-    // 1. Save JSON Report and pre-warm dual-language PDFs via ArtifactVault
+    const reportData = normalizeReportObject(result.reportData);
+
+    // Sandbox generated pdfBase64 is English, do not pass to zh path; generate dual language PDF via Lambda
     await ArtifactVault.storeCompletedReport(
       {
         role: "member",
@@ -109,16 +124,15 @@ export async function analyzeAndroidDynamic(fileId: number) {
         existingFilePath: fileDoc.filePath,
         existingReportPath: fileDoc.reportPath,
       },
-      result.reportData,
-      { pregeneratedZhPdfBase64: result.pdfBase64 }
+      reportData,
+      { allowDummyPdfFallback: isTestEnv() }
     );
 
     DynamicCredentials.remove(fileDoc.id);
 
-    // Done
     FileMeta.update(fileDoc.id, { status: "done", taskId: null });
     console.log(`[Dynamic Analysis] Analysis for file ${fileDoc.id} finished successfully.`);
-    return result.reportData;
+    return reportData;
   } catch (err: any) {
     console.error("Error in analyzeAndroidDynamic:", err);
     let errorTag = "error:analysis_failed";
@@ -172,13 +186,16 @@ async function runGuestStaticJob(job: GuestJobRow, platform: "android" | "ios") 
 
   const pdfKey = `guest/reports/${job.jobId}.pdf`;
 
-  const { reportData } = await SandboxAdapter.runStaticAnalysis({
+  // Restrict simulation strictly to NODE_ENV === "test"
+  const { reportData: rawReportData } = await SandboxAdapter.runStaticAnalysis({
     platform,
     s3UploadKey: job.uploadPath,
     filename: job.filename || "security-report.apk",
     fileHash: job.fileHash,
-    allowSimulationFallback: true,
+    allowSimulationFallback: isTestEnv(),
   });
+
+  const reportData = normalizeReportObject(rawReportData);
 
   await ArtifactVault.storeCompletedReport(
     {
@@ -190,7 +207,7 @@ async function runGuestStaticJob(job: GuestJobRow, platform: "android" | "ios") 
       existingReportPath: job.reportPath,
     },
     reportData,
-    { allowDummyPdfFallback: process.env.NODE_ENV === "test" }
+    { allowDummyPdfFallback: isTestEnv() }
   );
 
   GuestJob.update(job.jobId, {
@@ -208,13 +225,16 @@ async function runGuestDynamicJob(job: GuestJobRow) {
   const pdfKey = `guest/reports/${job.jobId}.pdf`;
   const credentials = GuestJob.revealCredentials(job);
 
+  // Restrict simulation strictly to NODE_ENV === "test"
   const result = await SandboxAdapter.runDynamicAnalysis({
     s3UploadKey: job.uploadPath,
     filename: job.filename || "security-report.apk",
     fileHash: job.fileHash,
     credentials,
-    allowSimulationFallback: true,
+    allowSimulationFallback: isTestEnv(),
   });
+
+  const reportData = normalizeReportObject(result.reportData);
 
   await ArtifactVault.storeCompletedReport(
     {
@@ -225,20 +245,19 @@ async function runGuestDynamicJob(job: GuestJobRow) {
       existingUploadPath: job.uploadPath,
       existingReportPath: job.reportPath,
     },
-    result.reportData,
+    reportData,
     {
-      allowDummyPdfFallback: true,
-      pregeneratedZhPdfBase64: result.pdfBase64,
+      allowDummyPdfFallback: isTestEnv(),
     }
   );
 
   GuestJob.update(job.jobId, {
     status: "done",
     reportPath: pdfKey,
-    summaryPreview: extractSummaryPreview(result.reportData),
+    summaryPreview: extractSummaryPreview(reportData),
   });
 
-  return result.reportData;
+  return reportData;
 }
 
 export async function dispatchGuestJob(jobId: string): Promise<void> {

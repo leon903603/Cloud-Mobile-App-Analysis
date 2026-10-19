@@ -29,6 +29,7 @@
     "@types/multer": "^1.4.7",
     "@types/node": "^20.5.2",
     "@types/uuid": "^11.0.0",
+    "playwright": "^1.64.1",
     "tsx": "^4.0.0",
     "typescript": "^5.2.2"
   },
@@ -43,6 +44,7 @@
     "test:s3-live": "tsx tests/verify_s3_live.test.ts",
     "test:s3-lifecycle": "tsx tests/verify_s3_lifecycle.test.ts",
     "test:credit-audit": "npm run build && node tests/credit_audit.test.js && node tests/credit_audit_writes.test.js && node tests/credit_audit_gaps.test.js",
+    "test:browser-e2e": "tsx tests/browser_ec2_e2e.test.ts",
     "test:all": "npm run test:unit && npm run test:e2e && npm run test:credit-audit"
   },
   "allowScripts": {

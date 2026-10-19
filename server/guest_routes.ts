@@ -16,6 +16,14 @@ import { verifyTurnstileToken } from "./turnstile";
 
 export { GuestJob, GuestJobRow };
 
+// Constant-time safe string comparison helper
+function safeEqual(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+}
+
 // ─── Multer — buffer uploads to a temp dir, then stream to S3 ──────────────────
 
 const storage: StorageEngine = multer.diskStorage({
@@ -275,7 +283,18 @@ router.get(
       }
 
       const clientSecret = (req.headers["x-guest-secret"] as string) || (req.query.secret as string);
-      if (job.secretKey && (!clientSecret || job.secretKey !== clientSecret)) {
+      const clientToken = (req.headers["x-download-token"] as string) || (req.query.token as string);
+
+      // If client explicitly provided a secret, it must match job.secretKey
+      if (clientSecret && !safeEqual(job.secretKey, clientSecret)) {
+        res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
+        return;
+      }
+
+      const validSecret = job.secretKey ? safeEqual(job.secretKey, clientSecret) : true;
+      const validPaidToken = !!(job.isPaid && job.downloadToken && safeEqual(job.downloadToken, clientToken));
+
+      if (!validSecret && !validPaidToken) {
         res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
         return;
       }
@@ -294,6 +313,8 @@ router.get(
         priceTwd,
         summaryPreview: job.summaryPreview ? JSON.parse(job.summaryPreview) : null,
         downloadToken: job.isPaid ? job.downloadToken : undefined,
+        // If returning via NewebPay ReturnURL with valid downloadToken across browsers, return secretKey to restore credentials
+        secretKey: validPaidToken ? job.secretKey : undefined,
       });
     } catch (err) {
       console.error("job-status error:", err);
@@ -323,7 +344,7 @@ router.post(
 
       // Verify secretKey if present on job
       const clientSecret = (req.headers["x-guest-secret"] as string) || secretKey;
-      if (job.secretKey && job.secretKey !== clientSecret) {
+      if (job.secretKey && !safeEqual(job.secretKey, clientSecret)) {
         res.status(403).json({ error: "forbidden", message: "Invalid authorization secret." });
         return;
       }
@@ -379,7 +400,7 @@ router.post(
 
       // Verify secretKey
       const clientSecret = (req.headers["x-guest-secret"] as string) || secretKey;
-      if (job.secretKey && job.secretKey !== clientSecret) {
+      if (job.secretKey && !safeEqual(job.secretKey, clientSecret)) {
         res.status(403).json({ error: "forbidden", message: "Invalid authorization secret." });
         return;
       }
@@ -431,7 +452,7 @@ router.post(
         const job = GuestJob.findByJobId(id);
         if (!job) continue;
 
-        if (job.secretKey && (!clientSecret || job.secretKey !== clientSecret)) {
+        if (job.secretKey && !safeEqual(job.secretKey, clientSecret)) {
           continue;
         }
 
@@ -472,16 +493,19 @@ router.get(
         return;
       }
 
-      // Verify authorization secret
+      // Verify authorization:
       const clientSecret = (req.headers["x-guest-secret"] as string) || (req.query.secret as string);
-      if (!job.secretKey || !clientSecret) {
+
+      // If client explicitly provided a secret, it must match job.secretKey
+      if (clientSecret && !safeEqual(job.secretKey, clientSecret)) {
         res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
         return;
       }
 
-      const expectedBuf = Buffer.from(job.secretKey, "utf8");
-      const clientBuf = Buffer.from(clientSecret, "utf8");
-      if (expectedBuf.length !== clientBuf.length || !crypto.timingSafeEqual(expectedBuf, clientBuf)) {
+      const hasValidSecret = safeEqual(job.secretKey, clientSecret);
+      const hasValidDownloadToken = !!(job.isPaid && safeEqual(job.downloadToken, req.params.token));
+
+      if (!hasValidSecret && !hasValidDownloadToken) {
         res.status(403).json({ error: "forbidden", message: "Invalid or missing authorization secret." });
         return;
       }

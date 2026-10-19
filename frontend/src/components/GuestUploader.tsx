@@ -488,9 +488,52 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
     if (guestJobParam) {
       setActiveJobId(guestJobParam);
       setStep("tracking");
+
+      const existingInStorage = currentList.find((j) => j.jobId === guestJobParam);
+      const secret = existingInStorage?.secretKey;
+
+      const headers: Record<string, string> = {};
+      if (secret) headers["x-guest-secret"] = secret;
+
+      const queryToken = tokenParam ? `?token=${encodeURIComponent(tokenParam)}` : "";
+      fetch(`${import.meta.env.VITE_BACKEND_URL}/guest/job-status/${guestJobParam}${queryToken}`, { headers })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data) return;
+          setJobsList((prev) => {
+            const found = prev.find((item) => item.jobId === guestJobParam);
+            const resolvedSecret = data.secretKey || secret || "";
+            const isPaidStatus = Boolean(data.isPaid);
+            const updatedItem: StoredGuestJob = {
+              jobId: guestJobParam,
+              secretKey: resolvedSecret,
+              filename: data.filename || found?.filename || "Security Report",
+              analysisType: data.analysisType || found?.analysisType || "static",
+              status: data.status,
+              createdAt: found?.createdAt || new Date().toISOString(),
+              uploadTime: found?.uploadTime || new Date().toISOString(),
+              isPaid: isPaidStatus,
+              downloadToken: data.downloadToken || (tokenParam || undefined) || found?.downloadToken,
+              priceUsd: data.priceUsd,
+              priceTwd: data.priceTwd,
+              summaryPreview: data.summaryPreview ?? found?.summaryPreview,
+            };
+            const next = found
+              ? prev.map((item) => (item.jobId === guestJobParam ? updatedItem : item))
+              : [updatedItem, ...prev.filter((item) => item.jobId !== guestJobParam)];
+            saveStoredJobs(next);
+            return next;
+          });
+
+          if (["analyzing", "pending", "uploaded"].includes(data.status)) {
+            pollStatus(guestJobParam, data.secretKey || secret);
+          }
+        })
+        .catch(() => {});
     }
 
     currentList.forEach((j) => {
+      if (j.jobId === guestJobParam) return; // Handled specifically above
       const headers: Record<string, string> = {};
       if (j.secretKey) headers["x-guest-secret"] = j.secretKey;
 
@@ -506,14 +549,11 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                     filename: data.filename || item.filename,
                     analysisType: data.analysisType || item.analysisType,
                     status: data.status,
-                    isPaid: data.isPaid || (guestJobParam === j.jobId && paymentParam === "success"),
+                    isPaid: data.isPaid,
                     priceUsd: data.priceUsd,
                     priceTwd: data.priceTwd,
                     summaryPreview: data.summaryPreview ?? item.summaryPreview,
-                    downloadToken:
-                      data.downloadToken ||
-                      (guestJobParam === j.jobId && tokenParam ? tokenParam : undefined) ||
-                      item.downloadToken,
+                    downloadToken: data.downloadToken || item.downloadToken,
                   };
                 }
                 return item;

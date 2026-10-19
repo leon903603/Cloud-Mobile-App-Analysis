@@ -105,6 +105,7 @@ app.use(cors({
     "Content-Type",
     "Authorization",
     "x-guest-secret",
+    "x-download-token",
     "x-turnstile-token",
     "x-admin-token",
   ],

@@ -90,7 +90,7 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
   // Default to 5002, matching docker-compose.yml
   const sandboxPort = deps?.sandboxPort || process.env.DYNAMIC_SANDBOX_PORT || "5002";
   const sandboxBaseUrl = `http://${sandboxHost}:${sandboxPort}`;
-  const DYNAMIC_TIMEOUT_MS = deps?.timeoutMs ?? (3 * 60 * 1000);
+  const DYNAMIC_TIMEOUT_MS = deps?.timeoutMs ?? (Number(process.env.DYNAMIC_TIMEOUT_MS) || (10 * 60 * 1000));
 
   const ec2Client = deps?.ec2Client || new EC2Client({
     region: process.env.AWS_REGION || "ap-southeast-2",
@@ -242,8 +242,8 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
           form.append("password", req.credentials.password);
         }
 
-        console.log(`[Dynamic Sandbox] Dispatching ${req.filename} to ${sandboxBaseUrl}/analyze_dynamic`);
-        const res = await customFetch(`${sandboxBaseUrl}/analyze_dynamic`, {
+        console.log(`[Dynamic Sandbox] Dispatching ${req.filename} to ${sandboxBaseUrl}/analyze_dynamic?async=true`);
+        const res = await customFetch(`${sandboxBaseUrl}/analyze_dynamic?async=true`, {
           method: "POST",
           body: form,
           headers: form.getHeaders(),
@@ -255,13 +255,110 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
           throw new SandboxExecutionError("analysis_failed", `Sandbox API request failed (${res.status}): ${errBody}`);
         }
 
-        const responseData = (await res.json()) as any;
-        const reportData = (responseData && typeof responseData === "object" && "report" in responseData)
-          ? responseData.report
-          : responseData;
-        const pdfBase64 = (responseData && typeof responseData === "object" && "pdf_base64" in responseData)
-          ? responseData.pdf_base64
-          : null;
+        const initialData = (await res.json()) as any;
+        let reportData: Record<string, unknown>;
+        let pdfBase64: string | null = null;
+
+        const asyncJobId = initialData?.job_id || initialData?.jobId;
+        if (asyncJobId) {
+          console.log(`[Dynamic Sandbox] Async task queued with job_id: ${asyncJobId}, beginning polling...`);
+          const pollIntervalMs = deps?.pollIntervalMs ?? 5000;
+          const pollTimeoutMs = 30000;
+
+          let consecutive404Count = 0;
+
+          while (!signal.aborted) {
+            // Wait for interval while checking abort signal
+            await new Promise<void>((resolve, reject) => {
+              const timer = setTimeout(() => {
+                cleanup();
+                resolve();
+              }, pollIntervalMs);
+              const onAbort = () => {
+                cleanup();
+                reject(new Error("Dynamic analysis aborted"));
+              };
+              const cleanup = () => {
+                clearTimeout(timer);
+                signal.removeEventListener("abort", onAbort);
+              };
+              signal.addEventListener("abort", onAbort);
+            });
+
+            // Poll status with per-request timeout of 30s
+            let pollRes: any;
+            try {
+              const pollController = new AbortController();
+              const pollTimer = setTimeout(() => pollController.abort(), pollTimeoutMs);
+              const abortListener = () => pollController.abort();
+              signal.addEventListener("abort", abortListener, { once: true });
+
+              try {
+                pollRes = await customFetch(`${sandboxBaseUrl}/job_status/${asyncJobId}`, {
+                  method: "GET",
+                  signal: pollController.signal,
+                });
+              } finally {
+                clearTimeout(pollTimer);
+                signal.removeEventListener("abort", abortListener);
+              }
+            } catch (pollErr: any) {
+              if (signal.aborted) throw pollErr;
+              console.warn(`[Dynamic Sandbox] Polling ${asyncJobId} encountered network glitch: ${pollErr?.message ?? pollErr}, retrying...`);
+              continue;
+            }
+
+            if (!pollRes.ok) {
+              if (pollRes.status === 404) {
+                consecutive404Count++;
+                if (consecutive404Count >= 3) {
+                  throw new SandboxExecutionError(
+                    "analysis_failed",
+                    `Dynamic analysis job ${asyncJobId} not found on sandbox (404)`
+                  );
+                }
+              } else {
+                consecutive404Count = 0;
+              }
+              console.warn(`[Dynamic Sandbox] Polling ${asyncJobId} returned HTTP ${pollRes.status} (404 count: ${consecutive404Count}), retrying...`);
+              continue;
+            }
+
+            consecutive404Count = 0;
+
+            const pollData = (await pollRes.json()) as any;
+            const pollStatus = typeof pollData?.status === "string" ? pollData.status.toLowerCase() : "";
+
+            if (pollStatus === "error" || pollStatus === "failed" || pollData?.error) {
+              const msg = pollData?.error || `Dynamic analysis failed with status: ${pollData?.status}`;
+              throw new SandboxExecutionError("analysis_failed", msg);
+            }
+
+            if (pollStatus === "done" || pollStatus === "completed" || pollStatus === "success" || pollData?.report) {
+              reportData = (pollData && typeof pollData === "object" && "report" in pollData)
+                ? pollData.report
+                : pollData;
+              pdfBase64 = (pollData && typeof pollData === "object" && "pdf_base64" in pollData)
+                ? pollData.pdf_base64
+                : null;
+              break;
+            }
+
+            req.onPhaseChange?.("analyzing");
+          }
+
+          if (!reportData!) {
+            throw new SandboxExecutionError("timeout", `Dynamic analysis job ${asyncJobId} did not complete within timeout`);
+          }
+        } else {
+          // Direct synchronous response (backward compatibility with legacy/mocks)
+          reportData = (initialData && typeof initialData === "object" && "report" in initialData)
+            ? initialData.report
+            : initialData;
+          pdfBase64 = (initialData && typeof initialData === "object" && "pdf_base64" in initialData)
+            ? initialData.pdf_base64
+            : null;
+        }
 
         req.onPhaseChange?.("generating_pdf");
         return { reportData, pdfBase64, simulated: false };

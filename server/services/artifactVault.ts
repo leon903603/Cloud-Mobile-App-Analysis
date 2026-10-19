@@ -201,7 +201,7 @@ class ArtifactVaultService implements ArtifactVaultPort {
           await putObject(paths.pdfKeyZh, DUMMY_PDF_BUFFER, "application/pdf").catch(() => {});
           await putObject(paths.legacyPdfKey, DUMMY_PDF_BUFFER, "application/pdf").catch(() => {});
         } else {
-          throw new Error(`Failed to generate Chinese PDF report: ${zhRes.message}`);
+          throw new Error(`Failed to generate Chinese PDF report: ${zhRes.error}`);
         }
       } catch (err) {
         if (opts?.allowDummyPdfFallback) {

@@ -68,11 +68,11 @@ export const GuestJob = {
     return db.prepare("SELECT * FROM guest_jobs WHERE status != 'expired'").all() as GuestJobRow[];
   },
 
-  update(jobId: string, patch: Partial<GuestJobRow>): void {
+  update(jobId: string, patch: Partial<GuestJobRow> | Record<string, any>): void {
     const keys = Object.keys(patch) as (keyof typeof patch)[];
     if (keys.length === 0) return;
     db.prepare(`UPDATE guest_jobs SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE jobId = ?`)
-      .run(...keys.map((k) => patch[k]), jobId);
+      .run(...keys.map((k) => typeof patch[k] === "boolean" ? (patch[k] ? 1 : 0) : patch[k]), jobId);
   },
 
   decrementDownloadsRemaining(jobId: string): boolean {

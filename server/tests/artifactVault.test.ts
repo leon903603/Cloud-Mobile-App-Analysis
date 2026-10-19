@@ -95,8 +95,31 @@ async function runTests() {
 
   console.log("✓ Test 5: Magic bytes validation & automatic temp cleanup verified");
 
+  // Test 6: Defensive Report Object Normalization (double-serialized JSON unpacking)
+  const { normalizeReportObject } = await import("../dispatch");
+
+  // Single serialized
+  const single = JSON.stringify({ summary: { high: 1 } });
+  const normSingle = normalizeReportObject(single);
+  assert.strictEqual(normSingle.summary.high, 1, "Single-serialized JSON string must unpack correctly");
+
+  // Double serialized
+  const double = JSON.stringify(JSON.stringify({ summary: { high: 1 } }));
+  const normDouble = normalizeReportObject(double);
+  assert.strictEqual(normDouble.summary.high, 1, "Double-serialized JSON string must unpack correctly");
+
+  // Plain object
+  const plain = { summary: { high: 2 } };
+  assert.strictEqual(normalizeReportObject(plain).summary.high, 2, "Plain object must pass through intact");
+
+  // Invalid formats must throw
+  assert.throws(() => normalizeReportObject("not-a-json"), /Invalid report data structure/);
+  assert.throws(() => normalizeReportObject([1, 2, 3]), /Invalid report data structure/);
+
+  console.log("✓ Test 6: Defensive Report Object Normalization (double-serialized JSON unpacking) verified");
+
   console.log("==================================================");
-  console.log(" All ArtifactVault Module Unit Tests Passed (5/5) ✅");
+  console.log(" All ArtifactVault Module Unit Tests Passed (6/6) ✅");
   console.log("==================================================");
 }
 

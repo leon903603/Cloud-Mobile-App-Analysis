@@ -1,8 +1,10 @@
+process.env.NODE_ENV = "test";
 process.env.ANDROID_STATIC_API = "";
 process.env.IOS_STATIC_API = "";
 process.env.MOCK_PDF = "true";
 import dotenv from "dotenv";
 dotenv.config();
+process.env.NODE_ENV = "test";
 process.env.ANDROID_STATIC_API = "";
 process.env.IOS_STATIC_API = "";
 process.env.MOCK_PDF = "true";
@@ -17,6 +19,7 @@ import guestRoutes from "../guest_routes";
 import newebpayRouter, { buildTradeInfoPayload } from "../newebpay";
 import { GuestJob } from "../models/GuestJob";
 import { db } from "../db";
+import { ArtifactVault } from "../services/artifactVault";
 
 console.log("==================================================");
 console.log(" Running Guest E2E Full Lifecycle Integration Test");
@@ -217,8 +220,74 @@ async function runGuestE2ETest() {
 
     console.log("✓ Phase 7: POST /guest/discard-job purged artifacts and initiated cooldown");
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 8: Incognito / Cross-Browser Recovery via downloadToken
+    // ─────────────────────────────────────────────────────────────────────────
+    const incognitoJobId = uuidv4();
+    const incognitoSecret = uuidv4();
+    const incognitoToken = uuidv4();
+
+    GuestJob.create({
+      jobId: incognitoJobId,
+      secretKey: incognitoSecret,
+      filename: "incognito-app.apk",
+      fileHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      analysisType: "static",
+      status: "done",
+    });
+
+    await ArtifactVault.storeCompletedReport(
+      {
+        role: "guest",
+        jobId: incognitoJobId,
+        analysisType: "static",
+        filename: "incognito-app.apk",
+      },
+      { summary: { high: 1, medium: 2, low: 3, score: 85 } },
+      { allowDummyPdfFallback: true }
+    );
+
+    GuestJob.update(incognitoJobId, {
+      isPaid: 1,
+      downloadToken: incognitoToken,
+      reportPath: `guest/reports/${incognitoJobId}.pdf`,
+      summaryPreview: JSON.stringify({ high: 1, medium: 2, low: 3, score: 85 }),
+    });
+
+    cleanups.push(async () => {
+      await ArtifactVault.purgeAllJobArtifacts({
+        role: "guest",
+        jobId: incognitoJobId,
+        analysisType: "static",
+        existingReportPath: `guest/reports/${incognitoJobId}.pdf`,
+      });
+      db.prepare("DELETE FROM guest_jobs WHERE job_id = ?").run(incognitoJobId);
+    });
+
+    // 8a. Incognito visitor calls job-status with NO x-guest-secret header, ONLY ?token=<token>
+    const incognitoStatusRes = await fetch(
+      `${baseUrl}/guest/job-status/${incognitoJobId}?token=${incognitoToken}`
+    );
+    assert.strictEqual(incognitoStatusRes.status, 200, "Incognito job-status must return 200");
+    const incognitoStatusData = (await incognitoStatusRes.json()) as any;
+    assert.strictEqual(incognitoStatusData.isPaid, true, "Job must be marked isPaid: true");
+    assert.strictEqual(
+      incognitoStatusData.secretKey,
+      incognitoSecret,
+      "Response must return secretKey to restore credentials"
+    );
+
+    // 8b. Incognito visitor downloads report with NO x-guest-secret header, using URL :token
+    const incognitoReportRes = await fetch(
+      `${baseUrl}/guest/report/${incognitoToken}?json=true`
+    );
+    assert.strictEqual(incognitoReportRes.status, 200, "Incognito report download must return 200");
+    const incognitoReportData = (await incognitoReportRes.json()) as any;
+    assert.ok(incognitoReportData.url, "Must successfully receive report presigned URL");
+    console.log("✓ Phase 8: Cross-browser / incognito token-only status recovery and report download verified");
+
     console.log("==================================================");
-    console.log(" All Guest E2E Lifecycle Tests Passed (7/7) ✅");
+    console.log(" All Guest E2E Lifecycle Tests Passed (8/8) ✅");
     console.log("==================================================");
   } finally {
     for (const cleanup of cleanups) {

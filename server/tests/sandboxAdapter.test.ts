@@ -319,8 +319,114 @@ async function runTests() {
     console.log("✓ Test 5: Static analysis submission timeout properly caught and handled");
   }
 
+  // ── Test 6: Async Dynamic Polling Flow ─────────────────────────
+  console.log("Testing Test 6: Async Dynamic Polling Flow (?async=true & /job_status)...");
+  {
+    let pollCount = 0;
+    const asyncAdapter = createSandboxAdapter({
+      instanceId: "i-async-test",
+      pollIntervalMs: 10,
+      ec2Send: async () => ({}),
+      waitUntilRunning: async () => ({}),
+      probeFn: async () => true,
+      downloadToTempFn: async () => "fake-async.apk",
+      createReadStreamFn: () => Buffer.from("mock"),
+      fetchFn: (async (url: string) => {
+        if (url.includes("/analyze_dynamic?async=true")) {
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({ job_id: "job-async-123", status: "queued" }),
+          } as any;
+        }
+        if (url.includes("/job_status/job-async-123")) {
+          pollCount++;
+          if (pollCount < 3) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ status: "processing", job_id: "job-async-123" }),
+            } as any;
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              status: "done",
+              report: { status: "success", score: 92 },
+              pdf_base64: "YXN5bmMtcGRm",
+            }),
+          } as any;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as any;
+      }) as any,
+    });
+
+    const result = await asyncAdapter.runDynamicAnalysis({
+      s3UploadKey: "uploads/async/app.apk",
+      filename: "async_app.apk",
+      fileHash: "hash-async",
+    });
+
+    assert.strictEqual(result.reportData.status, "success");
+    assert.strictEqual(result.reportData.score, 92);
+    assert.strictEqual(result.pdfBase64, "YXN5bmMtcGRm");
+    assert(pollCount >= 3, `Expected at least 3 polls, got ${pollCount}`);
+    console.log("✓ Test 6: Async Dynamic Polling (?async=true & /job_status) passed successfully");
+  }
+
+  // ── Test 7: 404 Circuit Breaker Fast-Fail ─────────────────────
+  console.log("Testing Test 7: 404 Circuit Breaker Fast-Fail...");
+  {
+    let pollAttempts = 0;
+    const circuitBreakerAdapter = createSandboxAdapter({
+      instanceId: "i-404-test",
+      pollIntervalMs: 5,
+      ec2Send: async () => ({}),
+      waitUntilRunning: async () => ({}),
+      probeFn: async () => true,
+      downloadToTempFn: async () => "fake-404.apk",
+      createReadStreamFn: () => Buffer.from("mock"),
+      fetchFn: (async (url: string) => {
+        if (url.includes("/analyze_dynamic?async=true")) {
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({ job_id: "job-lost-404", status: "queued" }),
+          } as any;
+        }
+        if (url.includes("/job_status/job-lost-404")) {
+          pollAttempts++;
+          return {
+            ok: false,
+            status: 404,
+            json: async () => ({ error: "Not found" }),
+          } as any;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as any;
+      }) as any,
+    });
+
+    let threwExpectedError = false;
+    try {
+      await circuitBreakerAdapter.runDynamicAnalysis({
+        s3UploadKey: "uploads/404/app.apk",
+        filename: "lost_app.apk",
+        fileHash: "hash-404",
+      });
+    } catch (err: any) {
+      if (err instanceof SandboxExecutionError && err.kind === "analysis_failed" && err.message.includes("404")) {
+        threwExpectedError = true;
+      }
+    }
+
+    assert.strictEqual(threwExpectedError, true, "Adapter must throw analysis_failed after 3 consecutive 404s");
+    assert.strictEqual(pollAttempts, 3, "Polling must stop immediately at exactly 3 consecutive 404s");
+    console.log("✓ Test 7: 404 circuit breaker successfully failed fast after 3 consecutive 404s");
+  }
+
   console.log("==================================================");
-  console.log(" All SandboxAdapter Unit Tests Passed (5/5) ✅");
+  console.log(" All SandboxAdapter Unit Tests Passed (7/7) ✅");
   console.log("==================================================");
 }
 
