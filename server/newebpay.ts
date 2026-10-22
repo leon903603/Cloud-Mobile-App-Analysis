@@ -19,7 +19,10 @@ const MERCHANT_ID = process.env.NEWEBPAY_MERCHANT_ID ?? "";
 const HASH_KEY = process.env.NEWEBPAY_HASH_KEY ?? "";
 const HASH_IV = process.env.NEWEBPAY_HASH_IV ?? "";
 // Test: https://ccore.newebpay.com  ·  Production: https://core.newebpay.com
-const GATEWAY_BASE = process.env.NEWEBPAY_GATEWAY ?? "https://ccore.newebpay.com";
+export function getGatewayUrl(): string {
+  const raw = (process.env.NEWEBPAY_GATEWAY ?? "https://ccore.newebpay.com").trim().replace(/\/+$/, "");
+  return raw.endsWith("/MPG/mpg_gateway") ? raw : `${raw}/MPG/mpg_gateway`;
+}
 const CLIENT_URL = process.env.CLIENT_URL ?? "";
 // 1 credit = 1 upload, priced in USD — the platform is international and USD is
 // the listed price everywhere. NewebPay can only *charge* TWD (MPG Amt is an
@@ -239,7 +242,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
   const encrypted = aesEncrypt(tradeInfoPlain);
 
   return res.json({
-    gateway: `${GATEWAY_BASE}/MPG/mpg_gateway`,
+    gateway: getGatewayUrl(),
     merchantID: MERCHANT_ID,
     tradeInfo: encrypted,
     tradeSha: tradeSha(encrypted),
@@ -344,7 +347,7 @@ router.post("/guest-checkout", async (req, res) => {
   const encrypted = aesEncrypt(tradeInfoPlain);
 
   return res.json({
-    gateway: `${GATEWAY_BASE}/MPG/mpg_gateway`,
+    gateway: getGatewayUrl(),
     merchantID: MERCHANT_ID,
     tradeInfo: encrypted,
     tradeSha: tradeSha(encrypted),

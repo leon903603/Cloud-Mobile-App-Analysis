@@ -1,7 +1,7 @@
 // server/tests/newebpay_receipt_email.test.ts
 import assert from "assert";
 import { db } from "../db";
-import { buildGuestTradeInfoParams } from "../newebpay";
+import { buildGuestTradeInfoParams, getGatewayUrl } from "../newebpay";
 
 console.log("==================================================");
 console.log(" Running NewebPay Receipt Email Integration Tests");
@@ -58,5 +58,31 @@ console.log("✓ Test 3: SQLite newebpay_orders table stores and retrieves recei
 
 // Cleanup test row
 db.prepare("DELETE FROM newebpay_orders WHERE orderNo = ?").run(testOrderNo);
+
+// 4. Verify getGatewayUrl handles both base and full endpoints without duplicating path
+const origEnv = process.env.NEWEBPAY_GATEWAY;
+try {
+  process.env.NEWEBPAY_GATEWAY = "https://core.newebpay.com/MPG/mpg_gateway";
+  assert.strictEqual(getGatewayUrl(), "https://core.newebpay.com/MPG/mpg_gateway");
+
+  process.env.NEWEBPAY_GATEWAY = "https://core.newebpay.com";
+  assert.strictEqual(getGatewayUrl(), "https://core.newebpay.com/MPG/mpg_gateway");
+
+  process.env.NEWEBPAY_GATEWAY = "https://core.newebpay.com/";
+  assert.strictEqual(getGatewayUrl(), "https://core.newebpay.com/MPG/mpg_gateway");
+
+  process.env.NEWEBPAY_GATEWAY = "https://ccore.newebpay.com/MPG/mpg_gateway/";
+  assert.strictEqual(getGatewayUrl(), "https://ccore.newebpay.com/MPG/mpg_gateway");
+
+  delete process.env.NEWEBPAY_GATEWAY;
+  assert.strictEqual(getGatewayUrl(), "https://ccore.newebpay.com/MPG/mpg_gateway");
+} finally {
+  if (origEnv !== undefined) {
+    process.env.NEWEBPAY_GATEWAY = origEnv;
+  } else {
+    delete process.env.NEWEBPAY_GATEWAY;
+  }
+}
+console.log("✓ Test 4: getGatewayUrl normalization prevents duplicate /MPG/mpg_gateway paths");
 
 console.log("All NewebPay Receipt Email tests passed! ✅\n");
