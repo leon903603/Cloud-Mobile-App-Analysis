@@ -21,10 +21,11 @@ def handler(event, context):
         resp = s3.get_object(Bucket=REPORT_BUCKET, Key=report_key)
         rawdata = json.loads(resp['Body'].read().decode('utf-8'))
 
-        if lang:
-            while isinstance(rawdata, str):
+        while isinstance(rawdata, str):
             rawdata = json.loads(rawdata)
-        rawdata['lang'] = lang
+
+        if lang:
+            rawdata['lang'] = lang
         elif 'lang' not in rawdata:
             rawdata['lang'] = 'zh-TW'
 

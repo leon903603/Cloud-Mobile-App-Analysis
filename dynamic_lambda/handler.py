@@ -22,10 +22,11 @@ def handler(event, context):
         rawdata = json.loads(resp['Body'].read().decode('utf-8'))
 
         # If payload specifies language, update or default to en
-        if lang:
-            while isinstance(rawdata, str):
+        while isinstance(rawdata, str):
             rawdata = json.loads(rawdata)
-        rawdata['lang'] = lang
+
+        if lang:
+            rawdata['lang'] = lang
         elif 'lang' not in rawdata:
             rawdata['lang'] = 'en'
 
