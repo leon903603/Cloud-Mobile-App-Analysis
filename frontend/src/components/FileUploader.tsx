@@ -700,6 +700,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                   <Button
                     type="button"
                     onClick={handleConfirmAndUpload}
+                    disabled={!turnstileToken}
                     className="gap-2 px-6 shadow-sm font-medium"
                   >
                     <UploadCloud className="h-4 w-4" />

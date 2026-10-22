@@ -832,7 +832,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
       // Automatically poll analysis progress until done
       pollStatus(jobId, secretKey);
     },
-    [analysisType, pollStatus, appUsername, appPassword, jobsList, activeJobId, cooldownRemaining]
+    [analysisType, pollStatus, appUsername, appPassword, jobsList, activeJobId, cooldownRemaining, turnstileToken]
   );
 
   // ── NewebPay Checkout for Guest Report ─────────────────────────────────────
@@ -1208,6 +1208,14 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                 Human Verification
               </p>
               <div ref={turnstileContainerRef} />
+            </div>
+          )}
+
+          {/* Error notice in idle mode (e.g. human verification required or invalid file format) */}
+          {errorMsg && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{errorMsg}</span>
             </div>
           )}
 

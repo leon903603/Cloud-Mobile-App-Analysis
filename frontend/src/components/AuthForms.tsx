@@ -42,13 +42,24 @@ const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [turnstileToken, setTurnstileToken] = React.useState("");
+  const [turnstileActive, setTurnstileActive] = React.useState(false);
+
+  React.useEffect(() => {
+    fetch(`${import.meta.env.VITE_BACKEND_URL}/api/config`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.turnstileSiteKey) {
+          setTurnstileActive(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const hasTurnstileKey = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
-    if (hasTurnstileKey && !turnstileToken) {
+    if (turnstileActive && !turnstileToken) {
       setError("Please complete the human verification challenge.");
       return;
     }
@@ -56,7 +67,7 @@ const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
     setLoading(true);
 
     try {
-      if (hasTurnstileKey || turnstileToken) {
+      if (turnstileActive || turnstileToken) {
         // Enforce Server Turnstile check before interacting with Firebase
         const verifyRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/verify-turnstile`, {
           method: "POST",
@@ -173,7 +184,7 @@ const AuthForms: React.FC<AuthFormsProps> = ({ onContinueAsGuest }) => {
           onExpire={() => setTurnstileToken("")}
         />
 
-        <Button type="submit" disabled={loading} className="w-full">
+        <Button type="submit" disabled={loading || (turnstileActive && !turnstileToken)} className="w-full">
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
