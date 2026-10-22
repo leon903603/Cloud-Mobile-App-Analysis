@@ -333,22 +333,40 @@ class PDFPSReporte(BaseStaticReport):
 
             try:
                 temp_result = ""
-                if self.masterReport[rule].get('data'):
-                    temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>"
-                    for detail_item in self.masterReport[rule]['data'][:1]:
-                        try:
-                            _item_desc = detail_item.get('description', '')
-                            if _item_desc and _item_desc != content.get('desc', ''):
-                                temp_result += "· {details}<br/>{description}<br/><br/>".format(
-                                    details=_esc(detail_item.get('details', '')[:800]),
-                                    description=_esc(_item_desc[:800]),
-                                )
+                rule_info = self.masterReport[rule]
+                data_list = rule_info.get('data', [])
+                
+                # Report Data Normalization: Handle AS-lab052 contradiction & empty findings
+                has_meaningful_finding = False
+                if data_list:
+                    for detail_item in data_list[:1]:
+                        d_text = detail_item.get('details', '').strip()
+                        d_desc = detail_item.get('description', '').strip()
+                        
+                        # Check AS-lab052 contradiction
+                        if rule == 'AS-lab052' and ('not at risk' in d_desc.lower() or 'not at risk' in d_text.lower()):
+                            temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>"
+                            note = "程式碼引用 SQLite 資料庫組件，但日誌確認無 SQLite Journal 資訊洩漏風險（依檢測基準評估為安全或需人工關注）。" if self.lang.lower().startswith('zh') else "SQLite components referenced; verified not at risk of Journal Information Disclosure."
+                            temp_result += f"· <font color='#666666'><i>{note}</i></font><br/><br/>"
+                            has_meaningful_finding = True
+                            break
+
+                        if d_text or (d_desc and d_desc != content.get('desc', '')):
+                            temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>"
+                            esc_details = _esc(d_text[:800])
+                            esc_desc = _esc(d_desc[:800])
+                            if d_desc and d_desc != content.get('desc', ''):
+                                temp_result += f"&bull; {esc_details}<br/>{esc_desc}<br/><br/>"
                             else:
-                                temp_result += "· {details}<br/><br/>".format(
-                                    details=_esc(detail_item.get('details', '')[:800]),
-                                )
-                        except Exception:
-                            pass
+                                temp_result += f"&bull; {esc_details}<br/><br/>"
+                            has_meaningful_finding = True
+                            break
+
+                # Data Normalization: if detected but findings are completely blank (e.g. AS-lab017, 035, 043, 075)
+                if is_detected and not has_meaningful_finding:
+                    empty_notice = _esc(i18n.t('label.finding_empty_notice'))
+                    temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>&bull; <font color='#888888'><i>{empty_notice}</i></font><br/><br/>"
+
                 result_cell += temp_result
             except Exception:
                 pass

@@ -13,7 +13,7 @@
     "build": "應用程式版本",
     "bundle_id": "識別碼",
     "file_name": "檔案名稱",
-    "package_version_code": "封包版本編码",
+    "package_version_code": "封包版本編碼",
     "min_sdk": "最低SDK版本需求",
     "target_sdk": "目標SDK版本",
     "min_os_version": "最低作業系統版本需求",
@@ -28,14 +28,18 @@
     "mstg_title": "MSTG: ",
     "description_title": "敘述: ",
     "empty_url_list_hint": "未檢測到應用程式中的 URL",
-    "detail_info_title": "詳細資訊: "
-  },
-  "status": "檢測狀態",
-  "label.status": "檢測狀態",
-  "filename": "檔案名稱",
-  "label.filename": "檔案名稱",
-  "security_score": "安全評分",
-  "label.security_score": "安全評分",
-  "lang": "報告語系",
-  "label.lang": "報告語系"
+    "detail_info_title": "詳細資訊: ",
+    "vulnerability_findings": "弱點與風險檢測結果",
+    "hash": "SHA-256 雜湊值",
+    "status": "檢測狀態",
+    "filename": "檔案名稱",
+    "security_score": "安全防護評分",
+    "risk_summary": "風險等級統計",
+    "severity": "嚴重性",
+    "cwe_title": "CWE: ",
+    "masvs_title": "OWASP MASVS: ",
+    "finding_empty_notice": "未提供觸發證據或代碼路徑（建議人工複核）",
+    "finding_none": "未檢出異常項目",
+    "not_evaluated": "未評估"
+  }
 }

@@ -1,3 +1,10 @@
+from xml.sax.saxutils import escape as _xml_escape
+
+def _esc(val):
+    if not val:
+        return ''
+    return _xml_escape(str(val))
+
 import os
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, PageBreak, Image, Spacer, Table, TableStyle)
@@ -185,10 +192,11 @@ class PDFPSReporte:
                 )
 
                 for mas_id in content['mas'].split('|'):
-                    result_cell += "{mas_id} - {mas_title}<br/>".format(
-                        mas_id = mas_id,
-                        mas_title = i18n.t('mas.%s' % mas_id)
-                    )
+                    mas_title = i18n.t('mas.%s' % mas_id)
+                    if mas_title and mas_title != ('mas.%s' % mas_id):
+                        result_cell += "{mas_id} - {mas_title}<br/>".format(mas_id=mas_id, mas_title=mas_title)
+                    else:
+                        result_cell += "{mas_id}<br/>".format(mas_id=mas_id)
 
             if (content['real_mstg']):
                 result_cell += """
@@ -234,12 +242,16 @@ class PDFPSReporte:
                     # 暫時先限字數，似乎套件跨頁會故障
                     for detail_item in self.masterReport[rule]['data'][:1]:
                         try:
-                            temp_result += """· {details}<br/>{description}<br/><br/>""".format(
-                                details = detail_item['details'],
-                                description = str(detail_item['description']),
-                            )
-                        except:
-                            print("data structure does not include 'details' or 'description' key")
+                            d_text = detail_item.get('details', '')
+                            d_desc = str(detail_item.get('description', ''))
+                            esc_details = _esc(d_text[:800])
+                            esc_desc = _esc(d_desc[:800])
+                            if d_desc and d_desc != content.get('desc', ''):
+                                temp_result += f"&bull; {esc_details}<br/>{esc_desc}<br/><br/>"
+                            else:
+                                temp_result += f"&bull; {esc_details}<br/><br/>"
+                        except Exception:
+                            pass
                 result_cell += temp_result
             except:
                 print("lab report does not contain 'data' or no matched rule with", rule)

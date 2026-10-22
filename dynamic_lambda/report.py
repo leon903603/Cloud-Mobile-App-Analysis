@@ -135,7 +135,11 @@ class PDFPSReporte:
             if mas:
                 result_cell += '<br/><br/><b>{}</b><br/>'.format(i18n.t('label.mas_title'))
                 for mas_id in mas.split('|'):
-                    result_cell += '{} - {}<br/>'.format(_esc(mas_id), _esc(i18n.t('mas.%s' % mas_id)))
+                    mas_title = i18n.t('mas.%s' % mas_id)
+                    if mas_title and mas_title != ('mas.%s' % mas_id):
+                        result_cell += '{} - {}<br/>'.format(_esc(mas_id), _esc(mas_title))
+                    else:
+                        result_cell += '{}<br/>'.format(_esc(mas_id))
 
             masvs = check.get('owasp_masvs') or rule.get('owasp_masvs', '') or rule.get('real_mstg', '')
             if masvs:
@@ -289,15 +293,72 @@ class PDFPSReporte:
 
         summary = {state: 0 for state in ('DETECTED', 'NOT_DETECTED', 'NOT_EVALUATED', 'ERROR')}
         for key, item in self.masterReport.items():
-            if key in self.rules and not (separate_root and key == 'AD-Lab029'):
+            if key in self.rules:
                 summary[_evaluation_status(item)] += 1
+        if separate_root and 'AD-Lab029' not in self.masterReport and 'rootDetection' in self.startupChecks:
+            root_st = self.startupChecks['rootDetection'].get('status', 'NOT_EVALUATED')
+            if root_st == 'PASSED':
+                summary['NOT_DETECTED'] += 1
+            elif root_st == 'FAILED':
+                summary['DETECTED'] += 1
+            elif root_st == 'NOT_EVALUATED':
+                summary['NOT_EVALUATED'] += 1
+            else:
+                summary['ERROR'] += 1
         self.elements.append(Paragraph('Passed: {} | Detected: {} | Not evaluated: {} | Error: {}'.format(
             summary['NOT_DETECTED'], summary['DETECTED'], summary['NOT_EVALUATED'], summary['ERROR']), self.styleCellLeft))
-        order = sorted(self.rules, key=lambda key: key != 'AD-Lab029')
+        order = sorted(self.rules.keys())
         for rule in order:
-            if separate_root and rule == 'AD-Lab029':
-                continue
             content = self.rules[rule]
+
+            if rule == 'AD-Lab029' and separate_root and rule not in self.masterReport:
+                root_check = self.startupChecks.get('rootDetection', {})
+                root_status = root_check.get('status', 'NOT_EVALUATED')
+                if root_status == 'PASSED':
+                    lab_id_cell = f"<font color='green'>{i18n.t('label.rule_passed')}</font>"
+                elif root_status == 'FAILED':
+                    lab_id_cell = f"<font color='red'>{i18n.t('label.rule_detected')}</font>"
+                elif root_status == 'NOT_EVALUATED':
+                    lab_id_cell = f"<font color='gray'>{i18n.t('label.not_evaluated')}</font>"
+                else:
+                    lab_id_cell = "<font color='orange'>ERROR</font>"
+
+                result_cell = "<b>{rule_id} - {rule_title}</b>".format(
+                    rule_id = _esc(rule),
+                    rule_title = _esc(content.get('title', ''))
+                )
+                if content.get('mas'):
+                    result_cell += f"<br/><br/><b>{i18n.t('label.mas_title')}</b><br/>"
+                    for mas_id in content['mas'].split('|'):
+                        mas_title = i18n.t('mas.%s' % mas_id)
+                        if mas_title and mas_title != ('mas.%s' % mas_id):
+                            result_cell += f"{mas_id} - {mas_title}<br/>"
+                        else:
+                            result_cell += f"{mas_id}<br/>"
+
+                mstg_val = content.get('real_mstg') or content.get('owasp_masvs', '')
+                if mstg_val:
+                    result_cell += f"<br/><br/><b>OWASP MASVS: </b><br/>"
+                    result_cell += "<br/> ".join(_esc(item) for item in mstg_val.split('|'))
+
+                if content.get('owasp_mobile'):
+                    result_cell += f"<br/><br/><b>{i18n.t('label.owasp_mobile_title')}</b><br/>"
+                    result_cell += "<br/> ".join(_esc(item) for item in content['owasp_mobile'].split('|'))
+
+                if content.get('desc'):
+                    result_cell += "<br/><br/><b>{description_title}</b><br/>{desc}".format(
+                        description_title = i18n.t('label.description_title'),
+                        desc = _esc(content.get('desc', '')[:1200])
+                    )
+
+                notice = "（已於前置檢查章節完成獨立評估，詳請參閱首頁前置檢查報告）" if self.lang.lower().startswith('zh') else "(Evaluated in Pre-checks section, see cover page)"
+                result_cell += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>· <font color='#666666'><i>{notice}</i></font><br/>"
+
+                data.append([
+                    Paragraph(lab_id_cell, self.styleCellCenter),
+                    Paragraph(result_cell, self.styleCellLeft)
+                ])
+                continue
 
             if (rule not in self.masterReport):
                 # mas_report 裡面不含這個 lab_id，將跳過這個規則
@@ -318,7 +379,7 @@ class PDFPSReporte:
 
             evaluation = _evaluation_status(self.masterReport[rule])
             if evaluation == 'NOT_EVALUATED':
-                label = '未評估' if self.lang.lower().startswith('zh') else 'Not evaluated'
+                label = i18n.t('label.not_evaluated')
                 lab_id_cell = "<font color='gray'>{}</font>".format(label)
             elif evaluation == 'ERROR':
                 lab_id_cell = "<font color='orange'>ERROR</font>"
@@ -341,10 +402,11 @@ class PDFPSReporte:
                 )
 
                 for mas_id in content['mas'].split('|'):
-                    result_cell += "{mas_id} - {mas_title}<br/>".format(
-                        mas_id = mas_id,
-                        mas_title = i18n.t('mas.%s' % mas_id)
-                    )
+                    mas_title = i18n.t('mas.%s' % mas_id)
+                    if mas_title and mas_title != ('mas.%s' % mas_id):
+                        result_cell += "{mas_id} - {mas_title}<br/>".format(mas_id=mas_id, mas_title=mas_title)
+                    else:
+                        result_cell += "{mas_id}<br/>".format(mas_id=mas_id)
 
             if mstg_val:
                 result_cell += """
