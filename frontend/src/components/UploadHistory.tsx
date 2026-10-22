@@ -530,13 +530,13 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                           <span>
                             {upload.errorMessage === "capacity"
                               ? "Cloud sandbox capacity is temporarily busy in AWS."
-                              : "檢測發生異常，點數已全額退回您的帳戶 (Analysis encountered an issue — Credit refunded)"}
+                              : "Analysis encountered an issue — Credit refunded"}
                           </span>
                         </div>
                         <p className="mt-1 text-muted-foreground leading-relaxed">
                           {upload.errorMessage === "capacity"
                             ? "AWS region is temporarily out of instant capacity. Please wait 1~2 minutes and click Retry. Retrying a previously paid run is completely free and will not consume credits."
-                            : "分析過程中遭遇格式或系統異常，消耗的點數已自動全額退回。您可以點擊「Remove」移除此紀錄並嘗試重新上傳分析，或稍後再試。"}
+                            : "An unexpected system or format issue occurred during analysis, and the spent credit has been automatically refunded to your balance. You can click \"Remove\" to delete this record and try uploading again, or retry later."}
                         </p>
                       </div>
                     )}
