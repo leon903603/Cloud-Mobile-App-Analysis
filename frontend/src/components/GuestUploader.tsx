@@ -908,31 +908,12 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
   // ── PDF download with x-guest-secret ───────────────────────────────────────
 
-  const handleDownload = async (lang: "zh-TW" | "en" = "zh-TW") => {
+  const handleDownload = (lang: "zh-TW" | "en" = "zh-TW") => {
     if (!activeJob?.downloadToken) return;
     try {
-      const headers: Record<string, string> = {};
-      if (activeJob.secretKey) {
-        headers["x-guest-secret"] = activeJob.secretKey;
-      }
-      const res = await fetch(
-        `${import.meta.env.VITE_BACKEND_URL}/guest/report/${activeJob.downloadToken}?lang=${lang}`,
-        { headers }
-      );
-      if (!res.ok) throw new Error("Download failed.");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute(
-        "download",
-        `${(activeJob.filename || "security-report").replace(/\.[^/.]+$/, "")}-${activeJob.analysisType}-${lang === "en" ? "en" : "zh"}-report.pdf`
-      );
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      const secretParam = activeJob.secretKey ? `&secret=${encodeURIComponent(activeJob.secretKey)}` : "";
+      const downloadUrl = `${import.meta.env.VITE_BACKEND_URL}/guest/report/${activeJob.downloadToken}?lang=${lang}${secretParam}`;
+      window.location.assign(downloadUrl);
     } catch (err) {
       console.error("Download error:", err);
       alert("Download failed. Please check that the report has not expired or exceeded its download limit.");
