@@ -611,39 +611,6 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                 )}
                                 Download Static (English PDF)
                               </Button>
-                              {uploads.find(
-                                (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
-                              ) && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-                                  onClick={() => {
-                                    const dyn = uploads.find(
-                                      (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
-                                    );
-                                    if (dyn) handleReportGeneration(dyn, "zh-TW");
-                                  }}
-                                  disabled={(() => {
-                                    const dyn = uploads.find(
-                                      (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
-                                    );
-                                    return dyn ? downloadingReport === `${dyn.id}_zh-TW` : false;
-                                  })()}
-                                >
-                                  {(() => {
-                                    const dyn = uploads.find(
-                                      (u) => u.hash === upload.hash && u.analysisType === "dynamic" && u.status === "done"
-                                    );
-                                    return dyn && downloadingReport === `${dyn.id}_zh-TW` ? (
-                                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
-                                    );
-                                  })()}
-                                  下載動態報告 (中文 PDF)
-                                </Button>
-                              )}
                             </>
                           ) : (
                             <>
@@ -674,38 +641,6 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                                 )}
                                 Download Dynamic (English PDF)
                               </Button>
-                              {uploads.find(
-                                (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
-                              ) && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    const stat = uploads.find(
-                                      (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
-                                    );
-                                    if (stat) handleReportGeneration(stat, "zh-TW");
-                                  }}
-                                  disabled={(() => {
-                                    const stat = uploads.find(
-                                      (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
-                                    );
-                                    return stat ? downloadingReport === `${stat.id}_zh-TW` : false;
-                                  })()}
-                                >
-                                  {(() => {
-                                    const stat = uploads.find(
-                                      (u) => u.hash === upload.hash && u.analysisType === "static" && u.status === "done"
-                                    );
-                                    return stat && downloadingReport === `${stat.id}_zh-TW` ? (
-                                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <FileText className="mr-1.5 h-4 w-4" />
-                                    );
-                                  })()}
-                                  下載靜態報告 (中文 PDF)
-                                </Button>
-                              )}
                             </>
                           )}
                         </div>
