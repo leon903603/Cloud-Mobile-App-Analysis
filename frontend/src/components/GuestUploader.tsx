@@ -908,15 +908,32 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
   // ── PDF download with x-guest-secret ───────────────────────────────────────
 
-  const handleDownload = (lang: "zh-TW" | "en" = "zh-TW") => {
+  const handleDownload = async (lang: "zh-TW" | "en" = "zh-TW") => {
     if (!activeJob?.downloadToken) return;
     try {
       const secretParam = activeJob.secretKey ? `&secret=${encodeURIComponent(activeJob.secretKey)}` : "";
-      const downloadUrl = `${import.meta.env.VITE_BACKEND_URL}/guest/report/${activeJob.downloadToken}?lang=${lang}${secretParam}`;
-      window.location.assign(downloadUrl);
-    } catch (err) {
+      const res = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/guest/report/${activeJob.downloadToken}?lang=${lang}&json=true${secretParam}`,
+        {
+          headers: {
+            Accept: "application/json",
+            ...(activeJob.secretKey ? { "x-guest-secret": activeJob.secretKey } : {}),
+          },
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Download failed.");
+      }
+      const data = await res.json();
+      if (data.url) {
+        window.location.assign(data.url);
+      } else {
+        throw new Error("No download URL returned.");
+      }
+    } catch (err: any) {
       console.error("Download error:", err);
-      alert("Download failed. Please check that the report has not expired or exceeded its download limit.");
+      alert(err.message || "Download failed. Please check that the report has not expired or exceeded its download limit.");
     }
   };
 

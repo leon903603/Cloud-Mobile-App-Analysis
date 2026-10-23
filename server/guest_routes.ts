@@ -303,6 +303,18 @@ router.get(
       const priceUsd = Number(process.env.USD_PER_CREDIT ?? 40);
       const priceTwd = Math.round(priceUsd * rate);
 
+      // Self-healing: if job is marked as paid but lacks downloadToken (e.g. manual DB update), generate one
+      if (job.isPaid && !job.downloadToken) {
+        const downloadToken = crypto.randomBytes(32).toString("hex");
+        const downloadsRemaining = job.downloadsRemaining && job.downloadsRemaining > 0 ? job.downloadsRemaining : 5;
+        GuestJob.update(job.jobId, {
+          downloadToken,
+          downloadsRemaining,
+        });
+        job.downloadToken = downloadToken;
+        job.downloadsRemaining = downloadsRemaining;
+      }
+
       res.json({
         jobId: job.jobId,
         filename: job.filename,
