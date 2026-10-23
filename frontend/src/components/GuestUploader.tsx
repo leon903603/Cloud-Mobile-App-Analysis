@@ -1399,38 +1399,27 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                 {/* Analysis in progress explanation */}
                 {(activeJob.status === "analyzing" || activeJob.status === "pending" || activeJob.status === "uploaded") && (
                   <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-                    The system is analyzing your application in the background (evaluating 80+ security rules and runtime patterns). Once complete, you will receive a free score preview before choosing to pay and unlock the full PDF report.
+                    The system is analyzing your application in the background (evaluating 80+ security rules and runtime patterns). Once complete, you can unlock and download the full bilingual security assessment PDF report.
                   </p>
                 )}
 
-                {/* Report Ready: Teaser & Pricing Box */}
+                {/* Report Ready: Completion & Pricing Notice */}
                 {activeJob.status === "done" && !activeJob.isPaid && (
                   <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-amber-400">🎉 Analysis Complete! Security Assessment Preview Ready</span>
-                      <span className="font-bold text-foreground">US${activeJob.priceUsd || 40} (One Credit · Approx. NT${activeJob.priceTwd || 1200})</span>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="font-semibold text-amber-400">🎉 檢測已完成 / Analysis Complete!</span>
+                      <span className="font-bold text-foreground">US${activeJob.priceUsd || 40} (One Credit · 約 NT${activeJob.priceTwd || 1200})</span>
                     </div>
 
-                    {activeJob.summaryPreview && (
-                      <div className="grid grid-cols-4 gap-2 text-center pt-1">
-                        <div className="rounded-md bg-background/60 p-2 border border-border">
-                          <p className="text-[10px] text-muted-foreground">Security Score</p>
-                          <p className="text-base font-bold text-primary">{activeJob.summaryPreview.score ?? 75}/100</p>
-                        </div>
-                        <div className="rounded-md bg-background/60 p-2 border border-border">
-                          <p className="text-[10px] text-muted-foreground">High Risk</p>
-                          <p className="text-base font-bold text-destructive">{activeJob.summaryPreview.high ?? 0}</p>
-                        </div>
-                        <div className="rounded-md bg-background/60 p-2 border border-border">
-                          <p className="text-[10px] text-muted-foreground">Medium Risk</p>
-                          <p className="text-base font-bold text-amber-400">{activeJob.summaryPreview.medium ?? 0}</p>
-                        </div>
-                        <div className="rounded-md bg-background/60 p-2 border border-border">
-                          <p className="text-[10px] text-muted-foreground">Low Risk</p>
-                          <p className="text-base font-bold text-green-400">{activeJob.summaryPreview.low ?? 0}</p>
-                        </div>
+                    <div className="rounded-md bg-background/60 p-3 border border-border space-y-1">
+                      <div className="flex items-center justify-between text-muted-foreground text-[11px]">
+                        <span>應用程式 / App: <strong className="text-foreground">{activeJob.filename}</strong></span>
+                        <span className="capitalize">分析模式 / Mode: <strong className="text-foreground">{activeJob.analysisType}</strong></span>
                       </div>
-                    )}
+                      <p className="text-muted-foreground text-xs pt-1">
+                        檢測已完成，請解鎖以取得完整雙語資安評估 PDF 報告（包含 OWASP MASVS 與臺灣行動應用 App 檢測基準、漏洞詳情與修補建議）。
+                      </p>
+                    </div>
 
                     {/* Receipt Email Input */}
                     <div className="space-y-1 pt-1">
@@ -1448,7 +1437,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                     </div>
 
                     <p className="text-muted-foreground leading-relaxed">
-                      The full report includes alignment with OWASP MASVS and Taiwan Mobile App Security Standards, decompiled vulnerabilities, and remediation advice. Click above to unlock via NewebPay.
+                      點擊上方按鈕透過藍新金流（NewebPay）完成支付後，即可立即下載中英文完整 PDF 報告。
                     </p>
                   </div>
                 )}
