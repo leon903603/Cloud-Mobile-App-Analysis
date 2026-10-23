@@ -341,10 +341,19 @@ class PDFPSReporte(BaseStaticReport):
                 
                 # Report Data Normalization: Handle AS-lab052 contradiction & empty findings
                 has_meaningful_finding = False
+                MAX_DETAIL_CHARS = 3000
                 if data_list:
                     for detail_item in data_list[:1]:
                         d_text = detail_item.get('details', '').strip()
                         d_desc = detail_item.get('description', '').strip()
+
+                        # Safety ceiling: prevent extremely large logs from causing ReportLab Table LayoutError
+                        if len(d_text) > MAX_DETAIL_CHARS:
+                            trunc_note = " ... [內容長度超出安全限制已截斷]" if self.lang.lower().startswith('zh') else " ... [Truncated for layout safety]"
+                            d_text = d_text[:MAX_DETAIL_CHARS] + trunc_note
+                        if len(d_desc) > MAX_DETAIL_CHARS:
+                            trunc_note = " ... [內容長度超出安全限制已截斷]" if self.lang.lower().startswith('zh') else " ... [Truncated for layout safety]"
+                            d_desc = d_desc[:MAX_DETAIL_CHARS] + trunc_note
                         
                         # Check AS-lab052 contradiction
                         if rule == 'AS-lab052' and ('not at risk' in d_desc.lower() or 'not at risk' in d_text.lower()):

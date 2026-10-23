@@ -454,22 +454,26 @@ class PDFPSReporte:
                     )
                     
                     # 暫時先限字數，似乎套件跨頁會故障
+                    MAX_DETAIL_CHARS = 3000
                     for detail_item in self.masterReport[rule]['data'][:1]:
                         try:
-                            # 靜態分析的 data[i]["description"] 是整段 lab 說明
-                            # (maldroid_main.py 會把 rule[lab]["desc"] 指派成 data[0]["description"]),
-                            # 直接印會讓同一段敘述在 Description 與 Detail 各出現一次。
-                            # 動態分析的 description 則是每筆發現的個別說明，必須保留。
-                            # 兩者用「是否與 rule 的 desc 完全相同」區分。
+                            _d_details = detail_item.get('details', '')
                             _item_desc = detail_item.get('description', '')
+                            if len(_d_details) > MAX_DETAIL_CHARS:
+                                trunc_note = " ... [內容長度超出安全限制已截斷]" if self.lang.lower().startswith('zh') else " ... [Truncated for layout safety]"
+                                _d_details = _d_details[:MAX_DETAIL_CHARS] + trunc_note
+                            if len(_item_desc) > MAX_DETAIL_CHARS:
+                                trunc_note = " ... [內容長度超出安全限制已截斷]" if self.lang.lower().startswith('zh') else " ... [Truncated for layout safety]"
+                                _item_desc = _item_desc[:MAX_DETAIL_CHARS] + trunc_note
+
                             if _item_desc and _item_desc != content.get('desc', ''):
-                                temp_result += """· {details}<br/>{description}<br/><br/>""".format(
-                                        details = _esc(detail_item.get('details', '')),
+                                temp_result += """• {details}<br/>{description}<br/><br/>""".format(
+                                        details = _esc(_d_details),
                                         description = _esc(_item_desc),
                                 )
                             else:
-                                temp_result += """· {details}<br/><br/>""".format(
-                                        details = _esc(detail_item.get('details', '')),
+                                temp_result += """• {details}<br/><br/>""".format(
+                                        details = _esc(_d_details),
                                 )
                         except:
                             print("data structure does not include 'details' or 'description' key")
