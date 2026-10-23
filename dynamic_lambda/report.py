@@ -155,7 +155,7 @@ class PDFPSReporte:
             description = check.get('description') or rule.get('desc', '')
             if description:
                 result_cell += '<br/><br/><b>{}</b><br/>{}'.format(
-                    i18n.t('label.description_title'), _esc(description[:1200]))
+                    i18n.t('label.description_title'), _esc(description))
 
             if check.get('summary'):
                 result_cell += '<br/><br/><b>{}</b><br/>{}'.format(
@@ -305,8 +305,13 @@ class PDFPSReporte:
                 summary['NOT_EVALUATED'] += 1
             else:
                 summary['ERROR'] += 1
-        self.elements.append(Paragraph('Passed: {} | Detected: {} | Not evaluated: {} | Error: {}'.format(
-            summary['NOT_DETECTED'], summary['DETECTED'], summary['NOT_EVALUATED'], summary['ERROR']), self.styleCellLeft))
+        if self.lang.lower().startswith('zh'):
+            summary_str = '通過: {} &nbsp;|&nbsp; 偵測到風險: {} &nbsp;|&nbsp; 未評估: {} &nbsp;|&nbsp; 錯誤: {}'.format(
+                summary['NOT_DETECTED'], summary['DETECTED'], summary['NOT_EVALUATED'], summary['ERROR'])
+        else:
+            summary_str = 'Passed: {} &nbsp;|&nbsp; Detected: {} &nbsp;|&nbsp; Not evaluated: {} &nbsp;|&nbsp; Error: {}'.format(
+                summary['NOT_DETECTED'], summary['DETECTED'], summary['NOT_EVALUATED'], summary['ERROR'])
+        self.elements.append(Paragraph(summary_str, self.styleCellLeft))
         order = sorted(self.rules.keys())
         for rule in order:
             content = self.rules[rule]
@@ -348,7 +353,7 @@ class PDFPSReporte:
                 if content.get('desc'):
                     result_cell += "<br/><br/><b>{description_title}</b><br/>{desc}".format(
                         description_title = i18n.t('label.description_title'),
-                        desc = _esc(content.get('desc', '')[:1200])
+                        desc = _esc(content.get('desc', ''))
                     )
 
                 notice = "（已於前置檢查章節完成獨立評估，詳請參閱首頁前置檢查報告）" if self.lang.lower().startswith('zh') else "(Evaluated in Pre-checks section, see cover page)"
@@ -393,7 +398,7 @@ class PDFPSReporte:
                 rule_title = _esc(content.get('title', ''))
             )
 
-            if (content['mas']):
+            if (content.get('mas')):
                 result_cell += """
                 <br/><br/>
                 <b>{mas_title}</b><br/>
@@ -417,7 +422,7 @@ class PDFPSReporte:
                     mstg_result = "<br/> ".join(mstg_val.split('|'))
                 )
 
-            if (content['owasp_mobile']):
+            if (content.get('owasp_mobile')):
                 result_cell += """
                 <br/><br/>
                 <b>{owasp_mobile_title}</b><br/>
@@ -434,7 +439,7 @@ class PDFPSReporte:
                     {desc}
                 """.format(
                     description_title = i18n.t('label.description_title'),
-                        desc = _esc(content.get('desc', '')[:1200])
+                        desc = _esc(content.get('desc', ''))
                 )
 
             try:
@@ -459,12 +464,12 @@ class PDFPSReporte:
                             _item_desc = detail_item.get('description', '')
                             if _item_desc and _item_desc != content.get('desc', ''):
                                 temp_result += """· {details}<br/>{description}<br/><br/>""".format(
-                                        details = _esc(detail_item.get('details', '')[:800]),
-                                        description = _esc(_item_desc[:800]),
+                                        details = _esc(detail_item.get('details', '')),
+                                        description = _esc(_item_desc),
                                 )
                             else:
                                 temp_result += """· {details}<br/><br/>""".format(
-                                        details = _esc(detail_item.get('details', '')[:800]),
+                                        details = _esc(detail_item.get('details', '')),
                                 )
                         except:
                             print("data structure does not include 'details' or 'description' key")

@@ -282,7 +282,10 @@ class PDFPSReporte(BaseStaticReport):
         # Calculate Passed / Failed counts
         passed_count = sum(1 for r in self.masterReport.values() if isinstance(r, dict) and not r.get('isDetected', False))
         failed_count = sum(1 for r in self.masterReport.values() if isinstance(r, dict) and r.get('isDetected', False))
-        summary_text = f"Passed: {passed_count} | Failed: {failed_count} | Not evaluated: 0 | Error: 0"
+        if self.lang.lower().startswith('zh'):
+            summary_text = f"通過: {passed_count} &nbsp;|&nbsp; 偵測到風險: {failed_count} &nbsp;|&nbsp; 未評估: 0 &nbsp;|&nbsp; 錯誤: 0"
+        else:
+            summary_text = f"Passed: {passed_count} &nbsp;|&nbsp; Failed: {failed_count} &nbsp;|&nbsp; Not evaluated: 0 &nbsp;|&nbsp; Error: 0"
         self.elements.append(Paragraph(summary_text, self.styleCellLeft))
         self.elements.append(Spacer(10, 10))
 
@@ -328,7 +331,7 @@ class PDFPSReporte(BaseStaticReport):
             if content.get('desc'):
                 result_cell += "<br/><br/><b>{description_title}</b><br/>{desc}".format(
                     description_title=i18n.t('label.description_title'),
-                    desc=_esc(content.get('desc', '')[:1200])
+                    desc=_esc(content.get('desc', ''))
                 )
 
             try:
@@ -353,8 +356,8 @@ class PDFPSReporte(BaseStaticReport):
 
                         if d_text or (d_desc and d_desc != content.get('desc', '')):
                             temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>"
-                            esc_details = _esc(d_text[:800])
-                            esc_desc = _esc(d_desc[:800])
+                            esc_details = _esc(d_text)
+                            esc_desc = _esc(d_desc)
                             if d_desc and d_desc != content.get('desc', ''):
                                 temp_result += f"&bull; {esc_details}<br/>{esc_desc}<br/><br/>"
                             else:
