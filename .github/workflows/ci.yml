@@ -67,6 +67,8 @@ jobs:
           SQLITE_PATH: ./data/ci_test.db
           AWS_REGION: ap-southeast-2
           S3_BUCKET: mock-cmaa-test-bucket
+          AWS_ACCESS_KEY_ID: mock-ci-access-key-id
+          AWS_SECRET_ACCESS_KEY: mock-ci-secret-access-key-mock-ci-secret-access-key
           STATIC_API_KEY: mock-ci-static-key
           ANDROID_STATIC_API: https://mock-lambda.amazonaws.com
           ADMIN_API_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
