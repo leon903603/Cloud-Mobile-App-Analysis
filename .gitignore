@@ -80,5 +80,7 @@ Desktop.ini
 .idea/
 *.swp
 
-# Worktrees
+# =========================================================
+# Worktrees (isolated agent / feature workspaces)
+# =========================================================
 .worktrees/
