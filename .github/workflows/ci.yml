@@ -42,6 +42,19 @@ jobs:
         working-directory: server
         run: npm ci
 
+      - name: Generate Mock serviceAccountKey.json for CI
+        working-directory: server
+        run: |
+          cat << 'EOF' > serviceAccountKey.json
+          {
+            "type": "service_account",
+            "project_id": "mock-cmaa-ci",
+            "private_key_id": "mock-key-id",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n",
+            "client_email": "mock-cmaa@mock-cmaa-ci.iam.gserviceaccount.com"
+          }
+          EOF
+
       - name: TypeScript Build Check
         working-directory: server
         run: npm run build
