@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          cache-dependency-path: Cloud-Mobile-App-Analysis/server/package-lock.json
+          cache-dependency-path: server/package-lock.json
 
       - name: Install Linux Build Prerequisites for better-sqlite3
         run: |
@@ -39,15 +39,15 @@ jobs:
           sudo apt-get install -y build-essential python3
 
       - name: Install Backend Dependencies
-        working-directory: Cloud-Mobile-App-Analysis/server
+        working-directory: server
         run: npm ci
 
       - name: TypeScript Build Check
-        working-directory: Cloud-Mobile-App-Analysis/server
+        working-directory: server
         run: npm run build
 
       - name: Run Backend Unit & Security Tests
-        working-directory: Cloud-Mobile-App-Analysis/server
+        working-directory: server
         env:
           NODE_ENV: test
           PORT: 3009
@@ -79,12 +79,12 @@ jobs:
         with:
           node-version: 22.x
           cache: 'npm'
-          cache-dependency-path: Cloud-Mobile-App-Analysis/frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Frontend Dependencies
-        working-directory: Cloud-Mobile-App-Analysis/frontend
+        working-directory: frontend
         run: npm ci
 
       - name: Build Frontend with Vite
-        working-directory: Cloud-Mobile-App-Analysis/frontend
+        working-directory: frontend
         run: npm run build
