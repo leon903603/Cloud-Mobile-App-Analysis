@@ -79,3 +79,8 @@ Desktop.ini
 *.code-workspace
 .idea/
 *.swp
+
+# =========================================================
+# Worktrees (isolated agent / feature workspaces)
+# =========================================================
+.worktrees/
