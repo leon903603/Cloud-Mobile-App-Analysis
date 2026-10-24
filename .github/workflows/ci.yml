@@ -1,0 +1,107 @@
+name: CMAA Cloud Platform CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-backend:
+    name: Backend Unit & Security Tests (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20.x, 22.x, 24.x]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Linux Build Prerequisites for better-sqlite3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3
+
+      - name: Install Backend Dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Generate Mock serviceAccountKey.json for CI
+        working-directory: server
+        run: |
+          cat << 'EOF' > serviceAccountKey.json
+          {
+            "type": "service_account",
+            "project_id": "mock-cmaa-ci",
+            "private_key_id": "mock-key-id",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n",
+            "client_email": "mock-cmaa@mock-cmaa-ci.iam.gserviceaccount.com"
+          }
+          EOF
+
+      - name: TypeScript Build Check
+        working-directory: server
+        run: npm run build
+
+      - name: Run Backend Unit & Security Tests
+        working-directory: server
+        env:
+          NODE_ENV: test
+          PORT: 3009
+          SQLITE_PATH: ./data/ci_test.db
+          AWS_REGION: ap-southeast-2
+          S3_BUCKET: mock-cmaa-test-bucket
+          AWS_ACCESS_KEY_ID: mock-ci-access-key-id
+          AWS_SECRET_ACCESS_KEY: mock-ci-secret-access-key-mock-ci-secret-access-key
+          STATIC_API_KEY: mock-ci-static-key
+          ANDROID_STATIC_API: https://mock-lambda.amazonaws.com
+          ADMIN_API_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          DYNAMIC_CRED_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+          TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+          VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+          NEWEBPAY_MERCHANT_ID: MOCK_MERCHANT
+          NEWEBPAY_HASH_KEY: 12345678901234567890123456789012
+          NEWEBPAY_HASH_IV: 1234567890123456
+          NEWEBPAY_GATEWAY: https://ccore.newebpay.com/MPG/mpg_gateway
+        run: |
+          mkdir -p data
+          npm run test:unit
+
+  build-frontend:
+    name: Frontend Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Frontend with Vite
+        working-directory: frontend
+        run: npm run build
