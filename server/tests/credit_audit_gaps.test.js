@@ -1,6 +1,7 @@
 // tests/credit_audit_gaps.test.js
 const assert = require("assert");
 const { db } = require("../dist/db");
+require("../dist/newebpay");
 const { recordCreditChange, reconcileUser } = require("../dist/credit_audit");
 
 console.log("==================================================");
@@ -62,7 +63,7 @@ const syncAnomalies = reconcileUser(
   windowEnd
 );
 assert.strictEqual(syncAnomalies.length, 0, "Synchronized user should produce 0 anomalies");
-console.log("✓ Test 1: Real reconcileUser verified: synchronized balance produces zero anomalies");
+console.log("??Test 1: Real reconcileUser verified: synchronized balance produces zero anomalies");
 
 // Case B: Unexplained increase (Observed Firestore 13 vs expected 10 -> +3 drift)
 const increaseAnomalies = reconcileUser(
@@ -75,7 +76,7 @@ assert.strictEqual(increaseAnomalies.length, 1);
 assert.strictEqual(increaseAnomalies[0].kind, "unexplained_increase");
 assert.strictEqual(increaseAnomalies[0].drift, 3);
 assert.strictEqual(increaseAnomalies[0].severity, "critical");
-console.log("✓ Test 2: Real reconcileUser verified: unexplained increase (+3 gap) flagged as critical");
+console.log("??Test 2: Real reconcileUser verified: unexplained increase (+3 gap) flagged as critical");
 
 // Case C: Unexplained decrease (Observed Firestore 7 vs expected 10 -> -3 drift)
 const decreaseAnomalies = reconcileUser(
@@ -88,7 +89,7 @@ assert.strictEqual(decreaseAnomalies.length, 1);
 assert.strictEqual(decreaseAnomalies[0].kind, "unexplained_decrease");
 assert.strictEqual(decreaseAnomalies[0].drift, -3);
 assert.strictEqual(decreaseAnomalies[0].severity, "warning");
-console.log("✓ Test 3: Real reconcileUser verified: unexplained decrease (-3 gap) flagged as warning");
+console.log("??Test 3: Real reconcileUser verified: unexplained decrease (-3 gap) flagged as warning");
 
 // 3. Reconcile correction write test
 const correctionOk = recordCreditChange({
@@ -105,10 +106,10 @@ const afterCorrection = db
   .prepare("SELECT COALESCE(SUM(delta), 0) AS total FROM credit_ledger WHERE uid = ?")
   .get(testUid);
 assert.strictEqual(afterCorrection.total, 7, "Ledger total should be updated to 7 after correction");
-console.log("✓ Test 4: Reconcile correction adjustment properly journaled");
+console.log("??Test 4: Reconcile correction adjustment properly journaled");
 
 // Clean up
 db.prepare("DELETE FROM credit_ledger WHERE uid = ?").run(testUid);
 db.prepare("DELETE FROM newebpay_orders WHERE orderNo = ?").run(orderNo);
 
-console.log("All Credit Audit Gap & Anomaly Tests Passed! ✅\n");
+console.log("All Credit Audit Gap & Anomaly Tests Passed! ?�\n");

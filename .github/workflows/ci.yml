@@ -78,7 +78,9 @@ jobs:
           NEWEBPAY_HASH_KEY: 12345678901234567890123456789012
           NEWEBPAY_HASH_IV: 1234567890123456
           NEWEBPAY_GATEWAY: https://ccore.newebpay.com/MPG/mpg_gateway
-        run: npm run test:unit
+        run: |
+          mkdir -p data
+          npm run test:unit
 
   build-frontend:
     name: Frontend Build Check
