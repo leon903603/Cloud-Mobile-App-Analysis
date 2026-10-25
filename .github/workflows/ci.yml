@@ -51,7 +51,7 @@ jobs:
       - name: Generate Mock serviceAccountKey.json for CI
         working-directory: server
         run: |
-          DUMMY_KEY=$(openssl genrsa 2048 2>/dev/null | awk '{printf "%s\\n", $0}')
+          DUMMY_KEY=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | awk '{printf "%s\\n", $0}')
           cat << EOF > serviceAccountKey.json
           {
             "type": "service_account",
