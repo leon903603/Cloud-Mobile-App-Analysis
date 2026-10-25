@@ -9,6 +9,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,6 +20,7 @@ jobs:
   test-backend:
     name: Backend Unit & Security Tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -35,8 +39,10 @@ jobs:
 
       - name: Install Linux Build Prerequisites for better-sqlite3
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential python3
+          if ! command -v g++ >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential python3
+          fi
 
       - name: Install Backend Dependencies
         working-directory: server
@@ -45,12 +51,13 @@ jobs:
       - name: Generate Mock serviceAccountKey.json for CI
         working-directory: server
         run: |
-          cat << 'EOF' > serviceAccountKey.json
+          DUMMY_KEY=$(openssl genrsa 2048 2>/dev/null | awk '{printf "%s\\n", $0}')
+          cat << EOF > serviceAccountKey.json
           {
             "type": "service_account",
             "project_id": "mock-cmaa-ci",
             "private_key_id": "mock-key-id",
-            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n",
+            "private_key": "${DUMMY_KEY}",
             "client_email": "mock-cmaa@mock-cmaa-ci.iam.gserviceaccount.com"
           }
           EOF
@@ -80,6 +87,8 @@ jobs:
           NEWEBPAY_HASH_KEY: 12345678901234567890123456789012
           NEWEBPAY_HASH_IV: 1234567890123456
           NEWEBPAY_GATEWAY: https://ccore.newebpay.com/MPG/mpg_gateway
+          MOCK_PDF: "true"
+          CREDIT_AUDIT_ENABLED: "false"
         run: |
           mkdir -p data
           npm run test:unit
@@ -87,6 +96,7 @@ jobs:
   build-frontend:
     name: Frontend Build Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -102,6 +112,11 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Frontend TypeScript Check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
       - name: Build Frontend with Vite
         working-directory: frontend
         run: npm run build
+
