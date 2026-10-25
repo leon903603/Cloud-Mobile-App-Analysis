@@ -52,20 +52,20 @@ Write-Host "==========================================================" -Foregro
 # Find current branch of the worktree before deleting
 $AssociatedBranch = ""
 try {
-    $WorktreeList = git -C $RepoPath worktree list --porcelain
-    $blocks = ($WorktreeList -split "(?m)^\s*$") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $normalizedTargetPath = [System.IO.Path]::GetFullPath($TargetWorktreePath).TrimEnd("\", "/")
+    $rawText = (git -C $RepoPath worktree list --porcelain) -join "`n"
+    $blocks = $rawText -split "(?m)^\r?$"
     foreach ($block in $blocks) {
-        $lines = $block -split "`r?`n"
         $currentPath = ""
         $currentBranch = ""
-        foreach ($line in $lines) {
+        foreach ($line in ($block -split "`r?`n")) {
             if ($line -match "^worktree\s+(.*)$") {
-                $currentPath = $matches[1].Trim().Replace("/", "\")
+                $currentPath = [System.IO.Path]::GetFullPath($matches[1].Trim()).TrimEnd("\", "/")
             } elseif ($line -match "^branch\s+refs/heads/(.*)$") {
                 $currentBranch = $matches[1].Trim()
             }
         }
-        if ($currentPath.TrimEnd("\") -eq $TargetWorktreePath.TrimEnd("\")) {
+        if ($currentPath -and ($currentPath -eq $normalizedTargetPath)) {
             $AssociatedBranch = $currentBranch
             break
         }
