@@ -43,11 +43,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..")
-$RepoPath = Join-Path $ProjectRoot "Cloud-Mobile-App-Analysis"
+$CandidateRoot = Resolve-Path (Join-Path $ScriptDir "..")
 
-if (-not (Test-Path (Join-Path $RepoPath ".git"))) {
-    Write-Error "Target repository not found or not a Git repo at: $RepoPath"
+if (Test-Path (Join-Path $CandidateRoot "Cloud-Mobile-App-Analysis\.git")) {
+    $RepoPath = (Join-Path $CandidateRoot "Cloud-Mobile-App-Analysis")
+} elseif (Test-Path (Join-Path $CandidateRoot ".git")) {
+    $RepoPath = $CandidateRoot.Path
+} else {
+    Write-Error "Target repository not found or not a Git repo at: $CandidateRoot"
     exit 1
 }
 
