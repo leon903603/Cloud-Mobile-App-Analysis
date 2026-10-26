@@ -1,5 +1,13 @@
 import assert from "assert";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+
+const TEST_DB_PATH = path.join(
+  __dirname,
+  `../data/test_invariants_${Date.now()}_${Math.random().toString(36).slice(2)}.db`
+);
+process.env.SQLITE_PATH = TEST_DB_PATH;
 
 if (!process.env.DYNAMIC_CRED_KEY || process.env.DYNAMIC_CRED_KEY.trim().length < 32) {
   process.env.DYNAMIC_CRED_KEY =
@@ -24,6 +32,7 @@ const { recordCreditChange, reconcileUser } = require("../credit_audit");
 const { getTwdPerUsd } = require("../fx");
 
 async function runTests() {
+  try {
   console.log("==================================================");
   console.log(" Running Security & State Invariants Tests");
   console.log("==================================================");
@@ -218,6 +227,19 @@ async function runTests() {
   console.log("==================================================");
   console.log(" All Security & State Invariants Tests Passed (4/4) ✅");
   console.log("==================================================");
+  } finally {
+    try {
+      db.close();
+    } catch {}
+    for (const ext of ["", "-wal", "-shm"]) {
+      const target = TEST_DB_PATH + ext;
+      if (fs.existsSync(target)) {
+        try {
+          fs.unlinkSync(target);
+        } catch {}
+      }
+    }
+  }
 }
 
 runTests().catch((err) => {

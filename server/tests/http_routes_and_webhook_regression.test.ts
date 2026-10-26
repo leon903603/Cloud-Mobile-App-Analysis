@@ -3,6 +3,14 @@ import crypto from "crypto";
 import express from "express";
 import { Server } from "http";
 import { AddressInfo } from "net";
+import fs from "fs";
+import path from "path";
+
+const TEST_DB_PATH = path.join(
+  __dirname,
+  `../data/test_http_${Date.now()}_${Math.random().toString(36).slice(2)}.db`
+);
+process.env.SQLITE_PATH = TEST_DB_PATH;
 
 process.env.NODE_ENV = "test";
 process.env.TURNSTILE_SECRET_KEY = "";
@@ -232,7 +240,18 @@ async function runTests() {
     for (const orderNo of createdOrderNos) {
       db.prepare("DELETE FROM newebpay_orders WHERE orderNo = ?").run(orderNo);
     }
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    try {
+      db.close();
+    } catch {}
+    for (const ext of ["", "-wal", "-shm"]) {
+      const target = TEST_DB_PATH + ext;
+      if (fs.existsSync(target)) {
+        try {
+          fs.unlinkSync(target);
+        } catch {}
+      }
+    }
   }
 }
 
