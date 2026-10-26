@@ -10,6 +10,7 @@ const TEST_DB_PATH = path.join(
   __dirname,
   `../data/test_http_${Date.now()}_${Math.random().toString(36).slice(2)}.db`
 );
+fs.mkdirSync(path.dirname(TEST_DB_PATH), { recursive: true });
 process.env.SQLITE_PATH = TEST_DB_PATH;
 
 process.env.NODE_ENV = "test";

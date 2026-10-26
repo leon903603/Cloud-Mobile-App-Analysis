@@ -7,6 +7,7 @@ const TEST_DB_PATH = path.join(
   __dirname,
   `../data/test_invariants_${Date.now()}_${Math.random().toString(36).slice(2)}.db`
 );
+fs.mkdirSync(path.dirname(TEST_DB_PATH), { recursive: true });
 process.env.SQLITE_PATH = TEST_DB_PATH;
 
 if (!process.env.DYNAMIC_CRED_KEY || process.env.DYNAMIC_CRED_KEY.trim().length < 32) {
