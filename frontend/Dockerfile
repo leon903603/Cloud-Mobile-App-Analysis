@@ -1,7 +1,7 @@
 # frontend/Dockerfile — multi-stage: build static assets, serve via nginx
 
 # --- Build stage ---
-FROM node:22-alpine3.21 AS build
+FROM node:22.23.4-alpine AS build
 
 WORKDIR /app
 
