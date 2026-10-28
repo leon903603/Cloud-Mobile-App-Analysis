@@ -60,6 +60,9 @@ export interface StaticJobRequest {
 // Android reports, so the Mac renders zh-TW/en and returns them with the result).
 export type WrapperPdfs = { "zh-TW"?: string; en?: string };
 
+// AutoDetect's jailbreak-deploy fallback failing on SSH auth (seen once after a cold boot).
+const IOS_SSH_DEPLOY_FAILURE = /Permission denied \(publickey,password\)|jailbreak deploy exited with 255/;
+
 export interface IosDynamicJobRequest {
   s3UploadKey: string;
   filename: string;
@@ -505,17 +508,27 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
       }
 
       console.log(`[iOS Dynamic] ${req.filename} uploaded as ${fileHash}, starting analysis`);
-      const started = (await (await call(`/apps/${fileHash}/dynamic-analysis`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })).json()) as any;
-
-      await waitJob(started.job_id, (job) => {
-        if (job?.status === "queued") req.onPhaseChange?.("queued");
-        else if (/vphone/i.test(job?.message || "")) req.onPhaseChange?.("starting_sandbox");
-        else req.onPhaseChange?.("analyzing");
-      });
+      const runAnalysis = async () => {
+        const started = (await (await call(`/apps/${fileHash}/dynamic-analysis`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })).json()) as any;
+        await waitJob(started.job_id, (job) => {
+          if (job?.status === "queued") req.onPhaseChange?.("queued");
+          else if (/vphone/i.test(job?.message || "")) req.onPhaseChange?.("starting_sandbox");
+          else req.onPhaseChange?.("analyzing");
+        });
+      };
+      try {
+        await runAnalysis();
+      } catch (err: any) {
+        // Right after a cold vphone boot the guest's sshd can refuse the first
+        // login, which fails AutoDetect's fallback install; a second run passes.
+        if (!(err instanceof SandboxExecutionError && IOS_SSH_DEPLOY_FAILURE.test(err.message))) throw err;
+        console.warn(`[iOS Dynamic] ${req.filename}: install over SSH was refused, retrying once`);
+        await runAnalysis();
+      }
 
       req.onPhaseChange?.("generating_pdf");
       const finish = (await (await call(`/apps/${fileHash}/dynamic/finish`, {

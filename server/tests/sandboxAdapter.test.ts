@@ -571,6 +571,29 @@ async function runTests() {
       (err: any) => err instanceof SandboxExecutionError && err.kind === "analysis_failed" && /vphone was not ready/.test(err.message)
     );
 
+    // SSH-refused install (cold vphone) is retried once; the second run succeeds.
+    let starts = 0;
+    const flaky = createSandboxAdapter({
+      dynamicApiIos: "http://100.64.0.9:8080",
+      pollIntervalMs: 5,
+      downloadToTempFn: async () => "/tmp/x.ipa",
+      createReadStreamFn: () => Buffer.from("PK"),
+      fetchFn: (async (url: string) => {
+        if (url.endsWith("/apps")) return json({ hash: "d".repeat(32) });
+        if (url.endsWith("/dynamic-analysis")) return json({ job_id: `job-${++starts}` }, 202);
+        if (url.endsWith("/jobs/job-1")) {
+          return json({ status: "failed", host_task: { error: "mobile@127.0.0.1: Permission denied (publickey,password).\n[AUTOTEST] jailbreak deploy exited with 255" } });
+        }
+        if (url.endsWith("/dynamic/finish")) return json({ job_id: "job-fin" }, 202);
+        if (url.includes("/jobs/")) return json({ status: "succeeded" });
+        if (url.endsWith("/dynamic-report")) return json({ system: "ios" });
+        return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode("%PDF-x").buffer } as any;
+      }) as any,
+    });
+    const retried = await flaky.runIosDynamicAnalysis({ s3UploadKey: "k", filename: "x.ipa" });
+    assert.strictEqual(starts, 2, "exactly one retry after an SSH-refused install");
+    assert.strictEqual((retried.reportData as any).system, "ios");
+
     // Not configured → explicit error, never the Android EC2 sandbox.
     const unconfigured = createSandboxAdapter({ dynamicApiIos: "", fetchFn: autoFetch });
     await assert.rejects(unconfigured.runIosDynamicAnalysis({ s3UploadKey: "k", filename: "x.ipa" }), /not configured/);
