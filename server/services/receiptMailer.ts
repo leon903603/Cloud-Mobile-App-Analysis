@@ -413,7 +413,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
       <tr>
         <td style="width: 58%;">
           <div class="meta-label">Received from:</div>
-          <div class="meta-value">${safeRecipientEmail}</div>
+          <div class="meta-value">${safeRecipientEmail || "Valued Customer"}</div>
         </td>
         <td style="width: 42%; text-align: right;">
           <div class="meta-label">Receipt No.:</div>
@@ -547,6 +547,7 @@ export async function sendReceiptEmailSafe(payload: ReceiptEmailPayload): Promis
         subject: `Official Receipt: Cloud Mobile App Analysis [${payload.orderNo}]`,
         html,
       }),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {

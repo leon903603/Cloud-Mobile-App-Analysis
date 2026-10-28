@@ -2,6 +2,7 @@
 import assert from "assert";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import {
   generateReceiptHtml,
   generateOfficialSealSvg,
@@ -110,20 +111,29 @@ const guestHtml = generateReceiptHtml(guestPayload);
 assert(guestHtml.includes("Guest Single Analysis Report: 1 Analysis Credit"), "Guest receipt must specify single report description");
 console.log("✓ Test 5: Guest receipt HTML correctly identifies single report purchase");
 
-// 6. Verify TEST_PAYMENT_PROBE Pricing Isolation
+// 6. Verify TEST_PAYMENT_PROBE Pricing Isolation & Production Guard
 const origProbeEnv = process.env.TEST_PAYMENT_PROBE;
+const origNodeEnv = process.env.NODE_ENV;
 try {
-  // Enabled: Starter is 1 TWD / 1 USD, while Pro/Power remain full price
+  // Enabled in dev/test: Starter is 1 TWD / 1 USD, while Pro/Power remain full price
+  process.env.NODE_ENV = "test";
   process.env.TEST_PAYMENT_PROBE = "true";
   const probeStarter = priceFor(1, "starter");
-  assert.strictEqual(probeStarter.usd, 1, "Starter USD must be 1 when probe is true");
-  assert.strictEqual(probeStarter.twd, 1, "Starter TWD must be 1 when probe is true");
+  assert.strictEqual(probeStarter.usd, 1, "Starter USD must be 1 when probe is true in test/dev");
+  assert.strictEqual(probeStarter.twd, 1, "Starter TWD must be 1 when probe is true in test/dev");
 
   const probePro = priceFor(5, "pro");
   assert.strictEqual(probePro.usd, 200, "Pro USD must strictly remain 200 even if probe is true");
   assert(probePro.twd > 6000, "Pro TWD must strictly remain catalog price (~6400 TWD)");
 
-  // Disabled: Starter returns standard 40 USD
+  // Production Lockdown: Probe MUST be ignored when NODE_ENV === 'production'
+  process.env.NODE_ENV = "production";
+  const prodStarter = priceFor(1, "starter");
+  assert.strictEqual(prodStarter.usd, 40, "Starter USD must strictly return to 40 in production regardless of probe flag");
+  assert(prodStarter.twd > 1200, "Starter TWD must strictly remain catalog price in production");
+
+  // Disabled in dev: Starter returns standard 40 USD
+  process.env.NODE_ENV = "test";
   process.env.TEST_PAYMENT_PROBE = "false";
   const normalStarter = priceFor(1, "starter");
   assert.strictEqual(normalStarter.usd, 40, "Starter USD must return to 40 when probe is false");
@@ -134,8 +144,13 @@ try {
   } else {
     delete process.env.TEST_PAYMENT_PROBE;
   }
+  if (origNodeEnv !== undefined) {
+    process.env.NODE_ENV = origNodeEnv;
+  } else {
+    delete process.env.NODE_ENV;
+  }
 }
-console.log("✓ Test 6: TEST_PAYMENT_PROBE strictly isolates 1 TWD to Starter and preserves Pro pricing");
+console.log("✓ Test 6: TEST_PAYMENT_PROBE strictly isolates 1 TWD to Starter and preserves Pro pricing & production lockdown");
 
 // 7. Verify HMAC Receipt Signature Generator (IDOR Defense)
 const sigOrderNo = "CMAA12345678";
@@ -151,7 +166,17 @@ assert.notStrictEqual(sig1, sigDifferentOrder, "Different order numbers must pro
 assert.notStrictEqual(sig1, sigDifferentTime, "Different paidAt times must produce distinct signatures");
 console.log("✓ Test 7: generateReceiptSignature produces deterministic, tamper-proof IDOR verification tokens");
 
-// 8. Verify Graceful Degradation in sendReceiptEmailSafe
+// 8. Verify Empty Email Graceful Display Fallback (No internal UID leakage)
+const noEmailPayload: ReceiptEmailPayload = {
+  ...normalPayload,
+  recipientEmail: "",
+};
+const noEmailHtml = generateReceiptHtml(noEmailPayload);
+assert(noEmailHtml.includes("Valued Customer"), "Empty recipientEmail must gracefully display 'Valued Customer'");
+assert(!noEmailHtml.includes("guest"), "Receipt must not leak internal placeholder strings");
+console.log("✓ Test 8: Empty recipient email gracefully falls back to 'Valued Customer' without UID leakage");
+
+// 9. Verify Graceful Degradation in sendReceiptEmailSafe
 async function testMailerSafety() {
   const origKey = process.env.RESEND_API_KEY;
   try {
@@ -179,19 +204,21 @@ async function testMailerSafety() {
 }
 
 testMailerSafety().then(() => {
-  console.log("✓ Test 8: sendReceiptEmailSafe graceful degradation & input guard verified");
+  console.log("✓ Test 9: sendReceiptEmailSafe graceful degradation & input guard verified");
 
-  // Export sample HTML files for professor presentation and visual verification
-  const exportDir = path.resolve(__dirname, "../../../../"); // D:\APP平台
-  const sampleNormalPath = path.join(exportDir, "sample_official_receipt.html");
-  const sampleProbePath = path.join(exportDir, "sample_official_receipt_probe.html");
+  // Test Hygiene: Export sample HTML files only if explicitly requested
+  if (process.env.EXPORT_RECEIPT_SAMPLES === "true") {
+    const exportDir = os.tmpdir();
+    const sampleNormalPath = path.join(exportDir, "sample_official_receipt.html");
+    const sampleProbePath = path.join(exportDir, "sample_official_receipt_probe.html");
 
-  fs.writeFileSync(sampleNormalPath, normalHtml, "utf8");
-  fs.writeFileSync(sampleProbePath, probeHtml, "utf8");
+    fs.writeFileSync(sampleNormalPath, normalHtml, "utf8");
+    fs.writeFileSync(sampleProbePath, probeHtml, "utf8");
 
-  console.log(`\n[+] Exported presentation samples for Professor:`);
-  console.log(`    - Standard ($40 USD): file:///${sampleNormalPath.replace(/\\/g, "/")}`);
-  console.log(`    - Test Probe ($1 TWD): file:///${sampleProbePath.replace(/\\/g, "/")}`);
+    console.log(`\n[+] Exported presentation samples to tmpdir:`);
+    console.log(`    - Standard ($40 USD): ${sampleNormalPath}`);
+    console.log(`    - Test Probe ($1 TWD): ${sampleProbePath}`);
+  }
 
   console.log("\nAll Receipt Mailer tests passed! ✅\n");
 });

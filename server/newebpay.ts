@@ -45,7 +45,8 @@ const VALID_PACKAGES: Record<string, number> = {
 
 /** USD list price and the TWD actually charged, at today's rate. */
 export function priceFor(credits: number, packageId?: string) {
-  if (process.env.TEST_PAYMENT_PROBE === "true" && packageId?.toLowerCase() === "starter") {
+  const isProbeAllowed = process.env.NODE_ENV !== "production";
+  if (process.env.TEST_PAYMENT_PROBE === "true" && isProbeAllowed && packageId?.toLowerCase() === "starter") {
     return {
       usd: 1,
       twd: 1,
@@ -61,6 +62,9 @@ export function priceFor(credits: number, packageId?: string) {
 }
 
 if (process.env.TEST_PAYMENT_PROBE === "true") {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("[FATAL SECURITY] TEST_PAYMENT_PROBE cannot be enabled in production environment!");
+  }
   console.warn("====================================================================");
   console.warn(" [SECURITY WARNING] TEST_PAYMENT_PROBE IS ENABLED!");
   console.warn(" Starter Package credit price is overridden to NT$ 1.00 / US$ 1.00.");
@@ -123,7 +127,7 @@ const findOrder = db.prepare("SELECT * FROM newebpay_orders WHERE orderNo = ?");
 // Atomic pending→paid transition makes the notify handler idempotent.
 const markPaid = db.prepare(
   `UPDATE newebpay_orders
-      SET status = 'paid', tradeNo = ?, paidAt = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      SET status = 'paid', tradeNo = ?, paidAt = ?
     WHERE orderNo = ? AND status = 'pending'`
 );
 
@@ -441,7 +445,8 @@ router.post("/notify", async (req, res) => {
   }
 
   // Idempotent: only the first successful notify credits the user or unlocks report.
-  const updated = markPaid.run(result.TradeNo ?? null, orderNo);
+  const paidAt = new Date().toISOString();
+  const updated = markPaid.run(result.TradeNo ?? null, paidAt, orderNo);
   if (updated.changes === 1) {
     if (order.orderType === "guest_report" && order.jobId) {
       const downloadToken = crypto.randomBytes(32).toString("hex");
@@ -449,7 +454,7 @@ router.post("/notify", async (req, res) => {
         isPaid: 1,
         downloadToken,
         downloadsRemaining: 5,
-        paidAt: new Date().toISOString(),
+        paidAt,
       });
       console.log(`NewebPay: unlocked guest report ${order.jobId} (${orderNo})`);
     } else {
@@ -463,7 +468,6 @@ router.post("/notify", async (req, res) => {
     }
 
     // Non-blocking Official Electronic Receipt delivery with deduplication
-    const paidAt = new Date().toISOString();
     const sig = generateReceiptSignature(orderNo, paidAt);
     const webReceiptUrl = `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${sig}`;
 
@@ -521,7 +525,7 @@ router.get("/orders/:orderNo/receipt", (req, res) => {
   }
 
   const expectedSig = generateReceiptSignature(orderNo, order.paidAt);
-  const clientSig = (req.query.sig as string) || "";
+  const clientSig = typeof req.query.sig === "string" ? req.query.sig.trim() : "";
   const validSig =
     clientSig.length === expectedSig.length &&
     crypto.timingSafeEqual(Buffer.from(clientSig), Buffer.from(expectedSig));
@@ -534,8 +538,7 @@ router.get("/orders/:orderNo/receipt", (req, res) => {
 
   const html = generateReceiptHtml({
     orderNo: order.orderNo,
-    recipientEmail:
-      order.receiptEmail || (order.uid !== "guest" ? order.uid : ""),
+    recipientEmail: order.receiptEmail || "",
     credits: order.credits,
     amt: order.amt,
     usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
