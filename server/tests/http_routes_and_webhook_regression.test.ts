@@ -202,6 +202,7 @@ async function runTests() {
     assert(orderRow, "Paid order must exist in newebpay_orders");
     assert.strictEqual(orderRow.status, "paid");
     assert(orderRow.paidAt, "Order must have paidAt timestamp written by markPaid");
+    assert(orderRow.receiptSentAt, "Order must have receiptSentAt timestamp recorded for decoupled idempotency");
 
     // Retrieve official online receipt using signature computed with the order's DB paidAt
     const receiptSig = generateReceiptSignature(checkoutBody.orderNo, orderRow.paidAt);
