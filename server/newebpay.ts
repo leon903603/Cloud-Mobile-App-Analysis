@@ -11,6 +11,10 @@ import { getTwdPerUsd } from "./fx";
 import { CreditBank } from "./services/creditBank";
 
 import { GuestJob } from "./models/GuestJob";
+import {
+  sendReceiptEmailSafe,
+  generateReceiptHtml,
+} from "./services/receiptMailer";
 
 const router = express.Router();
 
@@ -40,10 +44,28 @@ const VALID_PACKAGES: Record<string, number> = {
 };
 
 /** USD list price and the TWD actually charged, at today's rate. */
-function priceFor(credits: number) {
+export function priceFor(credits: number, packageId?: string) {
+  if (process.env.TEST_PAYMENT_PROBE === "true" && packageId?.toLowerCase() === "starter") {
+    return {
+      usd: 1,
+      twd: 1,
+      rate: 1,
+      source: "test_probe",
+      fetchedAt: new Date().toISOString(),
+      stale: false,
+    };
+  }
   const { rate, source, fetchedAt, stale } = getTwdPerUsd();
   const usd = credits * USD_PER_CREDIT;
   return { usd, twd: Math.round(usd * rate), rate, source, fetchedAt, stale };
+}
+
+if (process.env.TEST_PAYMENT_PROBE === "true") {
+  console.warn("====================================================================");
+  console.warn(" [SECURITY WARNING] TEST_PAYMENT_PROBE IS ENABLED!");
+  console.warn(" Starter Package credit price is overridden to NT$ 1.00 / US$ 1.00.");
+  console.warn(" ENSURE THIS FLAG IS DISABLED IN REAL PRODUCTION DEPLOYMENTS.");
+  console.warn("====================================================================");
 }
 
 db.exec(`
@@ -113,6 +135,21 @@ interface OrderRow {
   status: string;
   jobId?: string | null;
   orderType?: string | null;
+  tradeNo?: string | null;
+  createdAt?: string | null;
+  usdAmt?: number | null;
+  fxRate?: number | null;
+  paidAt?: string | null;
+  receiptEmail?: string | null;
+}
+
+export function generateReceiptSignature(orderNo: string, paidAt?: string | null): string {
+  const secret = HASH_KEY || HASH_IV || "cmaa_receipt_secret_salt";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`${orderNo}:${paidAt || ""}`)
+    .digest("hex")
+    .slice(0, 32);
 }
 
 // ── Crypto helpers (manual §4.1) ────────────────────────────────────────────
@@ -178,7 +215,7 @@ router.get("/pricing", (_req, res) => {
     rateFetchedAt: fetchedAt,
     rateIsFallback: stale,
     packages: Object.entries(VALID_PACKAGES).map(([id, credits]) => {
-      const { usd, twd } = priceFor(credits);
+      const { usd, twd } = priceFor(credits, id);
       return { id, credits, usd, twd };
     }),
   });
@@ -193,7 +230,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
   const uid = (req as any).uid as string;
   const email = (req as any).email as string;
-  const { usd, twd: amt, rate } = priceFor(credits);
+  const { usd, twd: amt, rate } = priceFor(credits, packageId);
 
   // If NewebPay keys are not configured, allow local development testing simulation
   if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
@@ -424,6 +461,25 @@ router.post("/notify", async (req, res) => {
       });
       console.log(`NewebPay: credited ${order.credits} to ${order.uid} (${orderNo})`);
     }
+
+    // Non-blocking Official Electronic Receipt delivery with deduplication
+    const paidAt = new Date().toISOString();
+    const sig = generateReceiptSignature(orderNo, paidAt);
+    const webReceiptUrl = `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${sig}`;
+
+    sendReceiptEmailSafe({
+      orderNo,
+      recipientEmail: order.receiptEmail || "",
+      credits: order.credits,
+      amt: order.amt,
+      usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
+      orderType: (order.orderType as any) || "credits",
+      tradeNo: result.TradeNo ?? "",
+      paidAt,
+      webReceiptUrl,
+    }).catch((err) => {
+      console.error("[NewebPay Notify] Unexpected receipt mailer background error:", err);
+    });
   }
 
   return res.status(200).send("ok");
@@ -448,6 +504,49 @@ router.post("/return", (req, res) => {
   }
 
   return res.redirect(`${CLIENT_URL}/app?credits=${ok ? "success" : "failed"}`);
+});
+
+// ── GET /api/newebpay/orders/:orderNo/receipt ──────────────────────────────
+// Browser-viewable official receipt route.
+// Bypasses Gmail/Outlook inline SVG stripping and provides seamless A4 printing.
+// IDOR defense: requires valid HMAC signature generated at payment time.
+router.get("/orders/:orderNo/receipt", (req, res) => {
+  const { orderNo } = req.params;
+  const order = findOrder.get(orderNo) as OrderRow | undefined;
+  if (!order) {
+    return res.status(404).send("Receipt not found");
+  }
+  if (order.status !== "paid") {
+    return res.status(400).send("Order has not been paid yet");
+  }
+
+  const expectedSig = generateReceiptSignature(orderNo, order.paidAt);
+  const clientSig = (req.query.sig as string) || "";
+  const validSig =
+    clientSig.length === expectedSig.length &&
+    crypto.timingSafeEqual(Buffer.from(clientSig), Buffer.from(expectedSig));
+
+  if (!validSig) {
+    return res
+      .status(403)
+      .send("Unauthorized: Invalid receipt verification signature");
+  }
+
+  const html = generateReceiptHtml({
+    orderNo: order.orderNo,
+    recipientEmail:
+      order.receiptEmail || (order.uid !== "guest" ? order.uid : ""),
+    credits: order.credits,
+    amt: order.amt,
+    usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
+    orderType: (order.orderType as any) || "credits",
+    tradeNo: order.tradeNo || undefined,
+    paidAt: order.paidAt || undefined,
+    webReceiptUrl: `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${expectedSig}`,
+  });
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  return res.send(html);
 });
 
 export default router;
