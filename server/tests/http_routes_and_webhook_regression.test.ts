@@ -1,5 +1,6 @@
 import assert from "assert";
 import crypto from "crypto";
+import cors from "cors";
 import express from "express";
 import { Server } from "http";
 import { AddressInfo } from "net";
@@ -57,7 +58,26 @@ async function runTests() {
   const originalPurgeAll = ArtifactVault.purgeAllJobArtifacts;
   ArtifactVault.purgeAllJobArtifacts = async () => ({ purgedKeys: [] });
 
+  const allowedOrigins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://localhost",
+    "https://core.newebpay.com",
+    "https://ccore.newebpay.com",
+    "https://core.spgateway.com",
+    "https://ccore.spgateway.com",
+  ];
   const app = express();
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const cleanOrigin = origin.trim().replace(/\/+$/, "");
+      if (allowedOrigins.includes(cleanOrigin)) return callback(null, true);
+      return callback(null, false);
+    },
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   app.use("/guest", guestRoutes);
@@ -285,6 +305,44 @@ async function runTests() {
       }
     }
     console.log("✓ Test 3.2: Resend failure / network timeout isolation verified (Zero disruption to NewebPay 200 OK)");
+
+    // 3.3. Verify NewebPay gateway Return CORS & browser redirect
+    const returnPayload = buildSignedWebhookPayload({
+      Status: "SUCCESS",
+      MerchantOrderNo: checkoutBody.orderNo,
+      TradeNo: "26102812345678",
+      Amt: 1280,
+    });
+    const returnParams = new URLSearchParams({
+      Status: "SUCCESS",
+      MerchantID: "MOCK_MERCHANT",
+      TradeInfo: returnPayload.TradeInfo,
+      TradeSha: returnPayload.TradeSha,
+      Version: "2.0",
+    });
+
+    const returnRes = await fetch(`${baseUrl}/api/newebpay/return`, {
+      method: "POST",
+      headers: {
+        Origin: "https://core.newebpay.com",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      redirect: "manual",
+      body: returnParams.toString(),
+    });
+    assert.strictEqual(
+      returnRes.status,
+      302,
+      `Expected 302 redirect from return endpoint, got ${returnRes.status}`
+    );
+    assert.strictEqual(
+      returnRes.headers.get("access-control-allow-origin"),
+      "https://core.newebpay.com",
+      "Must allow NewebPay gateway origin in CORS header"
+    );
+    const location = returnRes.headers.get("location") || "";
+    assert(location.includes("guest_job=") && location.includes("payment=success"));
+    console.log("✓ Test 3.3: POST /api/newebpay/return with Origin: https://core.newebpay.com redirect & CORS verified");
 
     // 4. Discard Job & 10-minute Cooldown Gate (429)
     const discardJobId = `discard-job-${Date.now()}`;

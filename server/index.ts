@@ -87,17 +87,29 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
   "http://localhost:3000",
   "http://localhost",
+  "https://core.newebpay.com",
+  "https://ccore.newebpay.com",
+  "https://core.spgateway.com",
+  "https://ccore.spgateway.com",
 ];
-if (configuredOrigin && !allowedOrigins.includes(configuredOrigin)) {
-  allowedOrigins.push(configuredOrigin);
+if (configuredOrigin) {
+  const normalized = configuredOrigin.trim().replace(/\/+$/, "");
+  if (normalized && !allowedOrigins.includes(normalized)) {
+    allowedOrigins.push(normalized);
+  }
 }
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin) {
+      return callback(null, true);
+    }
+    const cleanOrigin = origin.trim().replace(/\/+$/, "");
+    if (allowedOrigins.includes(cleanOrigin)) {
       callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS"));
+      // Return false so CORS headers are omitted rather than throwing an unhandled Error
+      callback(null, false);
     }
   },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
