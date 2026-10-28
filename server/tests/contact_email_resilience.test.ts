@@ -4,7 +4,7 @@ import path from "path";
 import {
   DEFAULT_CONTACT_EMAIL,
   copyTextToClipboard,
-} from "../../frontend/src/components/CopyableEmailLink";
+} from "../../frontend/src/utils/contactEmail";
 
 console.log("==================================================");
 console.log(" Running Contact Email Resilience Unit Tests (UX-002)");
@@ -63,38 +63,38 @@ async function runTests() {
       },
     });
 
-  let execCommandCalled = false;
-  let appendedElement: any = null;
-  const mockDocument = {
-    createElement: (tag: string) => ({
-      value: "",
-      style: {},
-      setAttribute: () => {},
-      focus: () => {},
-      select: () => {},
-    }),
-    body: {
-      appendChild: (el: any) => {
-        appendedElement = el;
+    let execCommandCalled = false;
+    let appendedElement: any = null;
+    const mockDocument = {
+      createElement: (tag: string) => ({
+        value: "",
+        style: {},
+        setAttribute: () => {},
+        focus: () => {},
+        select: () => {},
+      }),
+      body: {
+        appendChild: (el: any) => {
+          appendedElement = el;
+        },
+        removeChild: (el: any) => {
+          if (appendedElement === el) appendedElement = null;
+        },
       },
-      removeChild: (el: any) => {
-        if (appendedElement === el) appendedElement = null;
+      execCommand: (command: string) => {
+        if (command === "copy") {
+          execCommandCalled = true;
+          return true;
+        }
+        return false;
       },
-    },
-    execCommand: (command: string) => {
-      if (command === "copy") {
-        execCommandCalled = true;
-        return true;
-      }
-      return false;
-    },
-  };
+    };
 
-  (global as any).document = mockDocument;
-  const result2 = await copyTextToClipboard("fallback@example.com");
-  assert.strictEqual(result2, true, "Fallback should return true on execCommand success");
-  assert.strictEqual(execCommandCalled, true, "execCommand('copy') must be invoked on fallback");
-  console.log("✓ Test 3: execCommand('copy') resilience fallback verified");
+    (global as any).document = mockDocument;
+    const result2 = await copyTextToClipboard("fallback@example.com");
+    assert.strictEqual(result2, true, "Fallback should return true on execCommand success");
+    assert.strictEqual(execCommandCalled, true, "execCommand('copy') must be invoked on fallback");
+    console.log("✓ Test 3: execCommand('copy') resilience fallback verified");
 
     // Clean up global mocks
     delete (global as any).document;
