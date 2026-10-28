@@ -1,6 +1,6 @@
 // server/tests/artifactVault.test.ts
 import assert from "assert";
-import { ArtifactVault, ArtifactScope } from "../services/artifactVault";
+import { ArtifactVault, ArtifactScope, decodePregeneratedPdf } from "../services/artifactVault";
 
 console.log("==================================================");
 console.log(" Running ArtifactVault Deep Module Unit Tests");
@@ -118,8 +118,20 @@ async function runTests() {
 
   console.log("✓ Test 6: Defensive Report Object Normalization (double-serialized JSON unpacking) verified");
 
+  // Test 7: Pre-generated PDFs from an analysis host (iOS on the Mac) are validated
+  {
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(2048, 0x30)]);
+    const ok = decodePregeneratedPdf(pdf.toString("base64"), "en");
+    assert(ok && ok.equals(pdf), "valid PDF must decode byte-for-byte");
+    assert.strictEqual(decodePregeneratedPdf(Buffer.from("<html>x</html>").toString("base64"), "en"), null);
+    assert.strictEqual(decodePregeneratedPdf(undefined, "zh-TW"), null);
+    const huge = Buffer.concat([Buffer.from("%PDF-"), Buffer.alloc(10 * 1024 * 1024)]);
+    assert.strictEqual(decodePregeneratedPdf(huge.toString("base64"), "zh-TW"), null, "oversized PDF is dropped");
+    console.log("✓ Test 7: Pre-generated PDF validation (magic bytes, size cap) verified");
+  }
+
   console.log("==================================================");
-  console.log(" All ArtifactVault Module Unit Tests Passed (6/6) ✅");
+  console.log(" All ArtifactVault Module Unit Tests Passed (7/7) ✅");
   console.log("==================================================");
 }
 

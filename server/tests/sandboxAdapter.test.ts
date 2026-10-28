@@ -434,7 +434,10 @@ async function runTests() {
       if (url.endsWith("/analyze_ipa")) {
         return { ok: true, status: 202, json: async () => ({ job_id: "job-ios-1" }) } as any;
       }
-      return { ok: true, json: async () => ({ status: "success", result: { rules: 38 } }) } as any;
+      return {
+        ok: true,
+        json: async () => ({ status: "success", result: { rules: 38 }, pdfs: { "zh-TW": "WkgtUERG", en: "RU4tUERG" } }),
+      } as any;
     }) as any;
 
     const presignAdapter = createSandboxAdapter({
@@ -456,6 +459,8 @@ async function runTests() {
     assert.strictEqual(seen[0].body.download_url, "https://s3.example/uploads/u1/" + "a".repeat(64) + "/app.ipa?ttl=1800");
     assert.strictEqual(seen[0].headers["X-Static-Token"], "tok-123", "submit must carry the token");
     assert.strictEqual(seen[1].headers["X-Static-Token"], "tok-123", "status poll must carry the token");
+    assert.deepStrictEqual(seen[0].body.pdf_langs, ["zh-TW", "en"], "iOS asks the wrapper for both PDFs");
+    assert.deepStrictEqual(res.pdfs, { "zh-TW": "WkgtUERG", en: "RU4tUERG" }, "wrapper PDFs are passed through");
 
     // Default mode: unchanged request shape, and Android never gets the iOS token.
     seen.length = 0;
@@ -465,9 +470,11 @@ async function runTests() {
       staticTokenIos: "tok-123",
       staticS3ModeIos: "direct",
       pollIntervalMs: 10,
-      fetchFn: (async (url: string, opts: any) =>
-        url.endsWith("/analyze_apk") ? { ok: true, status: 202, json: async () => ({ job_id: "a1" }) } as any
-          : iosFetch(url, opts)) as any,
+      fetchFn: (async (url: string, opts: any) => {
+        if (!url.endsWith("/analyze_apk")) return iosFetch(url, opts);
+        seen.push({ url, headers: opts?.headers || {}, body: JSON.parse(opts.body) });
+        return { ok: true, status: 202, json: async () => ({ job_id: "a1" }) } as any;
+      }) as any,
     });
     await directAdapter.runStaticAnalysis({
       platform: "ios", s3UploadKey: "uploads/u1/h/app.ipa", filename: "app.ipa", fileHash: "h",
@@ -479,6 +486,7 @@ async function runTests() {
       platform: "android", s3UploadKey: "uploads/u1/h/app.apk", filename: "app.apk", fileHash: "h",
     });
     assert.strictEqual(seen[0].headers["X-Static-Token"], undefined, "Android must not receive the iOS token");
+    assert.strictEqual(seen[0].body.pdf_langs, undefined, "Android keeps using the PDF Lambda");
 
     const { isAllowedAnalysisInputKey } = await import("../s3");
     assert.strictEqual(isAllowedAnalysisInputKey("uploads/u1/" + "a".repeat(64) + "/兆豐 銀行.ipa"), true);

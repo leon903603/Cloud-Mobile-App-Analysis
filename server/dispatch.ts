@@ -27,7 +27,7 @@ export function normalizeReportObject(raw: unknown): Record<string, any> {
 async function runStaticJob(fileDoc: FileMetaRow, platform: "android" | "ios") {
   FileMeta.update(fileDoc.id, { status: "analyzing" });
 
-  const { reportData: rawReportData } = await SandboxAdapter.runStaticAnalysis({
+  const { reportData: rawReportData, pdfs } = await SandboxAdapter.runStaticAnalysis({
     platform,
     s3UploadKey: fileDoc.filePath,
     filename: fileDoc.filename,
@@ -51,7 +51,12 @@ async function runStaticJob(fileDoc: FileMetaRow, platform: "android" | "ios") {
       existingReportPath: fileDoc.reportPath,
     },
     reportData,
-    { allowDummyPdfFallback: isTestEnv() }
+    {
+      allowDummyPdfFallback: isTestEnv(),
+      // iOS: zh-TW/en PDFs rendered on the Mac (the PDF Lambda only knows Android)
+      pregeneratedZhPdfBase64: pdfs?.["zh-TW"],
+      pregeneratedEnPdfBase64: pdfs?.en,
+    }
   );
 
   FileMeta.update(fileDoc.id, { status: "done" });
@@ -187,7 +192,7 @@ async function runGuestStaticJob(job: GuestJobRow, platform: "android" | "ios") 
   const pdfKey = `guest/reports/${job.jobId}.pdf`;
 
   // Restrict simulation strictly to NODE_ENV === "test"
-  const { reportData: rawReportData } = await SandboxAdapter.runStaticAnalysis({
+  const { reportData: rawReportData, pdfs } = await SandboxAdapter.runStaticAnalysis({
     platform,
     s3UploadKey: job.uploadPath,
     filename: job.filename || "security-report.apk",
@@ -207,7 +212,11 @@ async function runGuestStaticJob(job: GuestJobRow, platform: "android" | "ios") 
       existingReportPath: job.reportPath,
     },
     reportData,
-    { allowDummyPdfFallback: isTestEnv() }
+    {
+      allowDummyPdfFallback: isTestEnv(),
+      pregeneratedZhPdfBase64: pdfs?.["zh-TW"],
+      pregeneratedEnPdfBase64: pdfs?.en,
+    }
   );
 
   GuestJob.update(job.jobId, {
