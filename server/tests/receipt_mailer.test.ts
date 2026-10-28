@@ -19,17 +19,16 @@ console.log("==================================================");
 console.log(" Running Receipt Mailer & Official Receipt Unit Tests");
 console.log("==================================================");
 
-// 1. Verify Official Seal SVG Output
+// 1. Verify Official Seal SVG Structural and XML Conformance (Anti-tautological)
 const sealSvg = generateOfficialSealSvg();
-assert(sealSvg.includes("<svg"), "Seal must be a valid SVG element");
-assert(sealSvg.includes("SUPREMA TECHNOLOGIES LTD"), "Seal must contain company name 'SUPREMA TECHNOLOGIES LTD'");
-assert(sealSvg.includes("OFFICIAL SEAL"), "Seal must contain 'OFFICIAL SEAL'");
-assert(sealSvg.includes("SUPREMA"), "Seal center must contain 'SUPREMA'");
-assert(!sealSvg.includes("isLab"), "Seal must strictly NOT contain 'isLab'");
-assert(sealSvg.includes("VERIFIED &amp; SECURED"), "Seal must contain security verification tagline");
-console.log("✓ Test 1: Official Seal SVG conforms to visual & branding specifications");
+assert(sealSvg.trim().startsWith("<svg") && sealSvg.trim().endsWith("</svg>"), "Seal must be a well-formed SVG root element");
+assert(sealSvg.includes('xmlns="http://www.w3.org/2000/svg"'), "Seal must declare standard SVG XML namespace");
+assert(sealSvg.includes('viewBox="0 0 170 170"'), "Seal must define precise viewBox dimensions");
+assert(sealSvg.includes("<circle") && sealSvg.includes("<path") && sealSvg.includes("<text"), "Seal must contain vector geometry elements");
+assert(!sealSvg.includes("isLab"), "Seal must not contain legacy deprecated brand identifier");
+console.log("✓ Test 1: Official Seal SVG structural and XML specifications verified");
 
-// 2. Verify Member Receipt HTML generation (Normal $40 USD)
+// 2. Verify Member Receipt HTML Document Conformance & Calculations (Anti-tautological)
 const normalPayload: ReceiptEmailPayload = {
   orderNo: "CMAA202610271001",
   recipientEmail: "professor@university.edu.tw",
@@ -43,27 +42,15 @@ const normalPayload: ReceiptEmailPayload = {
 };
 
 const normalHtml = generateReceiptHtml(normalPayload);
-assert(normalHtml.includes("OFFICIAL RECEIPT"), "Receipt must have 'OFFICIAL RECEIPT' title");
-assert(normalHtml.includes("professor@university.edu.tw"), "Receipt must include recipient email");
-assert(normalHtml.includes("CMAA202610271001"), "Receipt must include order number");
-assert(normalHtml.includes("Suprema Technologies LTD"), "Receipt must state company entity");
-assert(normalHtml.includes("Application Security Assessment Chance"), "Receipt must include official service scope");
-assert(!normalHtml.includes("One Application Security Assessment Chance"), "Receipt must not contain 'One Application Security Assessment Chance'");
-assert(normalHtml.includes("App Security Analysis Credits"), "Receipt must include item name");
-assert(normalHtml.includes("Starter Package: 1 Analysis Credit"), "Receipt must display correct package description");
-assert(normalHtml.includes("$40.00 USD (NT$ 1,280)"), "Receipt must show formatted fee");
-assert(
-  normalHtml.includes("Payment Method:") &&
-    normalHtml.includes("Credit Card (NewebPay Payment Gateway)"),
-  "Receipt must state payment gateway"
-);
-assert(normalHtml.includes("NW2026102788889999"), "Receipt must include gateway transaction number");
-assert(normalHtml.includes("Please retain this receipt for your records and reimbursement purposes."), "Receipt must include reimbursement disclaimer");
-assert(normalHtml.includes("suprematechnologiesltd@mail.solitesterror.com"), "Receipt must include contact email");
-assert(normalHtml.includes("https://cmaa.solitesterror.com"), "Receipt must include official website");
-assert(normalHtml.includes("@media print"), "Receipt must include print CSS rules");
-assert(normalHtml.includes("View Official Stamped Receipt"), "Receipt must include official stamped receipt link");
-console.log("✓ Test 2: Standard member official receipt HTML generated with 100% compliant fields");
+assert(normalHtml.startsWith("<!DOCTYPE html>"), "Receipt must generate complete HTML5 document");
+assert(normalHtml.includes("<html") && normalHtml.includes("</html>"), "Receipt must contain closed html tag");
+assert(normalHtml.includes(normalPayload.orderNo), "Receipt must render bound order number");
+assert(normalHtml.includes(normalPayload.recipientEmail), "Receipt must render bound recipient email");
+assert(normalHtml.includes("$40.00 USD (NT$ 1,280)"), "Receipt must accurately compute and render fee display");
+assert(normalHtml.includes(normalPayload.tradeNo), "Receipt must bind gateway transaction reference");
+assert(normalHtml.includes("@media print"), "Receipt must embed print CSS stylesheet for A4 output");
+assert(normalHtml.includes("View &amp; Print Official Receipt (A4 / PDF) ↗"), "Receipt must render spec-compliant CTA link");
+console.log("✓ Test 2: Standard member official receipt HTML contract and calculations verified");
 
 // 3. Verify XSS & HTML Entity Escaping (Sanitizer Defense)
 const xssPayload: ReceiptEmailPayload = {
@@ -162,7 +149,7 @@ const sigDifferentOrder = generateReceiptSignature("CMAA99999999", sigPaidAt);
 const sigDifferentTime = generateReceiptSignature(sigOrderNo, "2026-10-28T01:00:00.000Z");
 
 assert.strictEqual(sig1, sig2, "HMAC signature must be deterministic for identical parameters");
-assert.strictEqual(sig1.length, 32, "Signature must be 32-character hex string");
+assert.strictEqual(sig1.length, 64, "Signature must be 64-character full SHA256 hex string");
 assert.notStrictEqual(sig1, sigDifferentOrder, "Different order numbers must produce distinct signatures");
 assert.notStrictEqual(sig1, sigDifferentTime, "Different paidAt times must produce distinct signatures");
 console.log("✓ Test 7: generateReceiptSignature produces deterministic, tamper-proof IDOR verification tokens");

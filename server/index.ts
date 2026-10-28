@@ -129,6 +129,12 @@ app.use(express.json());
 app.use("/guest", guestRoutes);
 // NewebPay posts notify/return as form-urlencoded, hence the extra parser.
 app.use("/api/newebpay", express.urlencoded({ extended: false }), newebpayRouter);
+
+// Spec conformance (SPEC-CMAA-PAY-001): Direct route alias for /api/orders/:orderNo/receipt
+app.get("/api/orders/:orderNo/receipt", (req: Request, res: Response) => {
+  const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  return res.redirect(307, `/api/newebpay/orders/${encodeURIComponent(req.params.orderNo)}/receipt${query}`);
+});
 // Credit reconciliation console. Static-token auth (ADMIN_API_TOKEN), not Firebase —
 // it has to stay usable when Firebase is the thing under suspicion.
 app.use("/api/admin/credit-audit", creditAuditRouter);

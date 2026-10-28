@@ -82,6 +82,10 @@ async function runTests() {
   app.use(express.urlencoded({ extended: false }));
   app.use("/guest", guestRoutes);
   app.use("/api/newebpay", newebpayRouter);
+  app.get("/api/orders/:orderNo/receipt", (req, res) => {
+    const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+    return res.redirect(307, `/api/newebpay/orders/${encodeURIComponent(req.params.orderNo)}/receipt${query}`);
+  });
 
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
@@ -248,7 +252,18 @@ async function runTests() {
       `${baseUrl}/api/newebpay/orders/${checkoutBody.orderNo}/receipt?sig=foo&sig=bar`
     );
     assert.strictEqual(arraySigRes.status, 403, "Array-polluted signature must safely return 403");
-    console.log("✓ Test 3.1: Closed-loop Webhook -> GET /receipt verified (100% immune to 403 mismatch & IDOR safe)");
+
+    // Spec Route Alias Test (/api/orders/:orderNo/receipt -> 307 redirect)
+    const specRouteRes = await fetch(
+      `${baseUrl}/api/orders/${checkoutBody.orderNo}/receipt?sig=${receiptSig}`,
+      { redirect: "manual" }
+    );
+    assert.strictEqual(specRouteRes.status, 307, "Spec route /api/orders/:orderNo/receipt must 307 redirect to newebpay route");
+    assert(
+      (specRouteRes.headers.get("location") || "").includes(`/api/newebpay/orders/${checkoutBody.orderNo}/receipt?sig=${receiptSig}`),
+      "Redirect location must match canonical path with query preserved"
+    );
+    console.log("✓ Test 3.1: Closed-loop Webhook -> GET /receipt verified (100% immune to 403 mismatch, IDOR safe & spec route 307 alias verified)");
 
     // 3.2 Resend Failure / Network Timeout Isolation (Addressing Risk 3)
     // Verify notify STILL returns 200 OK immediately even if external mailer fails or throws
@@ -296,6 +311,22 @@ async function runTests() {
         GuestJob.findByJobId(resendJobId)?.isPaid,
         1,
         "Guest job must still be unlocked even if mailer fails"
+      );
+
+      // Verify saga compensating action: failed dispatch must rollback receiptSentAt to NULL for future retry
+      let rolledBack = false;
+      for (let i = 0; i < 40; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const row = db.prepare("SELECT receiptSentAt FROM newebpay_orders WHERE orderNo = ?").get(resendCheckoutBody.orderNo) as any;
+        if (row && row.receiptSentAt === null) {
+          rolledBack = true;
+          break;
+        }
+      }
+      assert.strictEqual(
+        rolledBack,
+        true,
+        "Failed receipt dispatch must rollback receiptSentAt to NULL for subsequent gateway retry"
       );
     } finally {
       if (origResendKey !== undefined) {

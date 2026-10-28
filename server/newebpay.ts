@@ -155,13 +155,33 @@ interface OrderRow {
   receiptSentAt?: string | null;
 }
 
+
+function buildReceiptPayload(
+  order: OrderRow,
+  paidAt: string,
+  tradeNo: string,
+  webReceiptUrl: string,
+  recipientEmail?: string
+): ReceiptEmailPayload {
+  return {
+    orderNo: order.orderNo,
+    recipientEmail: recipientEmail || order.receiptEmail || "",
+    credits: order.credits,
+    amt: order.amt,
+    usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
+    orderType: (order.orderType as any) || "credits",
+    tradeNo: tradeNo || order.tradeNo || "",
+    paidAt,
+    webReceiptUrl,
+  };
+}
+
 export function generateReceiptSignature(orderNo: string, paidAt?: string | null): string {
-  const secret = HASH_KEY || HASH_IV || "cmaa_receipt_secret_salt";
+  const secret = HASH_KEY || HASH_IV || process.env.RECEIPT_SIGNATURE_SECRET || "cmaa_receipt_secret_salt";
   return crypto
     .createHmac("sha256", secret)
     .update(`${orderNo}:${paidAt || ""}`)
-    .digest("hex")
-    .slice(0, 32);
+    .digest("hex");
 }
 
 // ── Crypto helpers (manual §4.1) ────────────────────────────────────────────
@@ -483,19 +503,20 @@ router.post("/notify", async (req, res) => {
           const sig = generateReceiptSignature(orderNo, paidAt);
           const webReceiptUrl = `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${sig}`;
 
-          sendReceiptEmailSafe({
-            orderNo,
-            recipientEmail: order.receiptEmail || "",
-            credits: order.credits,
-            amt: order.amt,
-            usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
-            orderType: (order.orderType as any) || "credits",
-            tradeNo: result.TradeNo ?? "",
-            paidAt,
-            webReceiptUrl,
-          }).catch((err) => {
-            console.error("[NewebPay Notify] Unexpected receipt mailer background error:", err);
-          });
+          const payload = buildReceiptPayload(order, paidAt, result.TradeNo ?? "", webReceiptUrl);
+
+          sendReceiptEmailSafe(payload)
+            .then((res) => {
+              // If delivery failed (and wasn't safely skipped like mock mode), rollback claim so retried webhooks can retry delivery
+              if (!res.success && !res.skipped) {
+                db.prepare("UPDATE newebpay_orders SET receiptSentAt = NULL WHERE orderNo = ?").run(orderNo);
+                console.warn(`[NewebPay Notify] Receipt dispatch failed for ${orderNo}, rolled back receiptSentAt for gateway retry`);
+              }
+            })
+            .catch((err) => {
+              db.prepare("UPDATE newebpay_orders SET receiptSentAt = NULL WHERE orderNo = ?").run(orderNo);
+              console.error("[NewebPay Notify] Unexpected receipt mailer background error, rolled back receiptSentAt:", err);
+            });
         }
       }
     } catch (receiptErr) {
@@ -580,10 +601,11 @@ router.post("/orders/:orderNo/resend-receipt", requireAuth, async (req, res) => 
 
   const requesterUid = (req as any).uid;
   const requesterEmail = (req as any).email;
+  const adminEmail = process.env.ADMIN_EMAIL || "suprematechnologiesltd@mail.solitesterror.com";
   const isAuthorized =
     order.uid === requesterUid ||
     order.receiptEmail === requesterEmail ||
-    requesterEmail === "suprematechnologiesltd@mail.solitesterror.com";
+    requesterEmail === adminEmail;
 
   if (!isAuthorized) {
     return res.status(403).json({ error: "Forbidden" });
@@ -593,17 +615,8 @@ router.post("/orders/:orderNo/resend-receipt", requireAuth, async (req, res) => 
   const sig = generateReceiptSignature(orderNo, paidAt);
   const webReceiptUrl = `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${sig}`;
 
-  const sendResult = await sendReceiptEmailSafe({
-    orderNo,
-    recipientEmail: order.receiptEmail || requesterEmail || "",
-    credits: order.credits,
-    amt: order.amt,
-    usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
-    orderType: (order.orderType as any) || "credits",
-    tradeNo: order.tradeNo ?? "",
-    paidAt,
-    webReceiptUrl,
-  });
+  const payload = buildReceiptPayload(order, paidAt, order.tradeNo ?? "", webReceiptUrl, order.receiptEmail || requesterEmail);
+  const sendResult = await sendReceiptEmailSafe(payload);
 
   if (sendResult.success) {
     db.prepare("UPDATE newebpay_orders SET receiptSentAt = ? WHERE orderNo = ?").run(

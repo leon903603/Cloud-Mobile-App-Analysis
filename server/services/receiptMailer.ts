@@ -78,30 +78,7 @@ export function generateOfficialSealSvg(): string {
 </svg>`;
 }
 
-/**
- * Email-compatible HTML/CSS official circular electronic verification seal.
- * Renders flawlessly across all email clients (Gmail, Outlook, Apple Mail)
- * where raw SVG elements are stripped by sanitizers.
- */
-export function generateOfficialSealEmailHtml(): string {
-  return `<table cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 auto; width: 145px; height: 145px; border-collapse: separate; border-radius: 50%; border: 2.5px solid #0f2b48; background-color: #ffffff;">
-  <tr>
-    <td align="center" valign="middle" style="padding: 4px;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" height="100%" style="width: 133px; height: 133px; border-collapse: separate; border-radius: 50%; border: 1px dashed #0f2b48;">
-        <tr>
-          <td align="center" valign="middle" style="padding: 6px 4px; text-align: center; font-family: Georgia, 'Times New Roman', serif; color: #0f2b48;">
-            <div style="font-size: 8.5px; font-weight: bold; letter-spacing: 0.8px; line-height: 1.15; text-transform: uppercase;">SUPREMA TECHNOLOGIES LTD</div>
-            <div style="font-size: 7.5px; letter-spacing: 1.5px; margin: 2px 0;">&#9733; &#9733; &#9733;</div>
-            <div style="font-size: 14px; font-weight: 900; letter-spacing: 2px; line-height: 1.1; margin: 2px 0; color: #0f2b48;">SUPREMA</div>
-            <div style="font-size: 7px; font-weight: bold; letter-spacing: 1.2px; border-top: 1px solid #0f2b48; border-bottom: 1px solid #0f2b48; padding: 2px 0; margin-top: 2px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">VERIFIED &amp; SECURED</div>
-            <div style="font-size: 7.5px; font-weight: bold; letter-spacing: 1px; margin-top: 3px;">OFFICIAL SEAL</div>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
-}
+
 
 /**
  * Resolves item description based on order type, credits, and package.
@@ -526,7 +503,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
               safeWebReceiptUrl
                 ? `<div style="margin-top: 20px; padding: 14px 18px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center;">
                     <div style="font-size: 13px; color: #334155; margin-bottom: 8px;">Need an official stamped receipt for university or enterprise accounting?</div>
-                    <a href="${safeWebReceiptUrl}" target="_blank" style="display: inline-block; background-color: #0f2b48; color: #ffffff; padding: 9px 20px; border-radius: 5px; font-weight: 600; font-size: 13.5px; text-decoration: none;">View Official Stamped Receipt ↗</a>
+                    <a href="${safeWebReceiptUrl}" target="_blank" style="display: inline-block; background-color: #0f2b48; color: #ffffff; padding: 9px 20px; border-radius: 5px; font-weight: 600; font-size: 13.5px; text-decoration: none;">View &amp; Print Official Receipt (A4 / PDF) ↗</a>
                   </div>`
                 : ""
             }
