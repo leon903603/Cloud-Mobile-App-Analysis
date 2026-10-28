@@ -22,7 +22,7 @@ console.log("==================================================");
 // 1. Verify Official Seal SVG Output
 const sealSvg = generateOfficialSealSvg();
 assert(sealSvg.includes("<svg"), "Seal must be a valid SVG element");
-assert(sealSvg.includes("CLOUD MOBILE APP ANALYSIS"), "Seal must contain brand name");
+assert(sealSvg.includes("SUPREMA TECHNOLOGIES LTD"), "Seal must contain company name 'SUPREMA TECHNOLOGIES LTD'");
 assert(sealSvg.includes("OFFICIAL SEAL"), "Seal must contain 'OFFICIAL SEAL'");
 assert(sealSvg.includes("isLab"), "Seal must contain 'isLab'");
 assert(sealSvg.includes("VERIFIED &amp; SECURED"), "Seal must contain security verification tagline");

@@ -45,8 +45,8 @@ export function generateOfficialSealSvg(): string {
   <circle cx="85" cy="85" r="75" fill="none" stroke="#0f2b48" stroke-width="1" stroke-dasharray="3.5 2" />
 
   <!-- Outer circular text -->
-  <text font-family="Georgia, 'Times New Roman', serif" font-size="8.8" font-weight="bold" fill="#0f2b48" letter-spacing="1.4px">
-    <textPath href="#sealTopArc" startOffset="50%" text-anchor="middle">CLOUD MOBILE APP ANALYSIS</textPath>
+  <text font-family="Georgia, 'Times New Roman', serif" font-size="8.6" font-weight="bold" fill="#0f2b48" letter-spacing="1.4px">
+    <textPath href="#sealTopArc" startOffset="50%" text-anchor="middle">SUPREMA TECHNOLOGIES LTD</textPath>
   </text>
   <text font-family="Georgia, 'Times New Roman', serif" font-size="9.5" font-weight="bold" fill="#0f2b48" letter-spacing="2px">
     <textPath href="#sealBottomArc" startOffset="50%" text-anchor="middle">&#9733; OFFICIAL SEAL &#9733;</textPath>

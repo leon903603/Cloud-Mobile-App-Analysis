@@ -28,7 +28,7 @@ The platform implements an automated, non-blocking, and defensively hardened **O
 
 1. **Dual-Channel High-Fidelity Receipt Experience**:
    - **Email Body**: Delivers a clean, styled HTML receipt with full transaction details, fiscal metadata, and an action button: **`View & Print Official Receipt (A4 / PDF)`**.
-   - **Dedicated Web Receipt Route (`GET /api/orders/:orderNo/receipt`)**: Hosts the pristine, unstripped receipt directly on the platform domain. When users click through from their email, modern browsers render the full vector SVG seal (`CLOUD MOBILE APP ANALYSIS ★ OFFICIAL SEAL ★` with `isLab VERIFIED & SECURED`) and execute `@media print` rules for flawless A4 printing via `Ctrl+P`.
+   - **Dedicated Web Receipt Route (`GET /api/orders/:orderNo/receipt`)**: Hosts the pristine, unstripped receipt directly on the platform domain. When users click through from their email, modern browsers render the full vector SVG seal (`SUPREMA TECHNOLOGIES LTD ★ OFFICIAL SEAL ★` with `isLab VERIFIED & SECURED`) and execute `@media print` rules for flawless A4 printing via `Ctrl+P`.
    - **Security Authorization on Web Route**: Access to the web receipt route requires either authenticated Member ownership or a cryptographic order verification token (`token` query param or Visitor Secret Key match) to prevent unauthorized enumeration of purchase records (IDOR defense).
 
 2. **Strict Webhook Idempotency and Deduplication Gate**:
@@ -67,7 +67,7 @@ The platform implements an automated, non-blocking, and defensively hardened **O
 11. As a **Visitor**, I want to specify a receipt email address during single-report checkout, so that I receive an official receipt without having a registered platform account.
 12. As a **Visitor**, I want my receipt to specify `Guest Single Analysis Report: 1 Analysis Credit`, so that the document accurately reflects my one-off report purchase.
 13. As a **Visitor**, I want my report to unlock immediately upon NewebPay payment confirmation regardless of whether the receipt email service is temporarily slow or unreachable, so that my workflow is not blocked.
-14. As a **Platform Administrator**, I want official receipts to embed an official SVG verification seal with `CLOUD MOBILE APP ANALYSIS ★ OFFICIAL SEAL ★` and `isLab VERIFIED & SECURED`, so that receipts maintain institutional authority without requiring a manual wet signature.
+14. As a **Platform Administrator**, I want official receipts to embed an official SVG verification seal with `SUPREMA TECHNOLOGIES LTD ★ OFFICIAL SEAL ★` and `isLab VERIFIED & SECURED`, so that receipts maintain institutional authority without requiring a manual wet signature.
 15. As a **Platform Administrator**, I want receipt email dispatch to be completely non-blocking, so that external email gateway outages never cause NewebPay Webhooks to timeout or fail.
 16. As a **Platform Administrator**, I want webhook retries from NewebPay to be handled idempotently, so that customers are never spammed with duplicate receipt emails if the gateway resends a notification.
 17. As a **Security Auditor**, I want all user-supplied fields in receipt templates to be strictly HTML-entity-escaped, so that injection payloads in email addresses cannot execute XSS or corrupt receipt formatting.
