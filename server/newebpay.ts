@@ -468,22 +468,26 @@ router.post("/notify", async (req, res) => {
     }
 
     // Non-blocking Official Electronic Receipt delivery with deduplication
-    const sig = generateReceiptSignature(orderNo, paidAt);
-    const webReceiptUrl = `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${sig}`;
+    try {
+      const sig = generateReceiptSignature(orderNo, paidAt);
+      const webReceiptUrl = `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${sig}`;
 
-    sendReceiptEmailSafe({
-      orderNo,
-      recipientEmail: order.receiptEmail || "",
-      credits: order.credits,
-      amt: order.amt,
-      usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
-      orderType: (order.orderType as any) || "credits",
-      tradeNo: result.TradeNo ?? "",
-      paidAt,
-      webReceiptUrl,
-    }).catch((err) => {
-      console.error("[NewebPay Notify] Unexpected receipt mailer background error:", err);
-    });
+      sendReceiptEmailSafe({
+        orderNo,
+        recipientEmail: order.receiptEmail || "",
+        credits: order.credits,
+        amt: order.amt,
+        usdAmt: order.usdAmt ?? (order.amt / (order.fxRate || 32)),
+        orderType: (order.orderType as any) || "credits",
+        tradeNo: result.TradeNo ?? "",
+        paidAt,
+        webReceiptUrl,
+      }).catch((err) => {
+        console.error("[NewebPay Notify] Unexpected receipt mailer background error:", err);
+      });
+    } catch (receiptErr) {
+      console.error("[NewebPay Notify] Synchronous receipt dispatch error caught, preserving 200 OK:", receiptErr);
+    }
   }
 
   return res.status(200).send("ok");

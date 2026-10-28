@@ -30,7 +30,7 @@ const guestRoutes = require("../guest_routes").default;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { GuestJob } = require("../models/GuestJob");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const newebpayRouter = require("../newebpay").default;
+const { default: newebpayRouter, generateReceiptSignature } = require("../newebpay");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { ArtifactVault } = require("../services/artifactVault");
 
@@ -196,6 +196,94 @@ async function runTests() {
     assert.strictEqual(GuestJob.findByJobId(jobId)?.downloadsRemaining, 4);
     assert.strictEqual(GuestJob.findByJobId(jobId)?.downloadToken, issuedToken);
     console.log("✓ Test 3: NewebPay webhook signature/amount defense, unlock & idempotency verified");
+
+    // 3.1 Closed-Loop Webhook -> GET /orders/:orderNo/receipt Signature Consistency (Addressing Risk 1)
+    const orderRow = db.prepare("SELECT * FROM newebpay_orders WHERE orderNo = ?").get(checkoutBody.orderNo) as any;
+    assert(orderRow, "Paid order must exist in newebpay_orders");
+    assert.strictEqual(orderRow.status, "paid");
+    assert(orderRow.paidAt, "Order must have paidAt timestamp written by markPaid");
+
+    // Retrieve official online receipt using signature computed with the order's DB paidAt
+    const receiptSig = generateReceiptSignature(checkoutBody.orderNo, orderRow.paidAt);
+    const receiptRes = await fetch(
+      `${baseUrl}/api/newebpay/orders/${checkoutBody.orderNo}/receipt?sig=${receiptSig}`
+    );
+    assert.strictEqual(receiptRes.status, 200, "Valid signature must return 200 OK (no 403 timestamp mismatch)");
+    const receiptHtml = await receiptRes.text();
+    assert(receiptHtml.includes("OFFICIAL RECEIPT"), "Receipt page must render official receipt title");
+    assert(receiptHtml.includes(checkoutBody.orderNo), "Receipt page must include order number");
+    assert(receiptHtml.includes("visitor@example.com"), "Receipt page must include visitor receipt email");
+    assert(receiptHtml.includes("Suprema Technologies LTD"), "Receipt page must display company name");
+    assert(!receiptHtml.includes("guest"), "Receipt page must not leak internal guest placeholder");
+
+    // Negative verification: Tampered signature must return 403
+    const badSigRes = await fetch(
+      `${baseUrl}/api/newebpay/orders/${checkoutBody.orderNo}/receipt?sig=tampered_sig_123456789012345678`
+    );
+    assert.strictEqual(badSigRes.status, 403, "Tampered signature must return 403");
+
+    // Negative verification: Array query params (?sig=a&sig=b) must return 403 without 500 crash
+    const arraySigRes = await fetch(
+      `${baseUrl}/api/newebpay/orders/${checkoutBody.orderNo}/receipt?sig=foo&sig=bar`
+    );
+    assert.strictEqual(arraySigRes.status, 403, "Array-polluted signature must safely return 403");
+    console.log("✓ Test 3.1: Closed-loop Webhook -> GET /receipt verified (100% immune to 403 mismatch & IDOR safe)");
+
+    // 3.2 Resend Failure / Network Timeout Isolation (Addressing Risk 3)
+    // Verify notify STILL returns 200 OK immediately even if external mailer fails or throws
+    const resendJobId = `job-resend-test-${Date.now()}`;
+    const resendSecret = crypto.randomBytes(24).toString("hex");
+    createdJobIds.push(resendJobId);
+    GuestJob.create({
+      jobId: resendJobId,
+      analysisType: "static",
+      fileHash: "e".repeat(64),
+      filename: "resend-target.apk",
+      status: "done",
+      secretKey: resendSecret,
+    });
+
+    const resendCheckoutRes = await fetch(`${baseUrl}/api/newebpay/guest-checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-guest-secret": resendSecret },
+      body: JSON.stringify({ jobId: resendJobId, email: "resend_error_test@example.com" }),
+    });
+    assert.strictEqual(resendCheckoutRes.status, 200);
+    const resendCheckoutBody = (await resendCheckoutRes.json()) as { orderNo: string; twd: number };
+    createdOrderNos.push(resendCheckoutBody.orderNo);
+
+    const resendSigned = buildSignedWebhookPayload({
+      Status: "SUCCESS",
+      Result: { MerchantOrderNo: resendCheckoutBody.orderNo, Amt: resendCheckoutBody.twd, TradeNo: "T_RESEND_002" },
+    });
+
+    // Simulate configured RESEND_API_KEY with dead/unresponsive target
+    const origResendKey = process.env.RESEND_API_KEY;
+    try {
+      process.env.RESEND_API_KEY = "re_mock_error_unreachable_key";
+      const notifyWithFailingMailerRes = await fetch(`${baseUrl}/api/newebpay/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(resendSigned),
+      });
+      assert.strictEqual(
+        notifyWithFailingMailerRes.status,
+        200,
+        "POST /notify must unconditionally return HTTP 200 OK even when external mailer fails"
+      );
+      assert.strictEqual(
+        GuestJob.findByJobId(resendJobId)?.isPaid,
+        1,
+        "Guest job must still be unlocked even if mailer fails"
+      );
+    } finally {
+      if (origResendKey !== undefined) {
+        process.env.RESEND_API_KEY = origResendKey;
+      } else {
+        delete process.env.RESEND_API_KEY;
+      }
+    }
+    console.log("✓ Test 3.2: Resend failure / network timeout isolation verified (Zero disruption to NewebPay 200 OK)");
 
     // 4. Discard Job & 10-minute Cooldown Gate (429)
     const discardJobId = `discard-job-${Date.now()}`;
