@@ -87,7 +87,7 @@ export function generateOfficialSealSvg(): string {
  */
 function resolveItemDescription(payload: ReceiptEmailPayload): string {
   if (payload.orderType === "guest_report") {
-    return `Guest Single Analysis Report: 1 Analysis Credit (Order: ${payload.orderNo})`;
+    return `Single Security Analysis Report (Order: ${payload.orderNo})`;
   }
   const credits = payload.credits;
   let pkgName = payload.packageName;
@@ -98,7 +98,8 @@ function resolveItemDescription(payload: ReceiptEmailPayload): string {
     else if (credits === 25) pkgName = "Enterprise Package";
     else pkgName = "Custom Package";
   }
-  return `${pkgName}: ${credits} Analysis Credit${credits > 1 ? "s" : ""} (Order: ${payload.orderNo})`;
+  const countLabel = credits === 1 ? "1 Security Analysis" : `${credits} Security Analyses`;
+  return `${pkgName}: ${countLabel} (Order: ${payload.orderNo})`;
 }
 
 /**
@@ -380,6 +381,24 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
       width: 160px;
       text-align: right;
     }
+    .copy-email-btn {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      cursor: pointer;
+      vertical-align: middle;
+      transition: all 0.15s ease;
+    }
+    .copy-email-btn:hover {
+      background: #e2e8f0;
+      color: #0f2b48;
+    }
 
     /* A4 Print Layout */
     @media print {
@@ -443,7 +462,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
     <!-- Service Scope -->
     <div class="service-banner">
       <div>Company: <span>Suprema Technologies LTD</span></div>
-      <div>Service: <span>Application Security Assessment Chance</span></div>
+      <div>Service: <span>Application Security Analysis Services</span></div>
     </div>
 
     <!-- Itemized Breakdown Table -->
@@ -458,7 +477,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
       </thead>
       <tbody>
         <tr>
-          <td class="col-item">App Security Analysis Credits</td>
+          <td class="col-item">App Security Analysis Plan</td>
           <td class="col-desc">${safeItemDesc}</td>
           <td class="col-fee">${safeFeeDisplay}</td>
           <td class="col-vat">0.0%</td>
@@ -481,8 +500,8 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
     <div class="notes-box">
       <div class="notes-title">Notes</div>
       <ul class="notes-list">
-        <li>This receipt confirms payment for Application Security Analysis credits on the Cloud Mobile App Analysis (CMAA) platform.</li>
-        <li>Credits are non-transferable. Refunds and credit usage are subject to the platform service terms.</li>
+        <li>This receipt confirms payment for Application Security Analysis services on the Cloud Mobile App Analysis (CMAA) platform.</li>
+        <li>Service quotas and entitlements are non-transferable. Refunds and service usage are subject to the platform service terms.</li>
         <li><strong>Please retain this receipt for your records and reimbursement purposes.</strong></li>
       </ul>
     </div>
@@ -496,7 +515,8 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
                 <div class="contact-title">Contact</div>
                 <div class="contact-info">
                   <strong>Suprema Technologies LTD</strong><br>
-                  Email: <a href="mailto:suprematechnologiesltd@mail.solitesterror.com">suprematechnologiesltd@mail.solitesterror.com</a><br>
+                  Email: <span>suprematechnologiesltd@solitesterror.com</span>
+                  <button type="button" class="copy-email-btn no-print" onclick="copyReceiptEmail(this)" title="Copy email address">Copy</button><br>
                   Website: <a href="https://cmaa.solitesterror.com" target="_blank">https://cmaa.solitesterror.com</a>
                 </div>
               </td>
@@ -509,7 +529,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
             <div class="contact-title" style="margin-bottom: 4px; font-weight: bold;">Contact</div>
             <div class="contact-info" style="font-size: 13px; color: #4b5563; line-height: 1.5;">
               <strong>Suprema Technologies LTD</strong><br>
-              Email: <a href="mailto:suprematechnologiesltd@mail.solitesterror.com" style="color: #0f2b48;">suprematechnologiesltd@mail.solitesterror.com</a><br>
+              Email: <span>suprematechnologiesltd@solitesterror.com</span><br>
               Website: <a href="https://cmaa.solitesterror.com" target="_blank" style="color: #0f2b48;">https://cmaa.solitesterror.com</a>
             </div>
             ${
@@ -523,6 +543,33 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
           </div>`
     }
   </div>
+
+  ${
+    payload.isWeb
+      ? `<script>
+    function copyReceiptEmail(btn) {
+      var email = "suprematechnologiesltd@solitesterror.com";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(email).then(function() {
+          var orig = btn.innerText;
+          btn.innerText = "Copied!";
+          btn.style.borderColor = "#10b981";
+          btn.style.color = "#059669";
+          setTimeout(function() {
+            btn.innerText = orig;
+            btn.style.borderColor = "";
+            btn.style.color = "";
+          }, 2000);
+        }).catch(function() {
+          window.prompt("Contact email:", email);
+        });
+      } else {
+        window.prompt("Contact email:", email);
+      }
+    }
+  </script>`
+      : ""
+  }
 </body>
 </html>`;
 }

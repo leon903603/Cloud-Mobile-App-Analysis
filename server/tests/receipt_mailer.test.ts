@@ -96,7 +96,7 @@ const guestPayload: ReceiptEmailPayload = {
 };
 
 const guestHtml = generateReceiptHtml(guestPayload);
-assert(guestHtml.includes("Guest Single Analysis Report: 1 Analysis Credit"), "Guest receipt must specify single report description");
+assert(guestHtml.includes("Single Security Analysis Report"), "Guest receipt must specify single report description");
 console.log("✓ Test 5: Guest receipt HTML correctly identifies single report purchase");
 
 // 6. Verify TEST_PAYMENT_PROBE Pricing Isolation & Production Guard

@@ -681,11 +681,12 @@ router.post("/orders/:orderNo/resend-receipt", requireAuth, async (req, res) => 
 
   const requesterUid = (req as any).uid;
   const requesterEmail = (req as any).email;
-  const adminEmail = process.env.ADMIN_EMAIL || "suprematechnologiesltd@mail.solitesterror.com";
+  const adminEmail = process.env.ADMIN_EMAIL || "suprematechnologiesltd@solitesterror.com";
   const isAuthorized =
     order.uid === requesterUid ||
     order.receiptEmail === requesterEmail ||
-    requesterEmail === adminEmail;
+    requesterEmail === adminEmail ||
+    requesterEmail === "suprematechnologiesltd@mail.solitesterror.com";
 
   if (!isAuthorized) {
     return res.status(403).json({ error: "Forbidden" });
