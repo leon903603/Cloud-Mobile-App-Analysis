@@ -152,7 +152,7 @@ function formatOfficialDate(dateIso?: string): string {
  * Includes @media print styles for seamless A4 PDF printing.
  */
 export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
-  const sealSvg = payload.isWeb ? generateOfficialSealSvg() : generateOfficialSealEmailHtml();
+  const sealSvg = payload.isWeb ? generateOfficialSealSvg() : "";
   const rawItemDesc = resolveItemDescription(payload);
   const formattedDate = formatOfficialDate(payload.paidAt);
   const usdAmt = payload.usdAmt ?? (payload.amt === 1 ? 1 : Math.round(payload.amt / 32));
@@ -427,13 +427,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
           : `Official Electronic Receipt`
       }
     </div>
-    ${
-      payload.isWeb
-        ? `<button class="print-btn" onclick="window.print()">🖨 Print Official Receipt (PDF / A4)</button>`
-        : safeWebReceiptUrl
-        ? `<a href="${safeWebReceiptUrl}" target="_blank" class="print-btn" style="text-decoration: none; display: inline-block;">🖨 View &amp; Print Official Receipt (A4 / PDF) ↗</a>`
-        : `<button class="print-btn" onclick="window.print()">Print Official Receipt (PDF / A4)</button>`
-    }
+    ${payload.isWeb ? `<button class="print-btn" onclick="window.print()">🖨 Print Official Receipt (PDF / A4)</button>` : ""}
   </div>
 
   <div class="receipt-wrapper">
@@ -505,22 +499,41 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
       </ul>
     </div>
 
-    <!-- Contact & Official Seal -->
-    <table class="footer-table">
-      <tr>
-        <td style="vertical-align: top;">
-          <div class="contact-title">Contact</div>
-          <div class="contact-info">
-            <strong>Suprema Technologies LTD</strong><br>
-            Email: <a href="mailto:suprematechnologiesltd@mail.solitesterror.com">suprematechnologiesltd@mail.solitesterror.com</a><br>
-            Website: <a href="https://cmaa.solitesterror.com" target="_blank">https://cmaa.solitesterror.com</a>
-          </div>
-        </td>
-        <td class="seal-col">
-          ${sealSvg}
-        </td>
-      </tr>
-    </table>
+    <!-- Contact & Official Seal / Web Receipt Link -->
+    ${
+      payload.isWeb
+        ? `<table class="footer-table">
+            <tr>
+              <td style="vertical-align: top;">
+                <div class="contact-title">Contact</div>
+                <div class="contact-info">
+                  <strong>Suprema Technologies LTD</strong><br>
+                  Email: <a href="mailto:suprematechnologiesltd@mail.solitesterror.com">suprematechnologiesltd@mail.solitesterror.com</a><br>
+                  Website: <a href="https://cmaa.solitesterror.com" target="_blank">https://cmaa.solitesterror.com</a>
+                </div>
+              </td>
+              <td class="seal-col">
+                ${sealSvg}
+              </td>
+            </tr>
+          </table>`
+        : `<div style="margin-top: 28px; padding-top: 18px; border-top: 1px solid #e5e7eb;">
+            <div class="contact-title" style="margin-bottom: 4px; font-weight: bold;">Contact</div>
+            <div class="contact-info" style="font-size: 13px; color: #4b5563; line-height: 1.5;">
+              <strong>Suprema Technologies LTD</strong><br>
+              Email: <a href="mailto:suprematechnologiesltd@mail.solitesterror.com" style="color: #0f2b48;">suprematechnologiesltd@mail.solitesterror.com</a><br>
+              Website: <a href="https://cmaa.solitesterror.com" target="_blank" style="color: #0f2b48;">https://cmaa.solitesterror.com</a>
+            </div>
+            ${
+              safeWebReceiptUrl
+                ? `<div style="margin-top: 20px; padding: 14px 18px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 13px; color: #334155; margin-bottom: 8px;">Need an official stamped receipt for university or enterprise accounting?</div>
+                    <a href="${safeWebReceiptUrl}" target="_blank" style="display: inline-block; background-color: #0f2b48; color: #ffffff; padding: 9px 20px; border-radius: 5px; font-weight: 600; font-size: 13.5px; text-decoration: none;">View Official Stamped Receipt ↗</a>
+                  </div>`
+                : ""
+            }
+          </div>`
+    }
   </div>
 </body>
 </html>`;
