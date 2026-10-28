@@ -325,3 +325,29 @@ export async function getPresignedDownloadUrl(
   return getSignedUrl(client, command, { expiresIn });
 }
 
+/**
+ * Uploaded binaries an external static-analysis host may fetch: member
+ * `uploads/{uid}/{hash}/<name>.ipa` and guest `guest/uploads/{jobId}.ipa`.
+ * Reports, APKs and anything with traversal segments are refused.
+ */
+export function isAllowedAnalysisInputKey(key: string): boolean {
+  if (!key || typeof key !== "string" || key.split("/").includes("..")) return false;
+  const memberUploadPattern = /^uploads\/[a-zA-Z0-9_-]+\/[a-f0-9]{32,64}\/[^/]+\.ipa$/i;
+  const guestUploadPattern = /^guest\/uploads\/[a-zA-Z0-9_-]+\.ipa$/i;
+  return memberUploadPattern.test(key) || guestUploadPattern.test(key);
+}
+
+/**
+ * Short-lived GET for one uploaded .ipa, handed to the iOS static wrapper (Mac,
+ * over Tailscale) so that host can fetch the binary without any AWS credentials.
+ */
+export async function getPresignedAnalysisInputUrl(
+  key: string,
+  expiresIn = 1800 // covers queueing behind other jobs on the wrapper
+): Promise<string> {
+  if (!isAllowedAnalysisInputKey(key)) {
+    throw new Error(`Access denied: S3 key '${key}' is not an analysis input.`);
+  }
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
+}
+

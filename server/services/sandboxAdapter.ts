@@ -7,7 +7,7 @@ import {
   StopInstancesCommand,
   waitUntilInstanceRunning,
 } from "@aws-sdk/client-ec2";
-import { downloadToTemp } from "../s3";
+import { downloadToTemp, getPresignedAnalysisInputUrl } from "../s3";
 
 export type SandboxPhase =
   | "queued"
@@ -56,11 +56,16 @@ export interface StaticJobRequest {
   onTaskQueued?: (taskId: string) => void;
 }
 
+// Base64 PDFs rendered by the static wrapper itself (iOS: the PDF Lambda only knows
+// Android reports, so the Mac renders zh-TW/en and returns them with the result).
+export type WrapperPdfs = { "zh-TW"?: string; en?: string };
+
 export interface SandboxAdapterPort {
   runDynamicAnalysis(req: DynamicJobRequest): Promise<DynamicJobOutput>;
   runStaticAnalysis(req: StaticJobRequest): Promise<{
     reportData: Record<string, unknown>;
     simulated: boolean;
+    pdfs?: WrapperPdfs;
   }>;
   getQueueState(): { activeCount: number; pendingInQueue: number };
 }
@@ -78,6 +83,11 @@ export interface SandboxAdapterDeps {
   fetchFn?: typeof fetch;
   staticApiAndroid?: string;
   staticApiIos?: string;
+  // iOS wrapper auth + S3 hand-off. mode "presign": send a presigned GET for the
+  // .ipa instead of the raw S3 key, so the wrapper host holds no AWS credentials.
+  staticTokenIos?: string;
+  staticS3ModeIos?: string;
+  presignInputUrlFn?: (key: string, expiresIn: number) => Promise<string>;
   startRetryDelayMs?: number;
   stopRetryDelayMs?: number;
   pollIntervalMs?: number;
@@ -416,6 +426,7 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
     async runStaticAnalysis(req: StaticJobRequest): Promise<{
       reportData: Record<string, unknown>;
       simulated: boolean;
+      pdfs?: WrapperPdfs;
     }> {
       const apiBase = (req.platform === "ios"
         ? (deps?.staticApiIos ?? process.env.IOS_STATIC_API ?? "")
@@ -449,19 +460,31 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
       }
 
       const submitUrl = `${apiBase}${submitPath}`;
-      console.log(`[Static Analysis] Submitting ${req.filename} to ${submitUrl}`);
+      const isIos = req.platform === "ios";
+      const iosToken = isIos ? (deps?.staticTokenIos ?? process.env.IOS_STATIC_TOKEN ?? "") : "";
+      const iosPresign = isIos && (deps?.staticS3ModeIos ?? process.env.IOS_STATIC_S3_MODE) === "presign";
+      const authHeaders: Record<string, string> = iosToken ? { "X-Static-Token": iosToken } : {};
+      console.log(
+        `[Static Analysis] Submitting ${req.filename} to ${submitUrl}` + (iosPresign ? " (presigned input)" : "")
+      );
 
       const staticTimeout = deps?.timeoutMs ?? 15000;
       let report: any = null;
+      let pdfs: WrapperPdfs | undefined;
       try {
+        const submitBody: Record<string, unknown> = { hash: req.fileHash, filename: req.filename };
+        if (isIos) submitBody.pdf_langs = ["zh-TW", "en"];
+        if (iosPresign) {
+          const presign = deps?.presignInputUrlFn || getPresignedAnalysisInputUrl;
+          const ttl = Number(process.env.IOS_PRESIGN_TTL_SEC) || 1800;
+          submitBody.download_url = await presign(req.s3UploadKey, ttl);
+        } else {
+          submitBody.key = req.s3UploadKey;
+        }
         const submitRes = await customFetch(submitUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            key: req.s3UploadKey,
-            hash: req.fileHash,
-            filename: req.filename,
-          }),
+          headers: { "Content-Type": "application/json", ...authHeaders },
+          body: JSON.stringify(submitBody),
           timeout: staticTimeout,
         } as any);
 
@@ -476,6 +499,7 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
         for (let attempt = 0; attempt < 180; attempt++) {
           await new Promise((r) => setTimeout(r, deps?.pollIntervalMs ?? 5000));
           const pollRes = await customFetch(`${apiBase}/status/${job_id}`, {
+            headers: authHeaders,
             timeout: 10000,
           } as any);
           if (!pollRes.ok) continue;
@@ -484,6 +508,7 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
           if (data.status === "pending" || data.status === "running") continue;
           if (data.status === "success") {
             report = data.result;
+            if (data.pdfs && typeof data.pdfs === "object") pdfs = data.pdfs;
             break;
           }
           throw new Error(`Static analysis failed: ${data.error}`);
@@ -516,7 +541,7 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
 
       if (!report) throw new Error("Static analysis timed out after 180 attempts");
       const parsedReport = typeof report === "string" ? JSON.parse(report) : report;
-      return { reportData: parsedReport, simulated: false };
+      return { reportData: parsedReport, simulated: false, pdfs };
     },
   };
 }
