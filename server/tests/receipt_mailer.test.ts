@@ -62,7 +62,7 @@ assert(normalHtml.includes("Please retain this receipt for your records and reim
 assert(normalHtml.includes("suprematechnologiesltd@mail.solitesterror.com"), "Receipt must include contact email");
 assert(normalHtml.includes("https://cmaa.solitesterror.com"), "Receipt must include official website");
 assert(normalHtml.includes("@media print"), "Receipt must include print CSS rules");
-assert(normalHtml.includes("View in Browser"), "Receipt must include online browser view link for email client fallback");
+assert(normalHtml.includes("View Official Stamped Receipt"), "Receipt must include official stamped receipt link");
 console.log("✓ Test 2: Standard member official receipt HTML generated with 100% compliant fields");
 
 // 3. Verify XSS & HTML Entity Escaping (Sanitizer Defense)

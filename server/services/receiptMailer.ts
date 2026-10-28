@@ -418,17 +418,15 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
   </style>
 </head>
 <body>
-  <!-- Print & Online Action Bar -->
-  <div class="print-actions no-print">
-    <div class="web-view-notice">
-      ${
-        safeWebReceiptUrl
-          ? `Official Receipt Online: <a href="${safeWebReceiptUrl}" target="_blank">View in Browser</a>`
-          : `Official Electronic Receipt`
-      }
-    </div>
-    ${payload.isWeb ? `<button class="print-btn" onclick="window.print()">🖨 Print Official Receipt (PDF / A4)</button>` : ""}
-  </div>
+  <!-- Print Action Bar (Browser only) -->
+  ${
+    payload.isWeb
+      ? `<div class="print-actions no-print">
+          <div class="web-view-notice">Official Electronic Receipt</div>
+          <button class="print-btn" onclick="window.print()">🖨 Print Official Receipt (PDF / A4)</button>
+        </div>`
+      : ""
+  }
 
   <div class="receipt-wrapper">
     <!-- Header -->
