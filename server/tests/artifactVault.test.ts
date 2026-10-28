@@ -1,6 +1,6 @@
 // server/tests/artifactVault.test.ts
 import assert from "assert";
-import { ArtifactVault, ArtifactScope, decodePregeneratedPdf } from "../services/artifactVault";
+import { ArtifactVault, ArtifactScope, decodePregeneratedPdf, isIosDynamicScope } from "../services/artifactVault";
 
 console.log("==================================================");
 console.log(" Running ArtifactVault Deep Module Unit Tests");
@@ -130,8 +130,33 @@ async function runTests() {
     console.log("✓ Test 7: Pre-generated PDF validation (magic bytes, size cap) verified");
   }
 
+  // Test 8: iOS dynamic never falls back to the (Android-only) PDF Lambda
+  {
+    const iosDynamic: ArtifactScope = {
+      role: "member", uid: "u-ios", hash: "h-ios", analysisType: "dynamic", filename: "DVIA-v2.ipa",
+    };
+    assert.strictEqual(isIosDynamicScope(iosDynamic), true);
+    assert.strictEqual(isIosDynamicScope({ ...iosDynamic, filename: "app.apk" }), false);
+    assert.strictEqual(isIosDynamicScope({ ...iosDynamic, analysisType: "static" }), false);
+    assert.strictEqual(
+      isIosDynamicScope({ role: "guest", jobId: "g1", analysisType: "dynamic", filename: "x", fileType: "ipa" }),
+      true
+    );
+
+    let quotaUsed = false;
+    const en = await ArtifactVault.acquireReportDownloadUrl({
+      scope: iosDynamic,
+      lang: "en",
+      consumeDownloadQuota: () => (quotaUsed = true),
+    });
+    assert.strictEqual(en.ok, false);
+    assert.strictEqual(!en.ok && en.code, "pdf_not_available", "English iOS dynamic PDF reports not available");
+    assert.strictEqual(quotaUsed, false, "no quota spent on an unavailable PDF");
+    console.log("✓ Test 8: iOS dynamic scope detection and no-Lambda English fallback verified");
+  }
+
   console.log("==================================================");
-  console.log(" All ArtifactVault Module Unit Tests Passed (7/7) ✅");
+  console.log(" All ArtifactVault Module Unit Tests Passed (8/8) ✅");
   console.log("==================================================");
 }
 

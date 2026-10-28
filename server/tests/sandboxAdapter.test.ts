@@ -497,8 +497,88 @@ async function runTests() {
     console.log("✓ Test 8: iOS presigned input + token verified; direct mode and Android unchanged");
   }
 
+  // ── Test 9: iOS Dynamic via AutoDetect (Mac) ─────────────────────────────
+  console.log("Testing Test 9: iOS dynamic upload → analysis → finish → report...");
+  {
+    const calls: { url: string; method: string; key?: string }[] = [];
+    let analysisPolls = 0;
+    const json = (body: any, status = 200) =>
+      ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) }) as any;
+    const autoFetch = (async (url: string, opts: any = {}) => {
+      calls.push({ url, method: opts.method || "GET", key: opts.headers?.["X-API-Key"] });
+      const path = url.replace("http://100.64.0.9:8080/api/v1", "");
+      if (path === "/apps") return json({ status: "success", hash: "b919e84e7d35f68e16b6cd05d8e3b1ce" });
+      if (path.endsWith("/dynamic-analysis")) return json({ status: "queued", job_id: "job-a" }, 202);
+      if (path === "/jobs/job-a") {
+        analysisPolls++;
+        if (analysisPolls === 1) return json({ status: "running", message: "ensuring vphone is ready" });
+        if (analysisPolls === 2) return json({ status: "running", message: "dynamic analysis and UI automation running" });
+        return json({ status: "succeeded" });
+      }
+      if (path.endsWith("/dynamic/finish")) return json({ status: "queued", job_id: "job-f" }, 202);
+      if (path === "/jobs/job-f") return json({ status: "succeeded" });
+      if (path.endsWith("/dynamic-report")) return json({ system: "ios", lang: "zh-TW", rule: {}, result: {} });
+      if (path.endsWith("/dynamic-report.pdf")) {
+        return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode("%PDF-1.4 x").buffer } as any;
+      }
+      return json({ status: "error" }, 404);
+    }) as any;
+
+    const phases: string[] = [];
+    const adapter = createSandboxAdapter({
+      dynamicApiIos: "http://100.64.0.9:8080/",
+      dynamicApiKeyIos: "key-1",
+      pollIntervalMs: 5,
+      fetchFn: autoFetch,
+      downloadToTempFn: async () => "/tmp/does-not-matter.ipa",
+      createReadStreamFn: () => Buffer.from("PK\x03\x04"),
+    });
+    const res = await adapter.runIosDynamicAnalysis({
+      s3UploadKey: "uploads/u1/h/DVIA-v2.ipa",
+      filename: "DVIA-v2.ipa",
+      onPhaseChange: (p) => phases.push(p),
+    });
+    assert.strictEqual((res.reportData as any).system, "ios");
+    assert.strictEqual(Buffer.from(res.pdfs["zh-TW"]!, "base64").toString().slice(0, 5), "%PDF-");
+    assert.strictEqual(res.pdfs.en, undefined, "AutoDetect renders no English PDF");
+    assert.ok(calls.every((c) => c.key === "key-1"), "every AutoDetect call must carry X-API-Key");
+    assert.deepStrictEqual(
+      calls.map((c) => `${c.method} ${c.url.replace("http://100.64.0.9:8080/api/v1", "")}`).filter((c) => !c.includes("/jobs/")),
+      [
+        "POST /apps",
+        "POST /apps/b919e84e7d35f68e16b6cd05d8e3b1ce/dynamic-analysis",
+        "POST /apps/b919e84e7d35f68e16b6cd05d8e3b1ce/dynamic/finish",
+        "GET /apps/b919e84e7d35f68e16b6cd05d8e3b1ce/dynamic-report",
+        "GET /apps/b919e84e7d35f68e16b6cd05d8e3b1ce/dynamic-report.pdf",
+      ]
+    );
+    assert.deepStrictEqual(phases, ["starting_sandbox", "starting_sandbox", "analyzing", "generating_pdf"]);
+
+    // A failed AutoDetect job surfaces as analysis_failed with the host error.
+    const failing = createSandboxAdapter({
+      dynamicApiIos: "http://100.64.0.9:8080",
+      pollIntervalMs: 5,
+      downloadToTempFn: async () => "/tmp/x.ipa",
+      createReadStreamFn: () => Buffer.from("PK"),
+      fetchFn: (async (url: string) => {
+        if (url.endsWith("/apps")) return json({ hash: "c".repeat(32) });
+        if (url.endsWith("/dynamic-analysis")) return json({ job_id: "job-x" }, 202);
+        return json({ status: "failed", host_task: { error: "vphone was not ready within 180s" } });
+      }) as any,
+    });
+    await assert.rejects(
+      failing.runIosDynamicAnalysis({ s3UploadKey: "k", filename: "x.ipa" }),
+      (err: any) => err instanceof SandboxExecutionError && err.kind === "analysis_failed" && /vphone was not ready/.test(err.message)
+    );
+
+    // Not configured → explicit error, never the Android EC2 sandbox.
+    const unconfigured = createSandboxAdapter({ dynamicApiIos: "", fetchFn: autoFetch });
+    await assert.rejects(unconfigured.runIosDynamicAnalysis({ s3UploadKey: "k", filename: "x.ipa" }), /not configured/);
+    console.log("✓ Test 9: iOS dynamic AutoDetect flow, API key, phases and failures verified");
+  }
+
   console.log("==================================================");
-  console.log(" All SandboxAdapter Unit Tests Passed (8/8) ✅");
+  console.log(" All SandboxAdapter Unit Tests Passed (9/9) ✅");
   console.log("==================================================");
 }
 

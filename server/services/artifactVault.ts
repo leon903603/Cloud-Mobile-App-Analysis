@@ -36,7 +36,16 @@ export type DownloadReportError =
   | "report_json_missing"
   | "pdf_generation_failed"
   | "report_file_missing"
-  | "quota_exceeded";
+  | "quota_exceeded"
+  | "pdf_not_available";
+
+// iOS dynamic PDFs come only from the Mac (AutoDetect, zh-TW); the PDF Lambda
+// renders Android dynamic reports, so it must never be asked to fill one in.
+export function isIosDynamicScope(scope: ArtifactScope): boolean {
+  if (scope.analysisType !== "dynamic") return false;
+  if (scope.role === "guest" && scope.fileType === "ipa") return true;
+  return (scope.filename || "").toLowerCase().endsWith(".ipa");
+}
 
 export type DownloadReportResult =
   | { ok: true; url: string; expiresIn: number; targetKey: string }
@@ -198,6 +207,8 @@ class ArtifactVaultService implements ArtifactVaultPort {
       } catch (err) {
         console.error(`[ArtifactVault] Error saving pregenerated PDF:`, err);
       }
+    } else if (isIosDynamicScope(scope) && !opts?.allowDummyPdfFallback) {
+      throw new Error("iOS dynamic report arrived without its Chinese PDF");
     } else {
       try {
         const zhRes = await renderReportPdf({
@@ -239,6 +250,8 @@ class ArtifactVaultService implements ArtifactVaultPort {
     if (enPdf) {
       await putObject(paths.pdfKeyEn, enPdf, "application/pdf");
       console.log(`[ArtifactVault] Fast Path: Saved pre-generated English PDF to S3 (${enPdf.length} bytes)`);
+    } else if (isIosDynamicScope(scope)) {
+      // No English renderer for iOS dynamic yet; downloads report pdf_not_available.
     } else {
       try {
         const enRes = await renderReportPdf({
@@ -290,6 +303,17 @@ class ArtifactVaultService implements ArtifactVaultPort {
       } else if (await objectExists(paths.legacyPdfKey)) {
         effectiveKey = paths.legacyPdfKey;
       }
+    }
+
+    if (!effectiveKey && isIosDynamicScope(scope)) {
+      return {
+        ok: false,
+        code: "pdf_not_available",
+        message:
+          targetLang === "en"
+            ? "English PDF is not available for iOS dynamic analysis yet. Please download the Chinese report."
+            : "Report PDF not found on storage",
+      };
     }
 
     // 2. On-demand rendering fallback if PDF is missing

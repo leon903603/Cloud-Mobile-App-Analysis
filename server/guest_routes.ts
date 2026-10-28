@@ -569,7 +569,7 @@ router.get(
           res.status(403).json({ message: "Download limit reached." });
           return;
         }
-        res.status(500).json({ message: downloadResult.message || "Report file missing." });
+        res.status(downloadResult.code === "pdf_not_available" ? 404 : 500).json({ message: downloadResult.message || "Report file missing." });
         return;
       }
 

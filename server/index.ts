@@ -20,7 +20,7 @@ import {
   startCredentialSweep,
   validateCredentials,
 } from "./models/DynamicCredentials";
-import { analyzeIOSStatic, analyzeAndroidStatic, analyzeAndroidDynamic} from "./dispatch";
+import { analyzeIOSStatic, analyzeAndroidStatic, analyzeAndroidDynamic, analyzeIOSDynamic } from "./dispatch";
 import guestRoutes from "./guest_routes";
 import { GuestJob } from "./models/GuestJob";
 import { verifyTurnstileToken } from "./turnstile";
@@ -789,6 +789,13 @@ app.post("/android-dynamic-analyze", verifyToken, analyzeHandler({
   run: analyzeAndroidDynamic,
 }));
 
+app.post("/ios-dynamic-analyze", verifyToken, analyzeHandler({
+  analysisType: "dynamic",
+  extension: ".ipa",
+  label: "iOS Dynamic Analysis",
+  run: analyzeIOSDynamic,
+}));
+
 
 app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
@@ -825,7 +832,11 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
       if (result.code === "quota_exceeded") {
         return res.status(403).json({ error: result.message });
       }
-      if (result.code === "report_json_missing" || result.code === "report_file_missing") {
+      if (
+        result.code === "report_json_missing" ||
+        result.code === "report_file_missing" ||
+        result.code === "pdf_not_available"
+      ) {
         return res.status(404).json({ error: result.message });
       }
       return res.status(500).json({ error: result.message });

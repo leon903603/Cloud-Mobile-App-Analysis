@@ -256,6 +256,8 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
         endpoint = `${import.meta.env.VITE_BACKEND_URL}/android-static-analyze`;
       } else if (upload.filename.endsWith(".apk") && upload.analysisType === "dynamic") {
         endpoint = `${import.meta.env.VITE_BACKEND_URL}/android-dynamic-analyze`;
+      } else if (upload.filename.endsWith(".ipa") && upload.analysisType === "dynamic") {
+        endpoint = `${import.meta.env.VITE_BACKEND_URL}/ios-dynamic-analyze`;
       } else {
         throw new Error("File not eligible for analysis");
         return;
@@ -503,7 +505,9 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                     )}
 
                     {/* Who the dynamic run signs in as, while it still can be changed */}
+                    {/* iOS dynamic (Mac / AutoDetect) cannot sign in with a test account yet */}
                     {upload.analysisType === "dynamic" &&
+                      !upload.filename.endsWith(".ipa") &&
                       (upload.status === "pending" || upload.status === "error") && (
                         <CredentialsPanel upload={upload} onChanged={fetchUploads} />
                       )}
@@ -514,7 +518,10 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                         <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-300">
                           <div className="flex items-center gap-2 font-medium">
                             <Clock className="h-4 w-4 text-indigo-400 shrink-0" />
-                            <span>Cloud sandbox is executing in background (Est. 8~10 minutes)</span>
+                            <span>
+                              Cloud sandbox is executing in background (Est.{" "}
+                              {upload.filename.endsWith(".ipa") ? "20~30" : "8~10"} minutes)
+                            </span>
                           </div>
                           <p className="mt-1 text-muted-foreground leading-relaxed">
                             Offline pickup supported: You can safely close or navigate away from this page. The cloud sandbox will automatically power off upon completion, and your report will be saved for download.
