@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { getIdToken } from "../firebase/auth";
 import PackedApkNotice from "./PackedApkNotice";
+import CopyableEmailLink from "./CopyableEmailLink";
 import { AutofillBlocker } from "./AutofillBlocker";
 import {
   AlertDialog,
@@ -569,7 +570,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                   <div className="flex items-start gap-2.5 rounded-xl border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     <p className="leading-relaxed">
-                      <b>SMS OTP / 2FA Note</b>: Automated sandboxes cannot bypass SMS verification codes, 2FA, or biometric prompts. If your app requires OTP to enter main screens, please contact our team at <a href="mailto:suprematechnologiesltd@solitesterror.com" className="text-primary underline font-medium">suprematechnologiesltd@solitesterror.com</a> for dedicated concierge assisted testing.
+                      <b>SMS OTP / 2FA Note</b>: Automated sandboxes cannot bypass SMS verification codes, 2FA, or biometric prompts. If your app requires OTP to enter main screens, please contact our team at <CopyableEmailLink className="text-primary underline font-medium" /> for dedicated concierge assisted testing.
                     </p>
                   </div>
                 </div>

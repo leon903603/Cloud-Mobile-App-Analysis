@@ -26,6 +26,7 @@ import {
   PlusCircle,
 } from "lucide-react";
 import PackedApkNotice from "./PackedApkNotice";
+import CopyableEmailLink from "./CopyableEmailLink";
 import { AutofillBlocker } from "./AutofillBlocker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1103,13 +1104,14 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                       The sandbox executes inside a dedicated ARM64 Android environment for up to 3 minutes with Frida runtime monitoring. If your app enforces SMS OTP, 2FA, biometric authentication, or root detection, the automated sandbox will inspect pre-login behaviors only.
                     </p>
                     <div className="pt-1">
-                      <a
-                        href="mailto:suprematechnologiesltd@solitesterror.com?subject=[CMAA]%20Custom%20Penetration%20Testing%20Inquiry"
+                      <CopyableEmailLink
+                        email="suprematechnologiesltd@solitesterror.com"
+                        subject="[CMAA] Custom Penetration Testing Inquiry"
                         className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
                       >
                         <Mail className="h-3.5 w-3.5" />
                         For in-depth manual penetration testing, contact our team: suprematechnologiesltd@solitesterror.com
-                      </a>
+                      </CopyableEmailLink>
                     </div>
                   </div>
                 </div>

@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Cpu, Clock, Sparkles, ShieldAlert } from "lucide-react";
+import CopyableEmailLink from "./CopyableEmailLink";
 
 interface DynamicConfirmModalProps {
   isOpen: boolean;
@@ -108,7 +109,7 @@ export const DynamicConfirmModal: React.FC<DynamicConfirmModalProps> = ({
             <div className="space-y-0.5 text-xs">
               <p className="font-semibold text-foreground">SMS OTP / 2FA Login Notice</p>
               <p className="leading-relaxed">
-                Automated sandboxes only inspect pre-login screens. If your application requires SMS OTP, 2FA, or biometric verification, automated login cannot bypass these controls. Please contact our team at <a href="mailto:suprematechnologiesltd@solitesterror.com" className="text-primary underline font-medium">suprematechnologiesltd@solitesterror.com</a> for dedicated Concierge Assisted Testing.
+                Automated sandboxes only inspect pre-login screens. If your application requires SMS OTP, 2FA, or biometric verification, automated login cannot bypass these controls. Please contact our team at <CopyableEmailLink className="text-primary underline font-medium" /> for dedicated Concierge Assisted Testing.
               </p>
             </div>
           </div>

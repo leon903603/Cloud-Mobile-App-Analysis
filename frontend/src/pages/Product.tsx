@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import PackedApkNotice from "../components/PackedApkNotice";
+import CopyableEmailLink from "../components/CopyableEmailLink";
 import ThemeToggle from "../components/ThemeToggle";
 
 const COMPANY = "SUPREMA TECHNOLOGIES LTD";
@@ -248,13 +249,13 @@ function Product() {
         {/* ── Contact / footer ───────────────────────────────────────── */}
         <footer className="border-t border-border pt-8 pb-4 text-center flex flex-col items-center gap-2">
           <h2 className="text-lg font-semibold text-foreground">Contact Us</h2>
-          <a
-            href={`mailto:${CONTACT_EMAIL}`}
+          <CopyableEmailLink
+            email={CONTACT_EMAIL}
             className="inline-flex items-center gap-2 text-primary hover:underline"
           >
             <Mail className="h-4 w-4" />
             {CONTACT_EMAIL}
-          </a>
+          </CopyableEmailLink>
           <p className="text-sm text-muted-foreground mt-2">
             © {new Date().getFullYear()} {COMPANY}. All rights reserved.
           </p>

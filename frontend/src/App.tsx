@@ -13,6 +13,7 @@ import { auth } from "./firebase/config";
 import type { User } from "firebase/auth";
 import { Button } from "./components/ui/button";
 import ThemeToggle from "./components/ThemeToggle";
+import CopyableEmailLink from "./components/CopyableEmailLink";
 
 type View = "main" | "buy-credits";
 type AuthMode = "auth" | "guest";
@@ -164,12 +165,12 @@ function App() {
           </Link>
           <p className="mt-1">
             SUPREMA TECHNOLOGIES LTD ·{" "}
-            <a
-              href="mailto:suprematechnologiesltd@solitesterror.com"
+            <CopyableEmailLink
+              email="suprematechnologiesltd@solitesterror.com"
               className="hover:underline"
-            >
-              suprematechnologiesltd@solitesterror.com
-            </a>
+            />
+
+
           </p>
         </footer>
 
