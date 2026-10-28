@@ -96,6 +96,11 @@ services:
       - CREDIT_AUDIT_WEBHOOK_URL=${CREDIT_AUDIT_WEBHOOK_URL:-}
       # Guards /api/admin/credit-audit/*. Unset ⇒ those routes answer 503.
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      # Official Receipt System & Resend Email Integration
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - TEST_PAYMENT_PROBE=${TEST_PAYMENT_PROBE:-}
+      - AUTO_SEND_RECEIPT_ON_PAYMENT=${AUTO_SEND_RECEIPT_ON_PAYMENT:-true}
 
 volumes:
   sqlite-data:
