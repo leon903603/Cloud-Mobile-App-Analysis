@@ -425,8 +425,72 @@ async function runTests() {
     console.log("✓ Test 7: 404 circuit breaker successfully failed fast after 3 consecutive 404s");
   }
 
+  // ── Test 8: iOS Wrapper Token + Presigned Input ─────────────────────────
+  console.log("Testing Test 8: iOS wrapper token header and presigned input...");
+  {
+    const seen: { url: string; headers: any; body?: any }[] = [];
+    const iosFetch = (async (url: string, opts: any) => {
+      seen.push({ url, headers: opts?.headers || {}, body: opts?.body ? JSON.parse(opts.body) : undefined });
+      if (url.endsWith("/analyze_ipa")) {
+        return { ok: true, status: 202, json: async () => ({ job_id: "job-ios-1" }) } as any;
+      }
+      return { ok: true, json: async () => ({ status: "success", result: { rules: 38 } }) } as any;
+    }) as any;
+
+    const presignAdapter = createSandboxAdapter({
+      staticApiIos: "http://100.64.0.9:8000",
+      staticTokenIos: "tok-123",
+      staticS3ModeIos: "presign",
+      pollIntervalMs: 10,
+      presignInputUrlFn: async (key, ttl) => `https://s3.example/${key}?ttl=${ttl}`,
+      fetchFn: iosFetch,
+    });
+    const res = await presignAdapter.runStaticAnalysis({
+      platform: "ios",
+      s3UploadKey: "uploads/u1/" + "a".repeat(64) + "/app.ipa",
+      filename: "app.ipa",
+      fileHash: "a".repeat(64),
+    });
+    assert.strictEqual(res.reportData.rules, 38);
+    assert.strictEqual(seen[0].body.key, undefined, "presign mode must not send the raw S3 key");
+    assert.strictEqual(seen[0].body.download_url, "https://s3.example/uploads/u1/" + "a".repeat(64) + "/app.ipa?ttl=1800");
+    assert.strictEqual(seen[0].headers["X-Static-Token"], "tok-123", "submit must carry the token");
+    assert.strictEqual(seen[1].headers["X-Static-Token"], "tok-123", "status poll must carry the token");
+
+    // Default mode: unchanged request shape, and Android never gets the iOS token.
+    seen.length = 0;
+    const directAdapter = createSandboxAdapter({
+      staticApiIos: "http://100.64.0.9:8000",
+      staticApiAndroid: "http://static-engine:5001",
+      staticTokenIos: "tok-123",
+      staticS3ModeIos: "direct",
+      pollIntervalMs: 10,
+      fetchFn: (async (url: string, opts: any) =>
+        url.endsWith("/analyze_apk") ? { ok: true, status: 202, json: async () => ({ job_id: "a1" }) } as any
+          : iosFetch(url, opts)) as any,
+    });
+    await directAdapter.runStaticAnalysis({
+      platform: "ios", s3UploadKey: "uploads/u1/h/app.ipa", filename: "app.ipa", fileHash: "h",
+    });
+    assert.strictEqual(seen[0].body.key, "uploads/u1/h/app.ipa");
+    assert.strictEqual(seen[0].body.download_url, undefined);
+    seen.length = 0;
+    await directAdapter.runStaticAnalysis({
+      platform: "android", s3UploadKey: "uploads/u1/h/app.apk", filename: "app.apk", fileHash: "h",
+    });
+    assert.strictEqual(seen[0].headers["X-Static-Token"], undefined, "Android must not receive the iOS token");
+
+    const { isAllowedAnalysisInputKey } = await import("../s3");
+    assert.strictEqual(isAllowedAnalysisInputKey("uploads/u1/" + "a".repeat(64) + "/兆豐 銀行.ipa"), true);
+    assert.strictEqual(isAllowedAnalysisInputKey("guest/uploads/job_1.ipa"), true);
+    assert.strictEqual(isAllowedAnalysisInputKey("reports/u1/" + "a".repeat(64) + "/static.pdf"), false);
+    assert.strictEqual(isAllowedAnalysisInputKey("uploads/u1/" + "a".repeat(64) + "/app.apk"), false);
+    assert.strictEqual(isAllowedAnalysisInputKey("uploads/u1/../x/" + "a".repeat(64) + ".ipa"), false);
+    console.log("✓ Test 8: iOS presigned input + token verified; direct mode and Android unchanged");
+  }
+
   console.log("==================================================");
-  console.log(" All SandboxAdapter Unit Tests Passed (7/7) ✅");
+  console.log(" All SandboxAdapter Unit Tests Passed (8/8) ✅");
   console.log("==================================================");
 }
 

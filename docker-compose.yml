@@ -48,6 +48,10 @@ services:
       #   IOS_STATIC_API=http://100.117.29.74:8000
       - ANDROID_STATIC_API=${ANDROID_STATIC_API}
       - IOS_STATIC_API=${IOS_STATIC_API:-}
+      # iOS wrapper on the Mac: shared X-Static-Token, and "presign" to send a
+      # presigned .ipa GET instead of the S3 key (the Mac holds no AWS keys).
+      - IOS_STATIC_TOKEN=${IOS_STATIC_TOKEN:-}
+      - IOS_STATIC_S3_MODE=${IOS_STATIC_S3_MODE:-direct}
       # PDF reports — private Lambda, invoked with the SDK (no public endpoint).
       # Renders to S3 and returns a presigned URL, so PDFs never transit this box.
       - PDF_LAMBDA_NAME=${PDF_LAMBDA_NAME:-cmaa-static-pdf-report}

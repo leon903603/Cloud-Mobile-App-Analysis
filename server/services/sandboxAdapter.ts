@@ -7,7 +7,7 @@ import {
   StopInstancesCommand,
   waitUntilInstanceRunning,
 } from "@aws-sdk/client-ec2";
-import { downloadToTemp } from "../s3";
+import { downloadToTemp, getPresignedAnalysisInputUrl } from "../s3";
 
 export type SandboxPhase =
   | "queued"
@@ -78,6 +78,11 @@ export interface SandboxAdapterDeps {
   fetchFn?: typeof fetch;
   staticApiAndroid?: string;
   staticApiIos?: string;
+  // iOS wrapper auth + S3 hand-off. mode "presign": send a presigned GET for the
+  // .ipa instead of the raw S3 key, so the wrapper host holds no AWS credentials.
+  staticTokenIos?: string;
+  staticS3ModeIos?: string;
+  presignInputUrlFn?: (key: string, expiresIn: number) => Promise<string>;
   startRetryDelayMs?: number;
   stopRetryDelayMs?: number;
   pollIntervalMs?: number;
@@ -449,19 +454,29 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
       }
 
       const submitUrl = `${apiBase}${submitPath}`;
-      console.log(`[Static Analysis] Submitting ${req.filename} to ${submitUrl}`);
+      const isIos = req.platform === "ios";
+      const iosToken = isIos ? (deps?.staticTokenIos ?? process.env.IOS_STATIC_TOKEN ?? "") : "";
+      const iosPresign = isIos && (deps?.staticS3ModeIos ?? process.env.IOS_STATIC_S3_MODE) === "presign";
+      const authHeaders: Record<string, string> = iosToken ? { "X-Static-Token": iosToken } : {};
+      console.log(
+        `[Static Analysis] Submitting ${req.filename} to ${submitUrl}` + (iosPresign ? " (presigned input)" : "")
+      );
 
       const staticTimeout = deps?.timeoutMs ?? 15000;
       let report: any = null;
       try {
+        const submitBody: Record<string, string> = { hash: req.fileHash, filename: req.filename };
+        if (iosPresign) {
+          const presign = deps?.presignInputUrlFn || getPresignedAnalysisInputUrl;
+          const ttl = Number(process.env.IOS_PRESIGN_TTL_SEC) || 1800;
+          submitBody.download_url = await presign(req.s3UploadKey, ttl);
+        } else {
+          submitBody.key = req.s3UploadKey;
+        }
         const submitRes = await customFetch(submitUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            key: req.s3UploadKey,
-            hash: req.fileHash,
-            filename: req.filename,
-          }),
+          headers: { "Content-Type": "application/json", ...authHeaders },
+          body: JSON.stringify(submitBody),
           timeout: staticTimeout,
         } as any);
 
@@ -476,6 +491,7 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
         for (let attempt = 0; attempt < 180; attempt++) {
           await new Promise((r) => setTimeout(r, deps?.pollIntervalMs ?? 5000));
           const pollRes = await customFetch(`${apiBase}/status/${job_id}`, {
+            headers: authHeaders,
             timeout: 10000,
           } as any);
           if (!pollRes.ok) continue;
