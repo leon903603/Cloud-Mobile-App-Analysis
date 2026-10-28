@@ -7,6 +7,7 @@ import GuestUploader from "./components/GuestUploader";
 import VerifyEmail from "./components/VerifyEmail";
 import UploadHistory from "./components/UploadHistory";
 import UserCredits from "./components/UserCredits";
+import CreditHistoryModal from "./components/CreditHistoryModal";
 import { Link } from "react-router-dom";
 import { onUserStateChanged } from "./firebase/auth";
 import { auth } from "./firebase/config";
@@ -22,6 +23,7 @@ function App() {
   const [user, setUser] = React.useState<User | null>(null);
   const [view, setView] = React.useState<View>("main");
   const [currentCredits, setCurrentCredits] = React.useState<number>(0);
+  const [isCreditHistoryOpen, setIsCreditHistoryOpen] = React.useState<boolean>(false);
   const [authMode, setAuthMode] = React.useState<AuthMode>(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -137,6 +139,7 @@ function App() {
                   user={user}
                   refreshSignal={refresh}
                   onCreditsLoaded={setCurrentCredits}
+                  onClick={() => setIsCreditHistoryOpen(true)}
                 />
               </div>
 
@@ -154,6 +157,14 @@ function App() {
             <FileUploader onUpload={refreshAccount} />
             {/* Analyses spend credits, so a run has to refresh the balance too */}
             <UploadHistory refreshSignal={refresh} onCreditsChanged={refreshAccount} />
+
+            {/* Member Credit Journal & Official Receipts Modal */}
+            <CreditHistoryModal
+              user={user}
+              isOpen={isCreditHistoryOpen}
+              onClose={() => setIsCreditHistoryOpen(false)}
+              onBalanceUpdated={refreshAccount}
+            />
           </>
         )}
 

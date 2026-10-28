@@ -24,7 +24,8 @@ import { analyzeIOSStatic, analyzeAndroidStatic, analyzeAndroidDynamic} from "./
 import guestRoutes from "./guest_routes";
 import { GuestJob } from "./models/GuestJob";
 import { verifyTurnstileToken } from "./turnstile";
-import newebpayRouter from "./newebpay";
+import newebpayRouter, { claimReceiptHandler } from "./newebpay";
+import { getMemberCreditHistory } from "./services/creditHistory";
 import { startFxRefresh } from "./fx";
 import { startStorageHygieneSchedule } from "./services/storageHygiene";
 import {
@@ -134,6 +135,26 @@ app.use("/api/newebpay", express.urlencoded({ extended: false }), newebpayRouter
 app.get("/api/orders/:orderNo/receipt", (req: Request, res: Response) => {
   const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
   return res.redirect(307, `/api/newebpay/orders/${encodeURIComponent(req.params.orderNo)}/receipt${query}`);
+});
+
+// Spec conformance (SPEC-CMAA-PAY-002): Direct route alias for claiming official receipt
+app.post("/api/orders/:orderNo/receipt/claim", verifyToken, (req: any, res: any) => {
+  if (req.user?.uid) req.uid = req.user.uid;
+  return claimReceiptHandler(req, res);
+});
+
+// Spec conformance (SPEC-CMAA-PAY-002): Member credit history and double-entry journal
+app.get("/api/member/credits/history", verifyToken, async (req: AuthRequest, res: Response) => {
+  if (!req.user?.uid) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const history = await getMemberCreditHistory(req.user.uid, process.env.CLIENT_URL);
+    return res.json(history);
+  } catch (err: any) {
+    console.error("[Member Credit History Error]:", err);
+    return res.status(500).json({ error: "Failed to retrieve credit history" });
+  }
 });
 // Credit reconciliation console. Static-token auth (ADMIN_API_TOKEN), not Firebase —
 // it has to stay usable when Firebase is the thing under suspicion.

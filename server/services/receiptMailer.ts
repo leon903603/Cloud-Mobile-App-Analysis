@@ -13,6 +13,8 @@ export interface ReceiptEmailPayload {
   packageName?: string;
   webReceiptUrl?: string; // Optional direct web receipt link for email clients that strip inline SVG
   isWeb?: boolean; // True when rendered on the web receipt endpoint, false for email
+  buyerName?: string; // User-specified company or institution name for reimbursement
+  receiptIssuedAt?: string; // ISO timestamp when official receipt was issued
 }
 
 /**
@@ -131,12 +133,23 @@ function formatOfficialDate(dateIso?: string): string {
 export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
   const sealSvg = payload.isWeb ? generateOfficialSealSvg() : "";
   const rawItemDesc = resolveItemDescription(payload);
-  const formattedDate = formatOfficialDate(payload.paidAt);
+  const dateToFormat = payload.receiptIssuedAt || payload.paidAt;
+  const formattedDate = formatOfficialDate(dateToFormat);
   const usdAmt = payload.usdAmt ?? (payload.amt === 1 ? 1 : Math.round(payload.amt / 32));
   const feeDisplay = formatFeeDisplay(usdAmt, payload.amt);
 
   // XSS Defense: sanitize dynamic user-controllable inputs
   const safeRecipientEmail = escapeHtml(payload.recipientEmail);
+  const safeBuyerName = payload.buyerName ? escapeHtml(payload.buyerName.trim()) : "";
+  let receivedFromDisplay = "Valued Customer";
+  if (safeBuyerName) {
+    receivedFromDisplay = safeRecipientEmail
+      ? `${safeBuyerName} (${safeRecipientEmail})`
+      : safeBuyerName;
+  } else if (safeRecipientEmail) {
+    receivedFromDisplay = safeRecipientEmail;
+  }
+
   const safeOrderNo = escapeHtml(payload.orderNo);
   const safeItemDesc = escapeHtml(rawItemDesc);
   const safeTradeNo = escapeHtml(payload.tradeNo);
@@ -414,7 +427,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
       <tr>
         <td style="width: 58%;">
           <div class="meta-label">Received from:</div>
-          <div class="meta-value">${safeRecipientEmail || "Valued Customer"}</div>
+          <div class="meta-value">${receivedFromDisplay}</div>
         </td>
         <td style="width: 42%; text-align: right;">
           <div class="meta-label">Receipt No.:</div>
