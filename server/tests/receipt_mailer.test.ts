@@ -24,7 +24,8 @@ const sealSvg = generateOfficialSealSvg();
 assert(sealSvg.includes("<svg"), "Seal must be a valid SVG element");
 assert(sealSvg.includes("SUPREMA TECHNOLOGIES LTD"), "Seal must contain company name 'SUPREMA TECHNOLOGIES LTD'");
 assert(sealSvg.includes("OFFICIAL SEAL"), "Seal must contain 'OFFICIAL SEAL'");
-assert(sealSvg.includes("isLab"), "Seal must contain 'isLab'");
+assert(sealSvg.includes("SUPREMA"), "Seal center must contain 'SUPREMA'");
+assert(!sealSvg.includes("isLab"), "Seal must strictly NOT contain 'isLab'");
 assert(sealSvg.includes("VERIFIED &amp; SECURED"), "Seal must contain security verification tagline");
 console.log("✓ Test 1: Official Seal SVG conforms to visual & branding specifications");
 

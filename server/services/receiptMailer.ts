@@ -1,5 +1,5 @@
 // server/services/receiptMailer.ts — Official Electronic Receipt generator & Resend mailer
-// Generates official academic & enterprise reimbursement receipts conforming to CMAA isLab standards.
+// Generates official academic & enterprise reimbursement receipts for Suprema Technologies LTD.
 
 export interface ReceiptEmailPayload {
   orderNo: string;
@@ -29,7 +29,7 @@ export function escapeHtml(str: unknown): string {
 
 /**
  * High-resolution official circular electronic verification seal (SVG format).
- * Features outer ring text, center emblem, and 'isLab VERIFIED & SECURED' badge.
+ * Features outer ring text, center emblem, and 'VERIFIED & SECURED' badge.
  */
 export function generateOfficialSealSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 170" width="145" height="145" style="display: block;">
@@ -60,8 +60,8 @@ export function generateOfficialSealSvg(): string {
   <!-- Top star -->
   <polygon points="85,42 87.5,48.5 94,49 89,53.5 90.5,60 85,56.5 79.5,60 81,53.5 76,49 82.5,48.5" fill="#0f2b48" />
 
-  <!-- isLab Core Brand -->
-  <text x="85" y="80" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="18" font-weight="bold" fill="#0f2b48" letter-spacing="0.5px">isLab</text>
+  <!-- Suprema Core Brand -->
+  <text x="85" y="79" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="bold" fill="#0f2b48" letter-spacing="1.5px">SUPREMA</text>
 
   <!-- Decorative Separator Line with diamond -->
   <line x1="56" y1="87" x2="114" y2="87" stroke="#0f2b48" stroke-width="1.2" />
