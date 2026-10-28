@@ -563,6 +563,7 @@ router.get("/orders/:orderNo/receipt", (req, res) => {
     tradeNo: order.tradeNo || undefined,
     paidAt: order.paidAt || undefined,
     webReceiptUrl: `${CLIENT_URL}/api/newebpay/orders/${orderNo}/receipt?sig=${expectedSig}`,
+    isWeb: true,
   });
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");

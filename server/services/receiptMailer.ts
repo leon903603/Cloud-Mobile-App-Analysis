@@ -12,6 +12,7 @@ export interface ReceiptEmailPayload {
   paidAt?: string;
   packageName?: string;
   webReceiptUrl?: string; // Optional direct web receipt link for email clients that strip inline SVG
+  isWeb?: boolean; // True when rendered on the web receipt endpoint, false for email
 }
 
 /**
@@ -78,6 +79,31 @@ export function generateOfficialSealSvg(): string {
 }
 
 /**
+ * Email-compatible HTML/CSS official circular electronic verification seal.
+ * Renders flawlessly across all email clients (Gmail, Outlook, Apple Mail)
+ * where raw SVG elements are stripped by sanitizers.
+ */
+export function generateOfficialSealEmailHtml(): string {
+  return `<table cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 auto; width: 145px; height: 145px; border-collapse: separate; border-radius: 50%; border: 2.5px solid #0f2b48; background-color: #ffffff;">
+  <tr>
+    <td align="center" valign="middle" style="padding: 4px;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" height="100%" style="width: 133px; height: 133px; border-collapse: separate; border-radius: 50%; border: 1px dashed #0f2b48;">
+        <tr>
+          <td align="center" valign="middle" style="padding: 6px 4px; text-align: center; font-family: Georgia, 'Times New Roman', serif; color: #0f2b48;">
+            <div style="font-size: 8.5px; font-weight: bold; letter-spacing: 0.8px; line-height: 1.15; text-transform: uppercase;">SUPREMA TECHNOLOGIES LTD</div>
+            <div style="font-size: 7.5px; letter-spacing: 1.5px; margin: 2px 0;">&#9733; &#9733; &#9733;</div>
+            <div style="font-size: 14px; font-weight: 900; letter-spacing: 2px; line-height: 1.1; margin: 2px 0; color: #0f2b48;">SUPREMA</div>
+            <div style="font-size: 7px; font-weight: bold; letter-spacing: 1.2px; border-top: 1px solid #0f2b48; border-bottom: 1px solid #0f2b48; padding: 2px 0; margin-top: 2px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">VERIFIED &amp; SECURED</div>
+            <div style="font-size: 7.5px; font-weight: bold; letter-spacing: 1px; margin-top: 3px;">OFFICIAL SEAL</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`;
+}
+
+/**
  * Resolves item description based on order type, credits, and package.
  */
 function resolveItemDescription(payload: ReceiptEmailPayload): string {
@@ -126,7 +152,7 @@ function formatOfficialDate(dateIso?: string): string {
  * Includes @media print styles for seamless A4 PDF printing.
  */
 export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
-  const sealSvg = generateOfficialSealSvg();
+  const sealSvg = payload.isWeb ? generateOfficialSealSvg() : generateOfficialSealEmailHtml();
   const rawItemDesc = resolveItemDescription(payload);
   const formattedDate = formatOfficialDate(payload.paidAt);
   const usdAmt = payload.usdAmt ?? (payload.amt === 1 ? 1 : Math.round(payload.amt / 32));
@@ -401,7 +427,13 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
           : `Official Electronic Receipt`
       }
     </div>
-    <button class="print-btn" onclick="window.print()">Print Official Receipt (PDF / A4)</button>
+    ${
+      payload.isWeb
+        ? `<button class="print-btn" onclick="window.print()">🖨 Print Official Receipt (PDF / A4)</button>`
+        : safeWebReceiptUrl
+        ? `<a href="${safeWebReceiptUrl}" target="_blank" class="print-btn" style="text-decoration: none; display: inline-block;">🖨 View &amp; Print Official Receipt (A4 / PDF) ↗</a>`
+        : `<button class="print-btn" onclick="window.print()">Print Official Receipt (PDF / A4)</button>`
+    }
   </div>
 
   <div class="receipt-wrapper">
@@ -508,7 +540,7 @@ export async function sendReceiptEmailSafe(payload: ReceiptEmailPayload): Promis
   const apiKey = process.env.RESEND_API_KEY;
   const emailFrom =
     process.env.EMAIL_FROM ||
-    "Cloud Mobile App Analysis <suprematechnologiesltd@mail.solitesterror.com>";
+    "SupremaTechnologiesLTD <suprematechnologiesltd@mail.solitesterror.com>";
 
   if (!payload.recipientEmail || !payload.recipientEmail.includes("@")) {
     console.warn(
@@ -544,7 +576,7 @@ export async function sendReceiptEmailSafe(payload: ReceiptEmailPayload): Promis
       body: JSON.stringify({
         from: emailFrom,
         to: [payload.recipientEmail.trim()],
-        subject: `Official Receipt: Cloud Mobile App Analysis [${payload.orderNo}]`,
+        subject: `Official Receipt:  Suprema Technologies LTD[${payload.orderNo}]`,
         html,
       }),
       signal: AbortSignal.timeout(8000),
