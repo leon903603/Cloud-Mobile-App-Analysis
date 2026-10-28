@@ -262,7 +262,6 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
   const [paying, setPaying] = useState(false);
   const [paymentNotice, setPaymentNotice] = useState<{ type: "success" | "failed"; text: string } | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
-  const [receiptEmail, setReceiptEmail] = useState("");
 
   // Dynamic analysis optional test credentials
   const [appUsername, setAppUsername] = useState("");
@@ -852,7 +851,6 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
         headers,
         body: JSON.stringify({
           jobId: activeJob.jobId,
-          receiptEmail: receiptEmail.trim() || undefined,
         }),
       });
 
@@ -1422,19 +1420,15 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                       </p>
                     </div>
 
-                    {/* Receipt Email Input */}
-                    <div className="space-y-1 pt-1">
-                      <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-                        <Mail className="h-3 w-3" />
-                        Receipt Email (NewebPay will automatically send transaction receipt):
-                      </label>
-                      <Input
-                        type="email"
-                        placeholder="your-receipt@example.com"
-                        value={receiptEmail}
-                        onChange={(e) => setReceiptEmail(e.target.value)}
-                        className="h-8 text-xs bg-background/80"
-                      />
+                    {/* Member Official Receipt Advisory Notice */}
+                    <div className="rounded-lg bg-muted/60 border border-border/80 p-3 text-xs text-muted-foreground flex items-start gap-2.5">
+                      <Shield className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold text-foreground">Notice:</p>
+                        <p className="leading-relaxed">
+                          Official reimbursement receipts are available exclusively for registered members. If your institution or company requires an official receipt for expense claims, please register or sign in before purchasing.
+                        </p>
+                      </div>
                     </div>
 
                     <p className="text-muted-foreground leading-relaxed">

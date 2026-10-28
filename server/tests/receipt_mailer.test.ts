@@ -164,6 +164,34 @@ assert(noEmailHtml.includes("Valued Customer"), "Empty recipientEmail must grace
 assert(!noEmailHtml.includes("guest"), "Receipt must not leak internal placeholder strings");
 console.log("✓ Test 8: Empty recipient email gracefully falls back to 'Valued Customer' without UID leakage");
 
+// 8.1 Verify buyerName & receiptIssuedAt Official Reimbursement Rendering
+const claimedPayload: ReceiptEmailPayload = {
+  ...normalPayload,
+  buyerName: "National Taiwan University EE Lab",
+  receiptIssuedAt: "2026-10-28T08:00:00.000Z",
+};
+const claimedHtml = generateReceiptHtml(claimedPayload);
+assert(claimedHtml.includes("National Taiwan University EE Lab (professor@university.edu.tw)"), "Receipt must render company name with email in parentheses");
+assert(claimedHtml.includes("October 28, 2026"), "Receipt must format receiptIssuedAt date");
+
+const claimedNoEmailPayload: ReceiptEmailPayload = {
+  ...normalPayload,
+  recipientEmail: "",
+  buyerName: "Cybersecurity Research Institute",
+};
+const claimedNoEmailHtml = generateReceiptHtml(claimedNoEmailPayload);
+assert(claimedNoEmailHtml.includes("Cybersecurity Research Institute"), "Receipt must render company name when email is absent");
+assert(!claimedNoEmailHtml.includes("()"), "Receipt must not render empty parentheses when email is absent");
+
+const xssBuyerPayload: ReceiptEmailPayload = {
+  ...normalPayload,
+  buyerName: '<script>alert("hacked")</script>',
+};
+const xssBuyerHtml = generateReceiptHtml(xssBuyerPayload);
+assert(!xssBuyerHtml.includes("<script>alert"), "buyerName must entity-escape script tags");
+assert(xssBuyerHtml.includes("&lt;script&gt;alert"), "buyerName must contain escaped script tags");
+console.log("✓ Test 8.1: buyerName, receiptIssuedAt & XSS escaping for official receipts verified");
+
 // 9. Verify Graceful Degradation in sendReceiptEmailSafe
 async function testMailerSafety() {
   const origKey = process.env.RESEND_API_KEY;
