@@ -60,8 +60,23 @@ export interface StaticJobRequest {
 // Android reports, so the Mac renders zh-TW/en and returns them with the result).
 export type WrapperPdfs = { "zh-TW"?: string; en?: string };
 
+// AutoDetect's jailbreak-deploy fallback failing on SSH auth (seen once after a cold boot).
+const IOS_SSH_DEPLOY_FAILURE = /Permission denied \(publickey,password\)|jailbreak deploy exited with 255/;
+
+export interface IosDynamicJobRequest {
+  s3UploadKey: string;
+  filename: string;
+  onPhaseChange?: (phase: SandboxPhase) => void;
+}
+
 export interface SandboxAdapterPort {
   runDynamicAnalysis(req: DynamicJobRequest): Promise<DynamicJobOutput>;
+  // iOS dynamic runs on the lab Mac (AutoDetect: vphone + Frida + WDA). It only
+  // renders a zh-TW PDF, so `pdfs.en` is never set.
+  runIosDynamicAnalysis(req: IosDynamicJobRequest): Promise<{
+    reportData: Record<string, unknown>;
+    pdfs: WrapperPdfs;
+  }>;
   runStaticAnalysis(req: StaticJobRequest): Promise<{
     reportData: Record<string, unknown>;
     simulated: boolean;
@@ -92,6 +107,10 @@ export interface SandboxAdapterDeps {
   stopRetryDelayMs?: number;
   pollIntervalMs?: number;
   createReadStreamFn?: (p: string) => any;
+  // AutoDetect REST API on the Mac (base URL without /api/v1) and its X-API-Key.
+  dynamicApiIos?: string;
+  dynamicApiKeyIos?: string;
+  iosDynamicTimeoutMs?: number;
 }
 
 export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterPort {
@@ -421,6 +440,108 @@ export function createSandboxAdapter(deps?: SandboxAdapterDeps): SandboxAdapterP
           console.log(`[Dynamic Sandbox] Handing over warm instance to next queued job (${pendingCount} waiting).`);
         }
       }
+    },
+
+    async runIosDynamicAnalysis(req: IosDynamicJobRequest) {
+      const apiBase = (deps?.dynamicApiIos ?? process.env.IOS_DYNAMIC_API ?? "").replace(/\/+$/, "");
+      if (!apiBase) throw new SandboxExecutionError("startup_failed", "iOS dynamic API is not configured");
+      const apiKey = deps?.dynamicApiKeyIos ?? process.env.IOS_DYNAMIC_API_KEY ?? "";
+      const authHeaders: Record<string, string> = apiKey ? { "X-API-Key": apiKey } : {};
+      const v1 = `${apiBase}/api/v1`;
+      const pollIntervalMs = deps?.pollIntervalMs ?? 5000;
+      // A cold vphone boot plus UI crawling takes ~20 min; AutoDetect also queues
+      // jobs one at a time, so leave room for one job ahead of us.
+      const deadline = Date.now() + (deps?.iosDynamicTimeoutMs ?? (Number(process.env.IOS_DYNAMIC_TIMEOUT_MS) || 60 * 60 * 1000));
+
+      const call = async (path: string, init: Record<string, any> = {}) => {
+        const res = await customFetch(`${v1}${path}`, {
+          ...init,
+          headers: { ...authHeaders, ...(init.headers || {}) },
+          timeout: init.timeout ?? 30000,
+        } as any);
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new SandboxExecutionError("analysis_failed", `AutoDetect ${path} failed (${res.status}): ${body.slice(0, 500)}`);
+        }
+        return res;
+      };
+
+      // Polls an AutoDetect job until it settles; job.status is queued | running | succeeded | failed.
+      const waitJob = async (jobId: string, onUpdate?: (job: any) => void) => {
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+          let job: any;
+          try {
+            job = await (await call(`/jobs/${jobId}`, { timeout: 15000 })).json();
+          } catch (err: any) {
+            // The Mac or the tailnet can drop for a moment; the job keeps running there.
+            console.warn(`[iOS Dynamic] Polling ${jobId} failed: ${err?.message ?? err}, retrying...`);
+            continue;
+          }
+          if (job?.status === "succeeded") return job;
+          if (job?.status === "failed") {
+            const detail = job?.host_task?.error || job?.error || job?.message || "unknown error";
+            throw new SandboxExecutionError("analysis_failed", `AutoDetect job ${jobId} failed: ${String(detail).slice(-800)}`);
+          }
+          onUpdate?.(job);
+        }
+        throw new SandboxExecutionError("timeout", `AutoDetect job ${jobId} did not finish in time`);
+      };
+
+      req.onPhaseChange?.("starting_sandbox");
+      const tmpPath = await downloadFn(req.s3UploadKey);
+      let fileHash: string;
+      try {
+        const form = new FormData();
+        const name = req.filename.toLowerCase().endsWith(".ipa") ? req.filename : `${req.filename}.ipa`;
+        form.append("file", createReadStream(tmpPath), name);
+        const uploaded = (await (await call("/apps", {
+          method: "POST",
+          body: form,
+          headers: form.getHeaders(),
+          timeout: 10 * 60 * 1000,
+        })).json()) as any;
+        fileHash = uploaded?.hash;
+        if (!fileHash) throw new SandboxExecutionError("analysis_failed", "AutoDetect upload returned no hash");
+      } finally {
+        await fs.promises.unlink(tmpPath).catch(() => {});
+      }
+
+      console.log(`[iOS Dynamic] ${req.filename} uploaded as ${fileHash}, starting analysis`);
+      const runAnalysis = async () => {
+        const started = (await (await call(`/apps/${fileHash}/dynamic-analysis`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })).json()) as any;
+        await waitJob(started.job_id, (job) => {
+          if (job?.status === "queued") req.onPhaseChange?.("queued");
+          else if (/vphone/i.test(job?.message || "")) req.onPhaseChange?.("starting_sandbox");
+          else req.onPhaseChange?.("analyzing");
+        });
+      };
+      try {
+        await runAnalysis();
+      } catch (err: any) {
+        // Right after a cold vphone boot the guest's sshd can refuse the first
+        // login, which fails AutoDetect's fallback install; a second run passes.
+        if (!(err instanceof SandboxExecutionError && IOS_SSH_DEPLOY_FAILURE.test(err.message))) throw err;
+        console.warn(`[iOS Dynamic] ${req.filename}: install over SSH was refused, retrying once`);
+        await runAnalysis();
+      }
+
+      req.onPhaseChange?.("generating_pdf");
+      const finish = (await (await call(`/apps/${fileHash}/dynamic/finish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })).json()) as any;
+      await waitJob(finish.job_id);
+
+      const reportData = (await (await call(`/apps/${fileHash}/dynamic-report`)).json()) as Record<string, unknown>;
+      const pdf = Buffer.from(await (await call(`/apps/${fileHash}/dynamic-report.pdf`, { timeout: 90000 })).arrayBuffer());
+      console.log(`[iOS Dynamic] ${req.filename} done (report PDF ${pdf.length} bytes)`);
+      return { reportData, pdfs: { "zh-TW": pdf.toString("base64") } };
     },
 
     async runStaticAnalysis(req: StaticJobRequest): Promise<{

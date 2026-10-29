@@ -152,6 +152,52 @@ export async function analyzeAndroidDynamic(fileId: number) {
   }
 }
 
+export async function analyzeIOSDynamic(fileId: number) {
+  const fileDoc = FileMeta.findById(fileId);
+  if (!fileDoc) throw new Error(`No file found with id ${fileId}`);
+  if (fileDoc.analysisType !== "dynamic" || !fileDoc.filename.endsWith(".ipa"))
+    throw new Error(`File ${fileDoc.filename} is not eligible for IPA dynamic analysis`);
+
+  FileMeta.update(fileDoc.id, { status: "analyzing", taskId: "substatus:starting_sandbox" });
+
+  try {
+    // AutoDetect has no login-credential input yet; a stored test account is not used.
+    const { reportData: rawReportData, pdfs } = await SandboxAdapter.runIosDynamicAnalysis({
+      s3UploadKey: fileDoc.filePath,
+      filename: fileDoc.filename,
+      onPhaseChange: (phase) => {
+        const substatus = phase === "generating_pdf" ? "generating_report" : phase;
+        FileMeta.update(fileDoc.id, { taskId: `substatus:${substatus}` });
+      },
+    });
+
+    const reportData = normalizeReportObject(rawReportData);
+
+    await ArtifactVault.storeCompletedReport(
+      {
+        role: "member",
+        uid: fileDoc.user,
+        hash: fileDoc.hash,
+        analysisType: "dynamic",
+        filename: fileDoc.filename,
+        existingFilePath: fileDoc.filePath,
+        existingReportPath: fileDoc.reportPath,
+      },
+      reportData,
+      { pregeneratedZhPdfBase64: pdfs["zh-TW"], allowDummyPdfFallback: isTestEnv() }
+    );
+
+    DynamicCredentials.remove(fileDoc.id);
+    FileMeta.update(fileDoc.id, { status: "done", taskId: null });
+    return reportData;
+  } catch (err: any) {
+    console.error("Error in analyzeIOSDynamic:", err);
+    const errorTag = err instanceof SandboxExecutionError ? `error:${err.kind}` : "error:analysis_failed";
+    FileMeta.update(fileId, { status: "error", taskId: errorTag });
+    throw err;
+  }
+}
+
 // ── Guest Analysis Helpers ─────────────────────────────────────────────────
 
 export function extractSummaryPreview(report: any): string {
@@ -232,18 +278,31 @@ async function runGuestDynamicJob(job: GuestJobRow) {
   if (!job.uploadPath) throw new Error("Missing uploadPath for guest job");
 
   const pdfKey = `guest/reports/${job.jobId}.pdf`;
-  const credentials = GuestJob.revealCredentials(job);
+  const isIpa = job.fileType === "ipa" || job.filename?.toLowerCase().endsWith(".ipa");
 
-  // Restrict simulation strictly to NODE_ENV === "test"
-  const result = await SandboxAdapter.runDynamicAnalysis({
-    s3UploadKey: job.uploadPath,
-    filename: job.filename || "security-report.apk",
-    fileHash: job.fileHash,
-    credentials,
-    allowSimulationFallback: isTestEnv(),
-  });
+  let rawReportData: unknown;
+  let pdfs: { "zh-TW"?: string; en?: string } | undefined;
+  if (isIpa) {
+    // iOS goes to the Mac (AutoDetect); the Android sandbox cannot run an .ipa.
+    ({ reportData: rawReportData, pdfs } = await SandboxAdapter.runIosDynamicAnalysis({
+      s3UploadKey: job.uploadPath,
+      filename: job.filename || "security-report.ipa",
+    }));
+  } else {
+    const credentials = GuestJob.revealCredentials(job);
 
-  const reportData = normalizeReportObject(result.reportData);
+    // Restrict simulation strictly to NODE_ENV === "test"
+    const result = await SandboxAdapter.runDynamicAnalysis({
+      s3UploadKey: job.uploadPath,
+      filename: job.filename || "security-report.apk",
+      fileHash: job.fileHash,
+      credentials,
+      allowSimulationFallback: isTestEnv(),
+    });
+    rawReportData = result.reportData;
+  }
+
+  const reportData = normalizeReportObject(rawReportData);
 
   await ArtifactVault.storeCompletedReport(
     {
@@ -251,12 +310,14 @@ async function runGuestDynamicJob(job: GuestJobRow) {
       jobId: job.jobId,
       analysisType: "dynamic",
       filename: job.filename || "security-report.apk",
+      fileType: job.fileType,
       existingUploadPath: job.uploadPath,
       existingReportPath: job.reportPath,
     },
     reportData,
     {
       allowDummyPdfFallback: isTestEnv(),
+      pregeneratedZhPdfBase64: pdfs?.["zh-TW"],
     }
   );
 
@@ -310,6 +371,7 @@ if (require.main === module) {
       if (mode === "ios-static") await analyzeIOSStatic(fileId);
       else if (mode === "android-static") await analyzeAndroidStatic(fileId);
       else if (mode === "android-dynamic") await analyzeAndroidDynamic(fileId);
+      else if (mode === "ios-dynamic") await analyzeIOSDynamic(fileId);
       else throw new Error(`Unknown mode: ${mode}`);
     } catch (err) {
       console.error(err);

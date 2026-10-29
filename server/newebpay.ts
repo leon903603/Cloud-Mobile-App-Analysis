@@ -14,6 +14,7 @@ import { GuestJob } from "./models/GuestJob";
 import {
   sendReceiptEmailSafe,
   generateReceiptHtml,
+  type ReceiptEmailPayload,
 } from "./services/receiptMailer";
 import { getMemberCreditHistory } from "./services/creditHistory";
 
