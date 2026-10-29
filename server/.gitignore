@@ -5,3 +5,5 @@ data/
 tests/*
 !tests/*.test.ts
 !tests/*.test.js
+*.patch
+*.diff

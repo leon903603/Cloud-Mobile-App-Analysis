@@ -1,7 +1,7 @@
 // server/services/receiptMailer.ts — Official Electronic Receipt generator & Resend mailer
 // Generates official academic & enterprise reimbursement receipts for Suprema Technologies LTD.
 
-export interface ReceiptEmailPayload {
+export interface ReceiptRenderPayload {
   orderNo: string;
   recipientEmail: string;
   credits: number;
@@ -16,6 +16,9 @@ export interface ReceiptEmailPayload {
   buyerName?: string; // User-specified company or institution name for reimbursement
   receiptIssuedAt?: string; // ISO timestamp when official receipt was issued
 }
+
+/** Backward compatibility alias */
+export type ReceiptEmailPayload = ReceiptRenderPayload;
 
 /**
  * Escapes unsafe characters for HTML entity interpolation (XSS defense).
@@ -85,7 +88,7 @@ export function generateOfficialSealSvg(): string {
 /**
  * Resolves item description based on order type, credits, and package.
  */
-function resolveItemDescription(payload: ReceiptEmailPayload): string {
+function resolveItemDescription(payload: ReceiptRenderPayload): string {
   if (payload.orderType === "guest_report") {
     return `Single Security Analysis Report (Order: ${payload.orderNo})`;
   }
@@ -131,7 +134,7 @@ function formatOfficialDate(dateIso?: string): string {
  * Generates the complete HTML for the Official Receipt email.
  * Includes @media print styles for seamless A4 PDF printing.
  */
-export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
+export function generateReceiptHtml(payload: ReceiptRenderPayload): string {
   const sealSvg = payload.isWeb ? generateOfficialSealSvg() : "";
   const rawItemDesc = resolveItemDescription(payload);
   const dateToFormat = payload.receiptIssuedAt || payload.paidAt;
@@ -578,7 +581,7 @@ export function generateReceiptHtml(payload: ReceiptEmailPayload): string {
  * Sends receipt email safely via Resend REST API without throwing errors or blocking callers.
  * Provides graceful degradation when RESEND_API_KEY is not configured.
  */
-export async function sendReceiptEmailSafe(payload: ReceiptEmailPayload): Promise<{
+export async function sendReceiptEmailSafe(payload: ReceiptRenderPayload): Promise<{
   success: boolean;
   skipped?: boolean;
   reason?: string;
