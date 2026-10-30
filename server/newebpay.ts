@@ -14,7 +14,7 @@ import { GuestJob } from "./models/GuestJob";
 import {
   sendReceiptEmailSafe,
   generateReceiptHtml,
-  type ReceiptEmailPayload,
+  type ReceiptRenderPayload,
 } from "./services/receiptMailer";
 import { getMemberCreditHistory } from "./services/creditHistory";
 
@@ -171,7 +171,7 @@ function buildReceiptPayload(
   tradeNo: string,
   webReceiptUrl: string,
   recipientEmail?: string
-): ReceiptEmailPayload {
+): ReceiptRenderPayload {
   return {
     orderNo: order.orderNo,
     recipientEmail: recipientEmail || order.receiptEmail || "",

@@ -8,7 +8,7 @@ import {
   generateOfficialSealSvg,
   sendReceiptEmailSafe,
   escapeHtml,
-  ReceiptEmailPayload,
+  ReceiptRenderPayload,
 } from "../services/receiptMailer";
 import {
   priceFor,
@@ -29,7 +29,7 @@ assert(!sealSvg.includes("isLab"), "Seal must not contain legacy deprecated bran
 console.log("✓ Test 1: Official Seal SVG structural and XML specifications verified");
 
 // 2. Verify Member Receipt HTML Document Conformance & Calculations (Anti-tautological)
-const normalPayload: ReceiptEmailPayload = {
+const normalPayload: ReceiptRenderPayload = {
   orderNo: "CMAA202610271001",
   recipientEmail: "professor@university.edu.tw",
   credits: 1,
@@ -53,7 +53,7 @@ assert(normalHtml.includes("View &amp; Print Official Receipt (A4 / PDF) ↗"), 
 console.log("✓ Test 2: Standard member official receipt HTML contract and calculations verified");
 
 // 3. Verify XSS & HTML Entity Escaping (Sanitizer Defense)
-const xssPayload: ReceiptEmailPayload = {
+const xssPayload: ReceiptRenderPayload = {
   orderNo: 'CMAA"onmouseover="alert(1)',
   recipientEmail: '"><script>alert("xss")</script><a href="evil">@example.com',
   credits: 1,
@@ -68,7 +68,7 @@ assert(xssHtml.includes("CMAA&quot;onmouseover=&quot;alert(1)"), "Injected quote
 console.log("✓ Test 3: XSS & HTML Entity Escaping effectively sanitizes malicious user inputs");
 
 // 4. Verify 1 Dollar Test Probe Receipt HTML (NT$ 1.00 / US$ 1.00)
-const probePayload: ReceiptEmailPayload = {
+const probePayload: ReceiptRenderPayload = {
   orderNo: "CMAA202610279999",
   recipientEmail: "tester@cmaa.solitesterror.com",
   credits: 1,
@@ -84,7 +84,7 @@ assert(probeHtml.includes("$1.00 USD (NT$ 1.00)"), "Probe receipt must correctly
 console.log("✓ Test 4: Test probe receipt HTML correctly renders $1.00 USD (NT$ 1.00)");
 
 // 5. Verify Guest Report Receipt HTML
-const guestPayload: ReceiptEmailPayload = {
+const guestPayload: ReceiptRenderPayload = {
   orderNo: "CMAAG202610275555",
   recipientEmail: "guest_auditor@company.com",
   credits: 0,
@@ -155,7 +155,7 @@ assert.notStrictEqual(sig1, sigDifferentTime, "Different paidAt times must produ
 console.log("✓ Test 7: generateReceiptSignature produces deterministic, tamper-proof IDOR verification tokens");
 
 // 8. Verify Empty Email Graceful Display Fallback (No internal UID leakage)
-const noEmailPayload: ReceiptEmailPayload = {
+const noEmailPayload: ReceiptRenderPayload = {
   ...normalPayload,
   recipientEmail: "",
 };
@@ -165,7 +165,7 @@ assert(!noEmailHtml.includes("guest"), "Receipt must not leak internal placehold
 console.log("✓ Test 8: Empty recipient email gracefully falls back to 'Valued Customer' without UID leakage");
 
 // 8.1 Verify buyerName & receiptIssuedAt Official Reimbursement Rendering
-const claimedPayload: ReceiptEmailPayload = {
+const claimedPayload: ReceiptRenderPayload = {
   ...normalPayload,
   buyerName: "National Taiwan University EE Lab",
   receiptIssuedAt: "2026-10-28T08:00:00.000Z",
@@ -174,7 +174,7 @@ const claimedHtml = generateReceiptHtml(claimedPayload);
 assert(claimedHtml.includes("National Taiwan University EE Lab (professor@university.edu.tw)"), "Receipt must render company name with email in parentheses");
 assert(claimedHtml.includes("October 28, 2026"), "Receipt must format receiptIssuedAt date");
 
-const claimedNoEmailPayload: ReceiptEmailPayload = {
+const claimedNoEmailPayload: ReceiptRenderPayload = {
   ...normalPayload,
   recipientEmail: "",
   buyerName: "Cybersecurity Research Institute",
@@ -183,7 +183,7 @@ const claimedNoEmailHtml = generateReceiptHtml(claimedNoEmailPayload);
 assert(claimedNoEmailHtml.includes("Cybersecurity Research Institute"), "Receipt must render company name when email is absent");
 assert(!claimedNoEmailHtml.includes("()"), "Receipt must not render empty parentheses when email is absent");
 
-const xssBuyerPayload: ReceiptEmailPayload = {
+const xssBuyerPayload: ReceiptRenderPayload = {
   ...normalPayload,
   buyerName: '<script>alert("hacked")</script>',
 };
