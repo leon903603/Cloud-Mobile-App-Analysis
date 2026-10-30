@@ -89,8 +89,14 @@ console.log("✓ Test 4: getGatewayUrl normalization prevents duplicate /MPG/mpg
 // 5. Verify NewebPay 32-byte PKCS7 custom padding decryption
 // When NewebPay encrypts TradeInfo via PHP, it uses 32-byte blocks.
 // If pad > 16, default OpenSSL autoPadding throws bad decrypt.
-const testKey = process.env.NEWEBPAY_HASH_KEY || "12345678901234567890123456789012";
-const testIv = process.env.NEWEBPAY_HASH_IV || "1234567890123456";
+const testKey =
+  process.env.NEWEBPAY_HASH_KEY && process.env.NEWEBPAY_HASH_KEY.length === 32
+    ? process.env.NEWEBPAY_HASH_KEY
+    : "12345678901234567890123456789012";
+const testIv =
+  process.env.NEWEBPAY_HASH_IV && process.env.NEWEBPAY_HASH_IV.length === 16
+    ? process.env.NEWEBPAY_HASH_IV
+    : "1234567890123456";
 const samplePayload = JSON.stringify({ Status: "SUCCESS", MerchantOrderNo: "CMAA202610309999", Amt: 1 });
 
 function newebpaySimulateEncrypt(plain: string, key: string, iv: string, padSize = 32): string {
