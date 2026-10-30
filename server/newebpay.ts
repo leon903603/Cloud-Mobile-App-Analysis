@@ -203,11 +203,28 @@ function aesEncrypt(plain: string): string {
   return cipher.update(plain, "utf8", "hex") + cipher.final("hex");
 }
 
-function aesDecrypt(hex: string): string {
+export function aesDecrypt(hex: string, keyOverride?: string, ivOverride?: string): string {
   const key = process.env.NEWEBPAY_HASH_KEY || HASH_KEY;
   const iv = process.env.NEWEBPAY_HASH_IV || HASH_IV;
-  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-  return decipher.update(hex, "hex", "utf8") + decipher.final("utf8");
+  const decKey = keyOverride || key;
+  const decIv = ivOverride || iv;
+  const decipher = crypto.createDecipheriv("aes-256-cbc", decKey, decIv);
+  decipher.setAutoPadding(false);
+  let decrypted = decipher.update(hex, "hex", "utf8") + decipher.final("utf8");
+  const pad = decrypted.charCodeAt(decrypted.length - 1);
+  if (pad >= 1 && pad <= 32) {
+    let isPadding = true;
+    for (let i = 1; i <= pad; i++) {
+      if (decrypted.charCodeAt(decrypted.length - i) !== pad) {
+        isPadding = false;
+        break;
+      }
+    }
+    if (isPadding) {
+      decrypted = decrypted.slice(0, -pad);
+    }
+  }
+  return decrypted.replace(/[\x00-\x1F\x7F]+$/g, "").trim();
 }
 
 function tradeSha(encryptedTradeInfo: string): string {
