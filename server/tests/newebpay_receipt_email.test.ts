@@ -89,14 +89,8 @@ console.log("✓ Test 4: getGatewayUrl normalization prevents duplicate /MPG/mpg
 // 5. Verify NewebPay 32-byte PKCS7 custom padding decryption
 // When NewebPay encrypts TradeInfo via PHP, it uses 32-byte blocks.
 // If pad > 16, default OpenSSL autoPadding throws bad decrypt.
-const testKey =
-  process.env.NEWEBPAY_HASH_KEY && process.env.NEWEBPAY_HASH_KEY.length === 32
-    ? process.env.NEWEBPAY_HASH_KEY
-    : "12345678901234567890123456789012";
-const testIv =
-  process.env.NEWEBPAY_HASH_IV && process.env.NEWEBPAY_HASH_IV.length === 16
-    ? process.env.NEWEBPAY_HASH_IV
-    : "1234567890123456";
+const testKey = "12345678901234567890123456789012";
+const testIv = "1234567890123456";
 const samplePayload = JSON.stringify({ Status: "SUCCESS", MerchantOrderNo: "CMAA202610309999", Amt: 1 });
 
 function newebpaySimulateEncrypt(plain: string, key: string, iv: string, padSize = 32): string {
@@ -118,5 +112,18 @@ for (let padNeeded = 1; padNeeded <= 32; padNeeded++) {
   assert.strictEqual(dec, dummy, `aesDecrypt must successfully decrypt padding size ${padNeeded}`);
 }
 console.log("✓ Test 5: NewebPay 32-byte PKCS7 padding decryption resilience verified (all 32 pad sizes)");
+
+// 6. Verify whitespace & CRLF sanitization defense on HASH_KEY and HASH_IV
+// If .env contains trailing spaces or Windows CRLF, production code must auto-trim.
+const messyKey = "12345678901234567890123456789012  \r\n";
+const messyIv = "1234567890123456 \r";
+const sampleMsg = "SensitivePayloadToSanitize";
+
+// Test aesDecrypt with messy key/iv overrides
+const messyEnc = newebpaySimulateEncrypt(sampleMsg, testKey, testIv, 32);
+const messyDec = aesDecrypt(messyEnc, messyKey, messyIv);
+assert.strictEqual(messyDec, sampleMsg, "aesDecrypt must auto-trim trailing spaces/CRLF from key and IV");
+
+console.log("✓ Test 6: Runtime sanitization auto-trims whitespace/CRLF from HASH_KEY and HASH_IV");
 
 console.log("All NewebPay Receipt Email tests passed! ✅\n");
