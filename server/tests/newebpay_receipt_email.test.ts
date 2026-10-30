@@ -1,7 +1,8 @@
 // server/tests/newebpay_receipt_email.test.ts
 import assert from "assert";
 import { db } from "../db";
-import { buildGuestTradeInfoParams, getGatewayUrl, aesDecrypt } from "../newebpay";
+import { buildGuestTradeInfoParams, getGatewayUrl, aesDecrypt, getUsdPerCredit, priceFor } from "../newebpay";
+import { getFallbackTwdPerUsd } from "../fx";
 import crypto from "crypto";
 
 console.log("==================================================");
@@ -125,5 +126,58 @@ const messyDec = aesDecrypt(messyEnc, messyKey, messyIv);
 assert.strictEqual(messyDec, sampleMsg, "aesDecrypt must auto-trim trailing spaces/CRLF from key and IV");
 
 console.log("✓ Test 6: Runtime sanitization auto-trims whitespace/CRLF from HASH_KEY and HASH_IV");
+
+// 7. Verify numeric fallback defense against empty string, 0, negative, and NaN
+const origUsd = process.env.USD_PER_CREDIT;
+const origFallbackRate = process.env.FALLBACK_TWD_PER_USD;
+const origProbe = process.env.TEST_PAYMENT_PROBE;
+
+try {
+  // A. USD_PER_CREDIT fallbacks
+  process.env.USD_PER_CREDIT = "";
+  assert.strictEqual(getUsdPerCredit(), 40, "Empty string USD_PER_CREDIT must default to 40");
+
+  process.env.USD_PER_CREDIT = "0";
+  assert.strictEqual(getUsdPerCredit(), 40, "0 USD_PER_CREDIT must default to 40");
+
+  process.env.USD_PER_CREDIT = "-10";
+  assert.strictEqual(getUsdPerCredit(), 40, "Negative USD_PER_CREDIT must default to 40");
+
+  process.env.USD_PER_CREDIT = "not-a-number";
+  assert.strictEqual(getUsdPerCredit(), 40, "NaN USD_PER_CREDIT must default to 40");
+
+  process.env.USD_PER_CREDIT = "50";
+  assert.strictEqual(getUsdPerCredit(), 50, "Valid USD_PER_CREDIT=50 must return 50");
+
+  // B. FALLBACK_TWD_PER_USD fallbacks
+  process.env.FALLBACK_TWD_PER_USD = "";
+  assert.strictEqual(getFallbackTwdPerUsd(), 32, "Empty string FALLBACK_TWD_PER_USD must default to 32");
+
+  process.env.FALLBACK_TWD_PER_USD = "0";
+  assert.strictEqual(getFallbackTwdPerUsd(), 32, "0 FALLBACK_TWD_PER_USD must default to 32");
+
+  process.env.FALLBACK_TWD_PER_USD = "-5";
+  assert.strictEqual(getFallbackTwdPerUsd(), 32, "Negative FALLBACK_TWD_PER_USD must default to 32");
+
+  process.env.FALLBACK_TWD_PER_USD = "31.5";
+  assert.strictEqual(getFallbackTwdPerUsd(), 31.5, "Valid FALLBACK_TWD_PER_USD=31.5 must return 31.5");
+
+  // C. priceFor(1, 'starter') standard 40 USD assertion when probe is disabled
+  delete process.env.TEST_PAYMENT_PROBE;
+  delete process.env.USD_PER_CREDIT;
+  const standardStarter = priceFor(1, "starter");
+  assert.strictEqual(standardStarter.usd, 40, "Starter package must return 40 USD when probe disabled");
+  assert(standardStarter.twd > 1200, `Starter package TWD (${standardStarter.twd}) must be > 1200`);
+} finally {
+  if (origUsd !== undefined) process.env.USD_PER_CREDIT = origUsd;
+  else delete process.env.USD_PER_CREDIT;
+
+  if (origFallbackRate !== undefined) process.env.FALLBACK_TWD_PER_USD = origFallbackRate;
+  else delete process.env.FALLBACK_TWD_PER_USD;
+
+  if (origProbe !== undefined) process.env.TEST_PAYMENT_PROBE = origProbe;
+  else delete process.env.TEST_PAYMENT_PROBE;
+}
+console.log("✓ Test 7: Zero-pricing trap defense strictly enforces 40 USD / 32 TWD fallbacks on empty or non-positive values");
 
 console.log("All NewebPay Receipt Email tests passed! ✅\n");

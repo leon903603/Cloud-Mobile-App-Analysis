@@ -55,7 +55,10 @@ const CLIENT_URL = process.env.CLIENT_URL ?? "";
 // integer in TWD; the spec has no currency parameter), so each order converts
 // USD→TWD at checkout using the cached rate from fx.ts. The TWD figure therefore
 // moves with the market while the USD price stays fixed.
-const USD_PER_CREDIT = Number(process.env.USD_PER_CREDIT ?? 40);
+export function getUsdPerCredit(): number {
+  const parsed = Number(process.env.USD_PER_CREDIT);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 40;
+}
 
 // Same package ids as the frontend BuyCredits component.
 const VALID_PACKAGES: Record<string, number> = {
@@ -79,7 +82,7 @@ export function priceFor(credits: number, packageId?: string) {
     };
   }
   const { rate, source, fetchedAt, stale } = getTwdPerUsd();
-  const usd = credits * USD_PER_CREDIT;
+  const usd = credits * getUsdPerCredit();
   return { usd, twd: Math.round(usd * rate), rate, source, fetchedAt, stale };
 }
 
@@ -297,7 +300,7 @@ async function requireAuth(
 router.get("/pricing", (_req, res) => {
   const { rate, source, fetchedAt, stale } = getTwdPerUsd();
   return res.json({
-    usdPerCredit: USD_PER_CREDIT,
+    usdPerCredit: getUsdPerCredit(),
     currency: "TWD", // what NewebPay actually charges
     rate,
     rateSource: source,

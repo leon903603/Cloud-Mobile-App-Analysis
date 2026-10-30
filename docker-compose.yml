@@ -34,6 +34,7 @@ services:
     environment:
       # Also used to build the NewebPay Notify/Return callback URLs, so it must be
       # the public HTTPS origin NewebPay can reach.
+      - NODE_ENV=${NODE_ENV:-production}
       - CLIENT_URL=${CLIENT_URL}
       # Firebase Web API Key for server-side verifyFirebasePassword (Google Identity Toolkit)
       - FIREBASE_WEB_API_KEY=${FIREBASE_WEB_API_KEY:-}
@@ -87,8 +88,8 @@ services:
       # Pricing is denominated in USD; NewebPay charges TWD (MPG has no currency
       # field), so each order converts at a rate refreshed daily by server/fx.ts.
       # FALLBACK_TWD_PER_USD is only used if no rate has ever been fetched.
-      - USD_PER_CREDIT=${USD_PER_CREDIT}
-      - FALLBACK_TWD_PER_USD=${FALLBACK_TWD_PER_USD}
+      - USD_PER_CREDIT=${USD_PER_CREDIT:-40}
+      - FALLBACK_TWD_PER_USD=${FALLBACK_TWD_PER_USD:-32}
       # Credit audit (server/credit_audit.ts) — nightly snapshot of every balance,
       # reconciled against the credit ledger and the paid NewebPay orders behind it.
       # Credits seeded on signup; the audit enforces this exact figure.
