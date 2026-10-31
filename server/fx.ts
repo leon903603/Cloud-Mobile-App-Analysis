@@ -14,8 +14,11 @@
 
 import { db } from "./db";
 
-const FALLBACK_TWD_PER_USD = Number(process.env.FALLBACK_TWD_PER_USD ?? 32);
-const FX_MAX_AGE_MS = Number(process.env.FX_MAX_AGE_MS ?? 24 * 60 * 60 * 1000);
+export function getFallbackTwdPerUsd(): number {
+  const parsed = Number(process.env.FALLBACK_TWD_PER_USD);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 32;
+}
+const FX_MAX_AGE_MS = Number(process.env.FX_MAX_AGE_MS) || (24 * 60 * 60 * 1000);
 
 // USD/TWD has stayed inside roughly 27–35 for two decades. These bounds exist to
 // reject garbage (0, null-coerced NaN, an inverted quote), not to track markets.
@@ -80,7 +83,7 @@ export function getTwdPerUsd(): FxRate {
   }
 
   return {
-    rate: FALLBACK_TWD_PER_USD,
+    rate: getFallbackTwdPerUsd(),
     source: "fallback",
     fetchedAt: new Date(0).toISOString(),
     stale: true,

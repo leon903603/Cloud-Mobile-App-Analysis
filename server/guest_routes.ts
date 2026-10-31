@@ -300,7 +300,8 @@ router.get(
       }
 
       const { rate } = getTwdPerUsd();
-      const priceUsd = Number(process.env.USD_PER_CREDIT ?? 40);
+      const parsedUsd = Number(process.env.USD_PER_CREDIT);
+      const priceUsd = Number.isFinite(parsedUsd) && parsedUsd > 0 ? parsedUsd : 40;
       const priceTwd = Math.round(priceUsd * rate);
 
       // Self-healing: if job is marked as paid but lacks downloadToken (e.g. manual DB update), generate one
