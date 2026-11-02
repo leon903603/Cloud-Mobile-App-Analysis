@@ -168,7 +168,7 @@ ENABLE_EXCLUDE_CLASSES = True
 
 EXCLUDED_LABS = {
     # --- Outdated (vulnerability already fixed in modern Android) ---
-    #"lab_016",   # Master Key Type I (CVE-2013-4787) - fixed in Android 4.4, 2013 "Updated ! "
+    #"lab_016",   # Master Key Type I (CVE-2013-4787) -> Updated: MAS 4.1.5.3.1 引用函式庫已知漏洞
     #"lab_035",   # HttpURLConnection pre-Froyo bug - Android 2.2 (API 8), 2010 : Updated ! -> SSL Ping Check ! 
     #"lab_036",   # beginTransactionNonExclusive API<11 - Android 3.0, 2011  -> 
     #"lab_044",   # Fragment injection (CVE-2013-6271) - fixed in Android 4.4, 2013 --> updated Dirty Stream Vulnerability 
@@ -855,7 +855,7 @@ class Writer:
                         }
                     )
         # 無法判定的檢測項 (server 回 NOT_EVALUATED): 報告顯示 Not evaluated (isDetected = None), 不算通過也不算不符合
-        # 由 writer.review_required 傳入 (目前 AS-lab039 / 040 / 041 / 084 / 085); 已寫入 (Failed) 的不覆蓋
+        # 由 writer.review_required 傳入 (目前 AS-lab016 / 039 / 040 / 041 / 084 / 085 / 086 / 087); 已寫入 (Failed) 的不覆蓋
         for review_lab, review_details in getattr(self, 'review_required', {}).items():
             for report in (report_dict_zhtw, report_dict_en):
                 if report["mast_report"].get(review_lab, {}).get("isDetected"):
@@ -2324,32 +2324,6 @@ def __analyze(writer, args):
     # Avoid PDf crash
     # for oneemail in allemail:
     #     writer.write(oneemail + "\t")
-
-    #-----------------------------------------------------------------------------------
-
-    # [lab_016] CVE-2023-4863 libwebp VP8LBuildHuffmanTable Heap Overflow
-    # Scan native .so files in the APK for vulnerable libwebp strings
-
-    lab016Result = get_androguard('/lab_016')
-
-    if lab016Result and lab016Result.get('has_vulnerability') == True:
-        print("lab_016 VULNERABLE - CVE-2023-4863 detected")
-        vulnerable_files = [r['file'] for r in lab016Result.get('results', []) if r.get('status') == 'VULNERABLE']
-        matched_strings = []
-        for r in lab016Result.get('results', []):
-            if r.get('status') == 'VULNERABLE':
-                matched_strings.extend(r.get('matched_strings', []))
-        matched_strings = list(set(matched_strings))
-
-        writer.startWriter(
-            "CVE_2023_4863_LIBWEBP", LEVEL_CRITICAL,
-            u"[AS-lab016] CVE-2023-4863 libwebp Heap Overflow 檢測",
-            u"此 app 的 native library 中偵測到含有 CVE-2023-4863 漏洞的 libwebp。攻擊者可透過惡意 WebP 圖片觸發 VP8LBuildHuffmanTable heap overflow，導致任意程式碼執行。建議更新 libwebp 至 1.3.2 以上版本。\n 參考: https://nvd.nist.gov/vuln/detail/CVE-2023-4863 " + "||" + \
-            u"Vulnerable libwebp native library detected (CVE-2023-4863). An attacker can trigger a VP8LBuildHuffmanTable heap overflow via a crafted WebP image, leading to arbitrary code execution. Update libwebp to version 1.3.2 or later.\n refer to: https://nvd.nist.gov/vuln/detail/CVE-2023-4863",
-            ["CVE-2023-4863", "libwebp", "HeapOverflow", "NativeLibrary"])
-        writer.write(u"Affected files: " + ", ".join(vulnerable_files) + u"\nMatched strings: " + ", ".join(matched_strings))
-    else:
-        print("lab_016 pass - No CVE-2023-4863 vulnerability found")
 
     #------------------------------------------------------------------------------------------------------
     # [lab_017] - DEBUGGABLE checking:
@@ -5079,15 +5053,15 @@ Proof-Of-Concept reference:
             "TRANSACTION_NOTICE_MISSING", LEVEL_WARNING,
             u"[AS-lab085][MAS-4.1.3.1.1] 交易資源使用聲明檢查",
             u"交易前沒有告知商品名稱、金額與付款方式，使用者可能在不清楚的情況下付款。" u"\n\n"
-            u"判定：App 用 Google Pay 付款，自己組的付款請求卻沒有金額（totalPrice），即不符合。Google Play 內購由平台畫面顯示交易資訊，視為符合；請求沒有商品明細、第三方支付 SDK、NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。" u"\n\n"
-            u"修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 totalPrice 與 displayItems。" u"\n\n"
-            u"限制：支付 SDK 只認內建清單，自建交易畫面只看 Activity 名稱，金融 App 只看套件名與 App 名稱；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。" u"\n\n"
+            u"判定：App 用 Google Pay 付款，自己組的付款請求（程式碼，或 res、assets 裡的 JSON）缺少金額（totalPrice）或交易方式（allowedPaymentMethods），或用 Samsung Pay 付款、自己組的付款畫面（CustomSheet）沒有金額（AmountBoxControl），即不符合。Google Play 與其他應用商店（華為、Samsung、Amazon）的內購由商店畫面顯示交易資訊，視為符合；NFC 感應支付設定要求解鎖（requireDeviceUnlock，使用者在現場解鎖授權交易），視為符合。請求沒有商品名稱（Google Pay 的 displayItems、Samsung Pay 的 addItem，可能已顯示在 App 結帳頁）、找不到請求內容、第三方支付 SDK（含 SDK 內部呼叫的 Google Pay）、網頁金流（綠界、藍新、LINE Pay 等付款網址）、跳到電子支付 App 付款（街口、全支付、悠遊付、LINE Pay、icash Pay、iPASS MONEY、台灣Pay）、信用卡輸入畫面（CVV 欄位）、交易專用的介面文字（付款、轉帳、點數兌換、儲值、購票、證券下單等）、未要求解鎖的 NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。有內購時，其他交易方式也會一併檢查。交易資源依 MAS 定義包含實體貨幣、點數與序號、票券與股票。" u"\n\n"
+            u"修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 displayItems、totalPrice 與 allowedPaymentMethods。" u"\n\n"
+            u"限制：只看 Google Pay 請求欄位有沒有出現，不看值；支付 SDK、金流網址、電子支付 App 只認內建清單，自建交易畫面看 Activity 名稱、信用卡安全碼欄位與內建的交易詞組，金融 App 只看套件名與 App 名稱；混淆、加殼不在檢測範圍；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。" u"\n\n"
             u"參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
             + "||" +
             u"The app does not show the item name, amount and payment method before a transaction, so users may pay without knowing the details." u"\n\n"
-            u"Fails when: the app pays with Google Pay and the payment request built in its code has no amount (totalPrice). Google Play in-app purchases show the details on the platform screen and pass; requests without an item list, third-party payment SDKs, NFC contactless payment, custom transaction screens and financial apps (e.g. banks, brokers) whose transaction screens are not found cannot be seen statically and are reported as Not evaluated." u"\n\n"
-            u"Fix: show a confirmation screen with the item name, amount and payment method before paying; fill totalPrice and displayItems in Google Pay requests." u"\n\n"
-            u"Limitation: only payment SDKs on the built-in list are recognized and custom transaction screens are found by activity name and financial apps by package and app name only; receive-only apps (not applicable) and the up-front notice exception for forex, futures and crypto need manual judgment." u"\n\n"
+            u"Fails when: a Google Pay request built in the app (code, or JSON in res and assets) lacks the amount (totalPrice) or payment method (allowedPaymentMethods), or a Samsung Pay payment sheet built in the app (CustomSheet) has no amount (AmountBoxControl). Google Play and other app store in-app purchases (Huawei, Samsung, Amazon) pass, and so does NFC payment that requires device unlock (requireDeviceUnlock, the user authorizes on site). Requests without the item name (Google Pay displayItems, Samsung Pay addItem, which may be shown on the app's checkout screen), requests whose content is not found, third-party payment SDKs (including Google Pay inside an SDK), web checkout (ECPay, NewebPay, LINE Pay and similar payment URLs), payment handed to e-wallet apps (JKOPay, PX Pay Plus, Easy Wallet, LINE Pay, icash Pay, iPASS MONEY, Taiwan Pay), credit card input screens (CVV fields), transaction-only screen text (payment, transfer, point redemption, top-up, tickets, stock orders and similar), NFC payment without device unlock, custom transaction screens and financial apps whose screens are not found are reported as Not evaluated. Other channels are still checked when in-app purchases exist. Transaction resources follow the MAS definition: money, points and serial codes, tickets and stocks." u"\n\n"
+            u"Fix: show the item name, amount and payment method before paying; fill displayItems, totalPrice and allowedPaymentMethods in Google Pay requests." u"\n\n"
+            u"Limitation: only the presence of Google Pay request fields is checked, not their values; SDKs, payment URLs, e-wallet apps, screens and financial apps are found by built-in lists, names, card security code fields and built-in transaction phrases; obfuscated and packed apps are out of scope; receive-only apps and the forex, futures and crypto exception need manual judgment." u"\n\n"
             u"Ref: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate",
             [u"Transaction"])
         _write_lines([_payment_line(c) for c in result_lab085.get('findings', [])])
@@ -5096,6 +5070,130 @@ Proof-Of-Concept reference:
                          [_payment_line(c) for c in result_lab085.get('review', [])])
     elif not isinstance(result_lab085, dict):
         _review_required('AS-lab085', u"the analysis service returned no result.", [])
+
+    # [AS-lab016] 4.1.5.3.1 函式庫引用安全
+    # WARNING -> 寫入 (Failed); NOT_EVALUATED -> 報告顯示 Not evaluated; PASS -> 不寫入
+    def _library_line(group):
+        # 只列分數最高的 CVE, 再給 server 算好的建議版本 (更新後這個函式庫的 CVE 全部修掉); 沒有就建議更新到最新版
+        first = group[0]
+        if first['library'].startswith('libwebp'):
+            name = u"libwebp < 1.3.2"  # 沒有版本字串, 用修補後才有的函式判斷未修補
+        else:
+            name = u"%s %s" % (first['library'].split(':')[-1], first['version'])
+        if first.get('fix_all'):
+            fix = (u"fixed in %s or later" if len(group) == 1 else u"all fixed in %s or later") % first['fix_all']
+        else:
+            fix = u"update to the latest version"
+        if len(group) == 1:
+            return u"%s: %s (CVSS v3.0 %s); %s" % (name, first['cve'], first['score'], fix)
+        return u"%s: %d CVEs with CVSS v3.0 >= 7, highest %s (%s); %s" % (name, len(group), first['cve'], first['score'], fix)
+
+    result_lab016 = get_androguard('/lab_016')
+    if isinstance(result_lab016, dict) and result_lab016.get('verdict') == 'WARNING':
+        writer.startWriter(
+            "KNOWN_LIBRARY_VULNERABILITIES", LEVEL_CRITICAL,
+            u"[AS-lab016][MAS-4.1.5.3.1][MASVS-CODE-3][M2] 引用函式庫已知漏洞檢查",
+            u"引用的函式庫有已知漏洞，攻擊者可直接利用公開的攻擊方法。" u"\n\n"
+            u"判定：從 APK 辨識函式庫名稱與版本，包括 Java 函式庫（META-INF/*.version、Google 函式庫的 .properties、pom.properties；沒有版本檔的常見函式庫如 Gson、OkHttp、Jackson、BouncyCastle 從程式碼的類別辨識並讀取版本字串，其他函式庫用類別名稱到 Maven Central 反查，版本另讀函式庫的 BuildConfig.VERSION_NAME）、網頁函式庫（assets 與 React Native bundle 裡的 JavaScript，依 Retire.js 規則與內嵌的 package.json；Cordova 框架讀 cordova.js 的版本）、React Native 框架（ReactNativeVersion）、.NET 組件（版本資源）、Flutter 套件（libapp.so 裡的套件名稱），以及原生函式庫 .so 與 Unity 引擎的版本字串（沒有版本字串的 .so 用匯出的函式名稱或檔名對到 NVD 產品）；Java、網頁、.NET、Flutter 套件查 OSV，原生函式庫與 Unity 查 NVD，有 CVE 編號且 CVSS v3.0 分數 ≥ 7 即不符合（只有 v3.1 分數的，以相同評分項目用 v3.0 公式重算；分數取自 GitHub 審核的漏洞資料，分數最高的前 5 個再以 NVD 確認）；libwebp 另以符號判斷是否未修補 CVE-2023-4863。有引用函式庫但讀不到版本，且該函式庫有 CVSS ≥ 7 的漏洞版本時，列為 Not evaluated，列出受影響的版本，需人工排查；加殼看不到程式碼、網頁程式碼被加密，或混淆把 class 搬到短套件而認不出函式庫時，列為 Not evaluated，並請開發者提供未加殼、未混淆的 APK；.NET 組件被壓縮、查詢失敗、CVE 沒有 CVSS v3 分數，或完全辨識不到函式庫版本，也列為 Not evaluated。" u"\n\n"
+            u"修正：把列出的函式庫更新到細節中建議的版本（更新後該函式庫列出的漏洞全部修補）；加殼或混淆造成 Not evaluated 時，請提供未加殼、未混淆的 APK。" u"\n\n"
+            u"限制：沒有版本資訊的 Java 函式庫依 Maven Central 反查，只採用 groupId 與套件名稱一致的結果，服務沒回應的套件不列入判定；網頁函式庫只認 Retire.js 規則涵蓋的函式庫與內嵌 package.json；Flutter 套件編譯後沒有版本，只能列出受影響版本；App 自己寫的 .so 與 NVD 查不到的產品不列入判定。" u"\n\n"
+            u"參考: https://osv.dev/ | https://nvd.nist.gov/ | https://mas.owasp.org/MASVS/controls/MASVS-CODE-3/"
+            + "||" +
+            u"The app uses libraries with known vulnerabilities that attackers can exploit with public methods." u"\n\n"
+            u"Fails when: a library identified in the APK has a CVE with a CVSS v3.0 score >= 7 (CVEs scored only in v3.1 are recalculated with the v3.0 formula from the same metrics; scores come from GitHub-reviewed advisories and the five highest are confirmed with NVD), checked with OSV for Java, web, .NET and Flutter packages and with NVD for native libraries and Unity. Libraries are identified from Java libraries (META-INF/*.version, Google library .properties, pom.properties; common libraries without version files, such as Gson, OkHttp, Jackson and BouncyCastle, from their classes and version strings in the code, and other libraries by looking up their class names on Maven Central, with versions also read from the library's BuildConfig.VERSION_NAME), web libraries (JavaScript in assets and React Native bundles, using Retire.js rules and embedded package.json; the Cordova framework from cordova.js), the React Native framework (ReactNativeVersion), .NET assemblies (version resources), Flutter packages (package names in libapp.so), and version strings in native .so files and the Unity engine (.so files without version strings are matched to NVD products by exported function names or file names); libwebp is also checked by symbols for unpatched CVE-2023-4863. A library that is used but whose version cannot be read, and that has versions with CVSS >= 7 vulnerabilities, is reported as Not evaluated with the affected versions for manual review; packed apps whose code is not visible, apps whose web code is encrypted, and apps whose obfuscation moved classes into short packages so libraries cannot be identified, are reported as Not evaluated, and the developer is asked for an unpacked, unobfuscated APK; compressed .NET assemblies, lookup failures, CVEs without a CVSS v3 score, or no identifiable library version are also reported as Not evaluated." u"\n\n"
+            u"Fix: update each listed library to the version given in the details, which fixes all listed CVEs of that library; when packing or obfuscation causes Not evaluated, provide an unpacked, unobfuscated APK." u"\n\n"
+            u"Limitation: Java libraries without version information are identified through Maven Central, using only results whose groupId matches the package name, and packages the service does not answer for are not judged; web libraries only from Retire.js rules and embedded package.json; Flutter packages have no version after compiling, so only the affected versions are listed; the app's own .so files and products not found in NVD are not judged." u"\n\n"
+            u"Ref: https://osv.dev/ | https://nvd.nist.gov/ | https://mas.owasp.org/MASVS/controls/MASVS-CODE-3/",
+            [u"KnownVulnerability", u"ReferencedLibrary"])
+        groups, order = {}, []  # 依分數高低 (server 已排序), Python 2 的 dict 沒有順序
+        for f in result_lab016.get('findings', []):
+            key = (f['library'], f['version'])
+            if key not in groups:
+                order.append(key)
+            groups.setdefault(key, []).append(f)
+        lines = [_library_line(groups[k]) for k in order]
+        _write_lines([l if n == 0 else u"\u00b7 " + l for n, l in enumerate(lines)])  # PDF 不換行, 用 · 分隔
+    elif isinstance(result_lab016, dict) and result_lab016.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab016', u"some libraries could not be checked (details below).",
+                         [u"\u00b7 " + l for l in result_lab016.get('review', [])])
+    elif not isinstance(result_lab016, dict):
+        _review_required('AS-lab016', u"the analysis service returned no result.", [])
+
+    #-----------------------------------------------------------------------------------
+    # [AS-lab086] 4.1.2.3.1 敏感性資料儲存聲明 / [AS-lab087] 4.1.2.3.2 拒絕敏感性資料儲存
+    # WARNING -> 寫入 (Failed); NOT_EVALUATED -> 報告顯示 Not evaluated; PASS -> 不寫入
+    def _storage_line(s):
+        notes = [s.get('problem') or s.get('reason') or u"", u"data: %s" % s.get('data', '')]
+        keys = s.get('evidence', {}).get('keys')
+        if keys:
+            notes.append(u"option: %s" % u", ".join(keys[:3]))
+        key = (u" key '%s'" % s['key']) if s.get('key') else u""
+        return u"[%s]%s in %s (%s)" % (s.get('store', ''), key, s.get('where', ''), u"; ".join(n for n in notes if n))
+
+    result_lab086 = get_androguard('/lab_086')
+    if isinstance(result_lab086, dict) and result_lab086.get('verdict') == 'WARNING':
+        writer.startWriter(
+            "STORAGE_NOTICE_MISSING", LEVEL_WARNING,
+            u"[AS-lab086][MAS-4.1.2.3.1][MASVS-PRIVACY-4][M6] 敏感性資料儲存聲明檢查",
+            u"App 把敏感資料存在裝置上，卻沒有先告知並取得使用者同意。" u"\n\n"
+            u"判定：App 把敏感資料寫進 SharedPreferences、DataStore、SQLite 或檔案（名稱含密碼、token、電話、帳號等，訊息、筆記、通訊錄、行事曆資料表，或資料來自定位、通訊錄、裝置 ID、密碼輸入框），且整個 App 找不到任何同意或告知機制，即不符合。沒有儲存敏感資料視為符合。有讀寫同意狀態、同意畫面或同意管理 SDK 的，因靜態無法確認同意在儲存之前、涵蓋所有存的資料，列為 Not evaluated，並列出 Google Play 資料安全性的比對結果；只有隱私權政策連結、文字或條款畫面，無法確認儲存前有取得同意，列為 Not evaluated；名稱像敏感資料但存的是數字、存的是使用者輸入的文字、加密後的資料、轉成 JSON 的物件，或寫檔、資料表的內容看不出用途，或看不到 App 程式碼的，也列為 Not evaluated。" u"\n\n"
+            u"修正：第一次儲存敏感資料前顯示聲明並取得同意，記錄同意狀態，未同意不儲存。" u"\n\n"
+            u"限制：不看聲明內容；商店說明文字與未上架 App 的調查表需人工確認；存的內容只認名稱、資料表名稱、輸入框文字、加密資料與 JSON 物件；SharedPreferences 只看 key 名稱。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+            + "||" +
+            u"The app stores sensitive data on the device without first telling users and getting their consent." u"\n\n"
+            u"Fails when: the app writes sensitive data to SharedPreferences, DataStore, SQLite or files (names such as password, token, phone, account, message, note, contact or calendar tables, or data from location, contacts, device IDs or password fields) and no consent or notice mechanism is found anywhere in the app. Apps that store no sensitive data pass. A stored consent state, a consent screen or a consent management SDK is reported as Not evaluated with the Google Play Data safety comparison, since static analysis cannot confirm that consent comes before storing and covers all stored data; only a privacy policy link, text or terms screen cannot confirm that consent is obtained before storing and is reported as Not evaluated, as are names that look sensitive but hold numbers, stored user-typed text, encrypted data, serialized objects, or file and table content that cannot be identified, and apps whose code is not visible." u"\n\n"
+            u"Fix: show a notice and get consent before sensitive data is first stored, record the consent, and do not store without it." u"\n\n"
+            u"Limitation: does not check the notice wording; the store description and the survey form for unpublished apps need manual review; stored content is recognized only by key and table names, input text, encrypted data and serialized objects; SharedPreferences values are judged by key name only." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage",
+            [u"Privacy", u"Storage"])
+        _write_lines([_storage_line(s) for s in result_lab086.get('storage', [])])
+    elif isinstance(result_lab086, dict) and result_lab086.get('verdict') == 'NOT_EVALUATED' \
+            and result_lab086.get('reason', '').startswith('app code not visible'):
+        # 沒找到任何儲存且看不到 App 程式碼 (多半是加殼): 沒有項目可列, 只說明原因
+        _review_required('AS-lab086', u"the app's own code is not visible (the app may be packed), so whether it stores sensitive data cannot be checked.", [])
+    elif isinstance(result_lab086, dict) and result_lab086.get('verdict') == 'NOT_EVALUATED' \
+            and result_lab086.get('reason', '').startswith('consent mechanism found'):
+        # App 內有同意機制, 但同意是否在儲存前、是否涵蓋這些資料, 以及商店聲明需人工確認
+        _review_required('AS-lab086', u"%s; check that consent is obtained before this data is stored and that the app and store listing declare it." % result_lab086.get('reason', ''),
+                         [u"[consent] %s (%s)" % (c.get('where', ''), c.get('evidence', '')) for c in result_lab086.get('consent', [])
+                          if c.get('type') in ('consent_check', 'consent_sdk', 'consent_screen')][:2]
+                         + [_storage_line(s) for s in result_lab086.get('review', [])])
+    elif isinstance(result_lab086, dict) and result_lab086.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab086', u"%s; check whether this data is sensitive and whether users are asked first." % result_lab086.get('reason', ''),
+                         [u"[notice] %s (%s)" % (c.get('where', ''), c.get('evidence', '')) for c in result_lab086.get('consent', [])[:1]]
+                         + [_storage_line(s) for s in result_lab086.get('review', [])])
+    elif not isinstance(result_lab086, dict):
+        _review_required('AS-lab086', u"the analysis service returned no result.", [])
+
+    result_lab087 = get_androguard('/lab_087')
+    if isinstance(result_lab087, dict) and result_lab087.get('verdict') == 'WARNING':
+        writer.startWriter(
+            "STORAGE_REFUSAL_MISSING", LEVEL_WARNING,
+            u"[AS-lab087][MAS-4.1.2.3.2][MASVS-PRIVACY-4][M6] 拒絕敏感性資料儲存檢查",
+            u"App 儲存敏感資料，使用者卻無法拒絕。" u"\n\n"
+            u"判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（標準規定未聲明的資料無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。" u"\n\n"
+            u"修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。" u"\n\n"
+            u"限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；基準(2) 拒絕後確實沒有儲存需動態檢測。" u"\n\n"
+            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+            + "||" +
+            u"The app stores sensitive data but users cannot refuse it." u"\n\n"
+            u"Fails when: for the sensitive data storage found by AS-lab086, the call path of the write has no read of an option such as \"remember account\", \"save password\" or \"auto login\" (SharedPreferences, DataStore or an on-screen checkbox), or the option is read but not used to decide whether to store; it also fails when AS-lab086 fails, since users cannot refuse undeclared data (as the standard states). Cases where AS-lab086 is Not evaluated (declaration not confirmed), options checked elsewhere, options whose key cannot be identified, paths decided only by settings with unrecognized names, storage done after a dialog button, and storage whose writing code is not located (Room tables, DataStore keys) are reported as Not evaluated." u"\n\n"
+            u"Fix: offer options such as \"remember account\" or \"save password\", check them before writing, and when turned off do not store and delete what was stored." u"\n\n"
+            u"Limitation: only settings named like remember or save plus a credential word (remember_password, save_account), auto login, biometric or app lock count as options; only 4 levels of callers are traced; criterion (2), that nothing is stored after refusal, needs dynamic testing." u"\n\n"
+            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage",
+            [u"Privacy", u"Storage"])
+        if result_lab087.get('reason', '').startswith('4.1.2.3.1'):
+            _write_detail(u"AS-lab086 (4.1.2.3.1) not met: the stored data is not declared, so users cannot refuse it")
+        _write_lines([_storage_line(s) for s in result_lab087.get('findings', [])])
+    elif isinstance(result_lab087, dict) and result_lab087.get('verdict') == 'NOT_EVALUATED' \
+            and result_lab087.get('reason', '').startswith('app code not visible'):
+        _review_required('AS-lab087', u"the app's own code is not visible (the app may be packed), so whether users can refuse storing cannot be checked.", [])
+    elif isinstance(result_lab087, dict) and result_lab087.get('verdict') == 'NOT_EVALUATED':
+        _review_required('AS-lab087', u"%s; check whether users can refuse storing this data." % result_lab087.get('reason', ''),
+                         [_storage_line(s) for s in result_lab087.get('review', [])])
+    elif not isinstance(result_lab087, dict):
+        _review_required('AS-lab087', u"the analysis service returned no result.", [])
 
     #-----------------------------------------------------------------------------------
     # [lab_061] - Checking shared_user_id
