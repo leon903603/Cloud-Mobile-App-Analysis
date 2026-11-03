@@ -206,9 +206,7 @@ const BuyCredits: React.FC<BuyCreditsProps> = ({ currentCredits = 0, onBack }) =
                 {formatUsd(pkg.usd)}
               </span>
               <span className="text-gray-500 text-xs mt-1">
-                {formatTwd(pkg.twd)
-                  ? `charged as ${formatTwd(pkg.twd)}`
-                  : `US$${USD_PER_CREDIT} per credit`}
+                US${USD_PER_CREDIT} per credit
               </span>
             </button>
           );
@@ -227,20 +225,6 @@ const BuyCredits: React.FC<BuyCreditsProps> = ({ currentCredits = 0, onBack }) =
               </span>
               <span className="text-white">{formatUsd(pkg.usd)}</span>
             </div>
-            {formatTwd(pkg.twd) && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-400">
-                  Amount charged
-                  {rate && (
-                    <span className="text-gray-500">
-                      {" "}
-                      (1 USD = {rate.toFixed(2)} TWD)
-                    </span>
-                  )}
-                </span>
-                <span className="text-white">{formatTwd(pkg.twd)}</span>
-              </div>
-            )}
             <div className="flex justify-between text-sm border-t border-white/10 pt-2">
               <span className="text-gray-400">New balance after purchase</span>
               <span className="text-green-400 font-medium">
