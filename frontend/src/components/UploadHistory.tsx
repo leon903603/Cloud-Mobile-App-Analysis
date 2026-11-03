@@ -312,14 +312,14 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
     }
   };
 
-  // Trigger PDF report generation and download (supports bilingual zh-TW and en)
-  const handleReportGeneration = async (upload: UploadEntry, lang: "zh-TW" | "en" = "zh-TW") => {
+  // Trigger PDF report generation and download
+  const handleReportGeneration = async (upload: UploadEntry, lang: "zh-TW" | "en" = "en") => {
     const downloadKey = `${upload.id}_${lang}`;
     setDownloadingReport(downloadKey);
 
     try {
       const token = await getIdToken();
-      if (!token) throw new Error("請先登入 (User not logged in)");
+      if (!token) throw new Error("Please sign in first (User not logged in)");
 
       const backendUrl = import.meta.env.VITE_BACKEND_URL ? import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, "") : "";
       // Call backend generate-report API
@@ -337,13 +337,13 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.error || `生成報告失敗 (HTTP ${res.status})`);
+        throw new Error(errJson?.error || `Failed to generate report (HTTP ${res.status})`);
       }
 
       // The backend returns a short-lived presigned S3 URL; the PDF is downloaded
       // straight from S3 rather than streamed through the backend.
       const { url } = (await res.json()) as { url?: string };
-      if (!url) throw new Error("伺服器未返回下載連結");
+      if (!url) throw new Error("Server did not return a download URL");
 
       const link = document.createElement("a");
       link.href = url;
@@ -355,7 +355,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
       link.parentNode?.removeChild(link);
     } catch (err: any) {
       console.error("Report generation error:", err);
-      alert(`下載報告失敗: ${err?.message || "未知錯誤"}`);
+      alert(`Failed to download report: ${err?.message || "Unknown error"}`);
     } finally {
       setDownloadingReport(null);
     }
@@ -479,7 +479,7 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Calendar className="h-4 w-4" />
                       {/* Format upload time, fallback to "N/A" if not available */}
-                      <span>{upload.uploadTime ? new Date(upload.uploadTime).toLocaleDateString() : "N/A"}</span>
+                      <span>{upload.uploadTime ? new Date(upload.uploadTime).toLocaleDateString("en-US") : "N/A"}</span>
                     </div>
                   </div>
                 </AccordionTrigger>
@@ -592,63 +592,32 @@ const UploadHistory: React.FC<UploadHistoryProps> = ({ refreshSignal, onCreditsC
                       {upload.status === "done" && (
                         <div className="flex flex-wrap items-center gap-2">
                           {upload.analysisType === "static" ? (
-                            <>
-                              <Button
-                                size="sm"
-                                disabled={downloadingReport === `${upload.id}_zh-TW`}
-                                onClick={() => handleReportGeneration(upload, "zh-TW")}
-                              >
-                                {downloadingReport === `${upload.id}_zh-TW` ? (
-                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <FileText className="mr-1.5 h-4 w-4" />
-                                )}
-                                下載靜態報告 (中文 PDF)
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={downloadingReport === `${upload.id}_en`}
-                                onClick={() => handleReportGeneration(upload, "en")}
-                              >
-                                {downloadingReport === `${upload.id}_en` ? (
-                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <FileText className="mr-1.5 h-4 w-4" />
-                                )}
-                                Download Static (English PDF)
-                              </Button>
-                            </>
+                            <Button
+                              size="sm"
+                              disabled={downloadingReport === `${upload.id}_en`}
+                              onClick={() => handleReportGeneration(upload, "en")}
+                            >
+                              {downloadingReport === `${upload.id}_en` ? (
+                                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                              ) : (
+                                <FileText className="mr-1.5 h-4 w-4" />
+                              )}
+                              Download Static Report (PDF)
+                            </Button>
                           ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                                disabled={downloadingReport === `${upload.id}_zh-TW`}
-                                onClick={() => handleReportGeneration(upload, "zh-TW")}
-                              >
-                                {downloadingReport === `${upload.id}_zh-TW` ? (
-                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <FileText className="mr-1.5 h-4 w-4" />
-                                )}
-                                下載動態報告 (中文 PDF)
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10"
-                                disabled={downloadingReport === `${upload.id}_en`}
-                                onClick={() => handleReportGeneration(upload, "en")}
-                              >
-                                {downloadingReport === `${upload.id}_en` ? (
-                                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <FileText className="mr-1.5 h-4 w-4 text-indigo-400" />
-                                )}
-                                Download Dynamic (English PDF)
-                              </Button>
-                            </>
+                            <Button
+                              size="sm"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                              disabled={downloadingReport === `${upload.id}_en`}
+                              onClick={() => handleReportGeneration(upload, "en")}
+                            >
+                              {downloadingReport === `${upload.id}_en` ? (
+                                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                              ) : (
+                                <FileText className="mr-1.5 h-4 w-4" />
+                              )}
+                              Download Dynamic Report (PDF)
+                            </Button>
                           )}
                         </div>
                       )}

@@ -266,7 +266,7 @@ const BuyCredits: React.FC<BuyCreditsProps> = ({ currentCredits = 0, onBack }) =
 
       <p className="text-gray-500 text-xs text-center">
         Prices are listed in US dollars. Payments are processed securely by
-        NewebPay (藍新金流) and billed in New Taiwan Dollars at the exchange rate
+        NewebPay and billed in New Taiwan Dollars at the exchange rate
         shown above; cards issued outside Taiwan may be offered the option to pay
         in their own currency at checkout. Credits are added to your account once
         payment is confirmed. Credits are prepaid analysis fees — not stored

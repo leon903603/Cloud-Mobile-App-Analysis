@@ -205,12 +205,13 @@ export const CreditHistoryModal: React.FC<Props> = ({
     try {
       const d = new Date(isoStr);
       if (isNaN(d.getTime())) return isoStr;
-      return d.toLocaleString(undefined, {
+      return d.toLocaleString("en-US", {
         year: "numeric",
-        month: "2-digit",
+        month: "short",
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false,
       });
     } catch {
       return isoStr;
@@ -309,7 +310,7 @@ export const CreditHistoryModal: React.FC<Props> = ({
               <form onSubmit={handleClaimSubmit} className="space-y-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-foreground flex justify-between">
-                    <span>Company / Institution Name (公司抬頭 / 組織名稱):</span>
+                    <span>Company / Institution Name:</span>
                     <span className="text-[11px] text-muted-foreground">{companyName.trim().length} / 120</span>
                   </label>
                   <Input

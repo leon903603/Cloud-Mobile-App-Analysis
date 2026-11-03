@@ -549,7 +549,7 @@ router.get(
         return;
       }
 
-      const reqLang = (req.query.lang as string) === "en" ? "en" : "zh-TW";
+      const reqLang = (req.query.lang as string) === "zh-TW" ? "zh-TW" : "en";
 
       const downloadResult = await ArtifactVault.acquireReportDownloadUrl({
         scope: {

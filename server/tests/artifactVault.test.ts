@@ -57,13 +57,12 @@ async function runTests() {
 
   const downloadResult = await ArtifactVault.acquireReportDownloadUrl({
     scope: missingScope,
-    lang: "zh-TW",
     consumeDownloadQuota: mockQuotaCallback,
   });
 
   assert.strictEqual(downloadResult.ok, false, "Download must fail when report is missing");
   assert.strictEqual(quotaConsumed, false, "Quota callback must NOT be invoked when file is missing");
-  console.log("✓ Test 3: Quota safety guard verified (no quota deducted on missing report)");
+  console.log("✓ Test 3: Quota safety guard & default English resolution verified (no quota deducted on missing report)");
 
   // Test 4: Version-aware purge keys enumeration
   // When includeBinary is false (other analysis shares the binary), uploadKey must be excluded
@@ -118,7 +117,7 @@ async function runTests() {
 
   console.log("✓ Test 6: Defensive Report Object Normalization (double-serialized JSON unpacking) verified");
 
-  // Test 7: Pre-generated PDFs from an analysis host (iOS on the Mac) are validated
+  // Test 7: Pre-generated PDFs from an analysis host (Android dynamic EC2 / iOS on the Mac) are validated
   {
     const pdf = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(2048, 0x30)]);
     const ok = decodePregeneratedPdf(pdf.toString("base64"), "en");
@@ -127,7 +126,23 @@ async function runTests() {
     assert.strictEqual(decodePregeneratedPdf(undefined, "zh-TW"), null);
     const huge = Buffer.concat([Buffer.from("%PDF-"), Buffer.alloc(10 * 1024 * 1024)]);
     assert.strictEqual(decodePregeneratedPdf(huge.toString("base64"), "zh-TW"), null, "oversized PDF is dropped");
-    console.log("✓ Test 7: Pre-generated PDF validation (magic bytes, size cap) verified");
+
+    // Verify storeCompletedReport accepts pregeneratedEnPdfBase64 (Android dynamic EC2 fast path)
+    const dynScope: ArtifactScope = {
+      role: "member",
+      uid: "u-dyn-fast",
+      hash: "h-dyn-fast",
+      analysisType: "dynamic",
+      filename: "fast-app.apk",
+    };
+    const stored = await ArtifactVault.storeCompletedReport(
+      dynScope,
+      { summary: { high: 0, medium: 1, low: 0 } },
+      { pregeneratedEnPdfBase64: pdf.toString("base64"), allowDummyPdfFallback: true }
+    );
+    assert.strictEqual(stored.pdfKeyEn, "reports/u-dyn-fast/h-dyn-fast/dynamic_en.pdf");
+    await ArtifactVault.purgeArtifacts(dynScope);
+    console.log("✓ Test 7: Pre-generated PDF validation & Android dynamic EC2 English PDF fast-path verified");
   }
 
   // Test 8: iOS dynamic never falls back to the (Android-only) PDF Lambda
@@ -150,13 +165,28 @@ async function runTests() {
       consumeDownloadQuota: () => (quotaUsed = true),
     });
     assert.strictEqual(en.ok, false);
-    assert.strictEqual(!en.ok && en.code, "pdf_not_available", "English iOS dynamic PDF reports not available");
+    assert.strictEqual(!en.ok && en.code, "pdf_not_available", "Missing iOS dynamic PDF reports pdf_not_available");
     assert.strictEqual(quotaUsed, false, "no quota spent on an unavailable PDF");
-    console.log("✓ Test 8: iOS dynamic scope detection and no-Lambda English fallback verified");
+    console.log("✓ Test 8: iOS dynamic scope detection and universal fallback verified");
+  }
+
+  // Test 9: Standardized English timestamp formatting (no CJK '上午/下午' characters)
+  {
+    const sampleDate = new Date("2026-11-03T14:35:00.000Z");
+    const formatted = sampleDate.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    assert.strictEqual(/[\u4e00-\u9fff]/.test(formatted), false, "Formatted timestamp must not contain any Chinese characters");
+    console.log(`✓ Test 9: Standardized English timestamp formatting verified (${formatted})`);
   }
 
   console.log("==================================================");
-  console.log(" All ArtifactVault Module Unit Tests Passed (8/8) ✅");
+  console.log(" All ArtifactVault Module Unit Tests Passed (9/9) ✅");
   console.log("==================================================");
 }
 

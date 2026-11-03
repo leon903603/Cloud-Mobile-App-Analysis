@@ -211,7 +211,7 @@ function Product() {
               charged separately, so running both on the same file costs two
               credits. Uploading a file is free — a credit is only spent when you
               start an analysis. Prices are listed in US dollars. Payments are
-              processed by NewebPay (藍新金流) and charged in New Taiwan Dollars
+              processed by NewebPay and charged in New Taiwan Dollars
               (TWD); the exact TWD amount is shown before you pay.
             </p>
             <Button asChild className="w-full">
@@ -239,9 +239,6 @@ function Product() {
               Credits have no cash value, are non-transferable, cannot be
               exchanged or refunded for cash, and cannot be used for any purpose
               other than the analysis services described on this page.
-            </p>
-            <p>
-              本網站不提供儲值服務；點數為預付之應用程式分析服務費用，僅可兌換本平台之分析服務，不得轉讓、兌換現金或移作其他用途。
             </p>
           </div>
         </section>

@@ -141,17 +141,15 @@ async function runBrowserE2E() {
     });
     await page2.waitForTimeout(2000);
 
-    const downloadZhBtn = page2.locator("button:has-text('下載中文報告')").first();
-    const downloadEnBtn = page2.locator("button:has-text('Download English')").first();
-    await downloadZhBtn.waitFor({ state: "visible", timeout: 10000 });
-    await downloadEnBtn.waitFor({ state: "visible", timeout: 10000 });
-    console.log("✓ Both Chinese and English PDF download buttons rendered!");
+    const downloadBtn = page2.locator("button:has-text('Download PDF Report')").first();
+    await downloadBtn.waitFor({ state: "visible", timeout: 10000 });
+    console.log("✓ Unified English PDF download button rendered!");
 
     // 5. Test PDF stream download response from server (handles 302 redirect to S3 presigned URL)
     console.log("5. Testing actual PDF binary stream download...");
     const [downloadResponse] = await Promise.all([
       page2.waitForResponse((res) => res.url().includes("/guest/report/") || res.url().includes("s3.amazonaws.com"), { timeout: 10000 }),
-      downloadZhBtn.click(),
+      downloadBtn.click(),
     ]);
 
     console.log("  Endpoint Response Status:", downloadResponse.status(), "URL:", downloadResponse.url().slice(0, 80));

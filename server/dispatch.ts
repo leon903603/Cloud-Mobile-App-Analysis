@@ -118,7 +118,7 @@ export async function analyzeAndroidDynamic(fileId: number) {
 
     const reportData = normalizeReportObject(result.reportData);
 
-    // Sandbox generated pdfBase64 is English, do not pass to zh path; generate dual language PDF via Lambda
+    // Sandbox generated pdfBase64 is already English: save directly to S3 without extra Lambda invocation
     await ArtifactVault.storeCompletedReport(
       {
         role: "member",
@@ -130,7 +130,10 @@ export async function analyzeAndroidDynamic(fileId: number) {
         existingReportPath: fileDoc.reportPath,
       },
       reportData,
-      { allowDummyPdfFallback: isTestEnv() }
+      {
+        pregeneratedEnPdfBase64: result.pdfBase64,
+        allowDummyPdfFallback: isTestEnv(),
+      }
     );
 
     DynamicCredentials.remove(fileDoc.id);
@@ -282,6 +285,7 @@ async function runGuestDynamicJob(job: GuestJobRow) {
 
   let rawReportData: unknown;
   let pdfs: { "zh-TW"?: string; en?: string } | undefined;
+  let androidEnPdfBase64: string | null | undefined;
   if (isIpa) {
     // iOS goes to the Mac (AutoDetect); the Android sandbox cannot run an .ipa.
     ({ reportData: rawReportData, pdfs } = await SandboxAdapter.runIosDynamicAnalysis({
@@ -300,6 +304,7 @@ async function runGuestDynamicJob(job: GuestJobRow) {
       allowSimulationFallback: isTestEnv(),
     });
     rawReportData = result.reportData;
+    androidEnPdfBase64 = result.pdfBase64;
   }
 
   const reportData = normalizeReportObject(rawReportData);
@@ -318,6 +323,7 @@ async function runGuestDynamicJob(job: GuestJobRow) {
     {
       allowDummyPdfFallback: isTestEnv(),
       pregeneratedZhPdfBase64: pdfs?.["zh-TW"],
+      pregeneratedEnPdfBase64: pdfs?.en ?? androidEnPdfBase64,
     }
   );
 

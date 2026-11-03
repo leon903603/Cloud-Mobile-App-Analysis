@@ -120,7 +120,7 @@ function loadStoredJobs(): StoredGuestJob[] {
         if (expiredNames.length > 0) {
           saveStoredJobs(activeJobs);
           setTimeout(() => {
-            alert(`${expiredNames.join(", ")} 已過期並由系統銷毀。`);
+            alert(`${expiredNames.join(", ")} has expired and has been removed by the system.`);
           }, 350);
         }
 
@@ -350,7 +350,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
   const handleSelectJob = (targetJob: StoredGuestJob) => {
     if (isJobExpiredClient(targetJob)) {
-      alert(`${targetJob.filename || "Previous Analysis"} 已過期並由系統銷毀。`);
+      alert(`${targetJob.filename || "Previous Analysis"} has expired and has been removed by the system.`);
       const remaining = jobsList.filter((j) => j.jobId !== targetJob.jobId);
       setJobsList(remaining);
       saveStoredJobs(remaining);
@@ -907,7 +907,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
 
   // ── PDF download with x-guest-secret ───────────────────────────────────────
 
-  const handleDownload = async (lang: "zh-TW" | "en" = "zh-TW") => {
+  const handleDownload = async (lang: "zh-TW" | "en" = "en") => {
     if (!activeJob?.downloadToken) return;
     try {
       const secretParam = activeJob.secretKey ? `&secret=${encodeURIComponent(activeJob.secretKey)}` : "";
@@ -1335,7 +1335,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{activeJob.filename}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {new Date(activeJob.uploadTime).toLocaleString()}
+                      {new Date(activeJob.uploadTime).toLocaleString("en-US")}
                     </p>
                   </div>
                 </div>
@@ -1373,16 +1373,12 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                     </Button>
                   )}
 
-                  {/* Already Paid & Unlocked - Bilingual download options */}
+                  {/* Already Paid & Unlocked - Single English download button */}
                   {activeJob.status === "done" && activeJob.isPaid && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button size="sm" onClick={() => handleDownload("zh-TW")} className="bg-green-600 hover:bg-green-700 text-white">
+                      <Button size="sm" onClick={() => handleDownload("en")} className="bg-green-600 hover:bg-green-700 text-white">
                         <Download className="h-3.5 w-3.5 mr-1.5" />
-                        下載中文報告 (PDF)
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleDownload("en")} className="border-green-600/40 text-green-400 hover:bg-green-600/10">
-                        <Download className="h-3.5 w-3.5 mr-1.5" />
-                        Download English (PDF)
+                        Download PDF Report
                       </Button>
                     </div>
                   )}
@@ -1399,7 +1395,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                 {/* Analysis in progress explanation */}
                 {(activeJob.status === "analyzing" || activeJob.status === "pending" || activeJob.status === "uploaded") && (
                   <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-                    The system is analyzing your application in the background (evaluating 80+ security rules and runtime patterns). Once complete, you can unlock and download the full bilingual security assessment PDF report.
+                    The system is analyzing your application in the background (evaluating 80+ security rules and runtime patterns). Once complete, you can unlock and download the full security assessment PDF report.
                   </p>
                 )}
 
@@ -1416,7 +1412,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                         <span className="capitalize">Mode: <strong className="text-foreground">{activeJob.analysisType}</strong></span>
                       </div>
                       <p className="text-muted-foreground text-xs pt-1">
-                        Analysis complete. Unlock to access the full bilingual security assessment PDF report (covering OWASP MASVS and Taiwan Mobile App Security Standards, decompiled findings, and remediation guidance).
+                        Analysis complete. Unlock to access the full security assessment PDF report (covering OWASP MASVS and Taiwan Mobile App Security Standards, decompiled findings, and remediation guidance).
                       </p>
                     </div>
 

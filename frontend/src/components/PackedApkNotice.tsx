@@ -15,7 +15,7 @@ const PackedApkNotice: React.FC<{ className?: string }> = ({ className = "" }) =
     <PackageOpen className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
     <p className="text-sm text-foreground">
       <span className="font-medium">Packed APKs produce fewer findings.</span> If an Android
-      app is hardened with a packer or protector (360 加固, Bangcle, Tencent Legu,
+      app is hardened with a packer or protector (360 Qihoo / Jiagu, Bangcle, Tencent Legu,
       DexProtector and similar), its real code is stored encrypted and only restored in
       memory while the app runs. Static analysis can only read the unpacking stub, so the
       report will be much shorter than it would be for an unprotected APK — that is a

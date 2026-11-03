@@ -803,8 +803,7 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
   const { hash, type, lang } = req.body;
   if (!hash || !type) return res.status(400).json({ error: "Missing fields" });
 
-  const targetLang = lang === "en" ? "en" : "zh-TW";
-  const langSuffix = targetLang === "en" ? "_en" : "_zh";
+  const targetLang = lang === "zh-TW" ? "zh-TW" : "en";
 
   // Find the current user
   const user = User.findById(req.user.uid);
@@ -824,7 +823,7 @@ app.post("/generate-report", verifyToken, async (req: AuthRequest, res: Response
         existingFilePath: reportMeta.filePath,
         existingReportPath: reportMeta.reportPath,
       },
-      lang: lang === "en" ? "en" : "zh-TW",
+      lang: targetLang,
       consumeDownloadQuota: () => FileMeta.decrementDownloadsRemaining(reportMeta.id),
     });
 
