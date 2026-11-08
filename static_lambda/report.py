@@ -1,4 +1,5 @@
 import os
+import re
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, PageBreak, Image, Spacer, Table, TableStyle)
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER, TA_JUSTIFY
@@ -39,8 +40,8 @@ def _init_fonts_and_styles():
 
 class BaseStaticReport:
     def __init__(self, lang):
-        i18n.set('locale', lang)
-        self.lang = lang
+        self.lang = 'zh-TW' if str(lang).lower().startswith('zh') else str(lang)
+        i18n.set('locale', self.lang)
         self.elements = []
 
         self.colorGreen0 = Color((45.0/255), (166.0/255), (153.0/255), 1)
@@ -363,14 +364,28 @@ class PDFPSReporte(BaseStaticReport):
                             has_meaningful_finding = True
                             break
 
-                        if d_text or (d_desc and d_desc != content.get('desc', '')):
-                            temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>"
-                            esc_details = _esc(d_text)
-                            esc_desc = _esc(d_desc)
-                            if d_desc and d_desc != content.get('desc', ''):
-                                temp_result += f"&bull; {esc_details}<br/>{esc_desc}<br/><br/>"
-                            else:
-                                temp_result += f"&bull; {esc_details}<br/><br/>"
+                        # 判斷是否為中文語系
+                        is_zh = str(getattr(self, 'lang', '') or i18n.get('locale', '')).lower().startswith('zh')
+                        has_cjk = bool(re.search(r'[\u4e00-\u9fff]', d_desc))
+                        should_print_desc = bool(
+                            d_desc
+                            and d_desc != content.get('desc', '')
+                            and (is_zh or not has_cjk)
+                        )
+
+                        effective_desc = _esc(d_desc) if should_print_desc else ''
+                        effective_details = _esc(d_text).strip()
+
+                        finding_content = ""
+                        if effective_details and effective_desc:
+                            finding_content += f"&bull; {effective_details}<br/>{effective_desc}<br/><br/>"
+                        elif effective_details:
+                            finding_content += f"&bull; {effective_details}<br/><br/>"
+                        elif effective_desc:
+                            finding_content += f"&bull; {effective_desc}<br/><br/>"
+
+                        if finding_content:
+                            temp_result += f"<br/><br/><b>{i18n.t('label.detail_info_title')}</b><br/>" + finding_content
                             has_meaningful_finding = True
                             break
 

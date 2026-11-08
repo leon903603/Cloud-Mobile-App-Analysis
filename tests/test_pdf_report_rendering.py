@@ -205,6 +205,104 @@ class TestPDFReportRendering(unittest.TestCase):
                 self.assertIn('偵測到風險: 0', text)
         self.assertTrue(found_dyn_summary_zh, "Dynamic Chinese summary missing!")
 
+    def test_english_report_suppresses_cjk_descriptions(self):
+        """AC-01: Verify English report suppresses CJK descriptions from static analysis engine."""
+        import re
+        rules_mock = {
+            'AS-lab001': {
+                'title': 'Cleartext Traffic Enabled',
+                'desc': 'The application enables cleartext HTTP traffic.',
+                'mas': '4.1.2.6.1',
+                'owasp_mobile': 'M3'
+            }
+        }
+        # 模擬靜態引擎吐出的中文 description 與英文 details
+        mast_report_mock = {
+            'AS-lab001': {
+                'status': 'FAILED',
+                'isDetected': True,
+                'data': [
+                    {
+                        'details': 'android:usesCleartextTraffic="true"',
+                        'description': '偵測到 App 可能透過 cleartext (HTTP) 進行網路傳輸，存在中間人攻擊風險。'
+                    }
+                ]
+            }
+        }
+        reporter = build_static_reporter('en', rules_mock, mast_report_mock)
+        tbl = reporter.saved_elements[14]
+        rule_cell_text = tbl._cellvalues[1][1].text
+
+        # 斷言技術 details 被保留，但 CJK 中文說明完全被過濾
+        self.assertIn('android:usesCleartextTraffic="true"', rule_cell_text)
+        self.assertNotIn('偵測到 App 可能透過', rule_cell_text)
+        cjk_matches = re.findall(r'[\u4e00-\u9fff]', rule_cell_text)
+        self.assertEqual(len(cjk_matches), 0, f"Found unexpected CJK characters in English report: {cjk_matches}")
+
+    def test_chinese_report_preserves_cjk_descriptions(self):
+        """AC-03: Verify Chinese report (zh-TW and zh) preserves CJK descriptions."""
+        rules_mock = {
+            'AS-lab001': {
+                'title': '允許明文網路傳輸',
+                'desc': '應用程式允許未加密的明文傳輸。',
+                'mas': '4.1.2.6.1',
+                'owasp_mobile': 'M3'
+            }
+        }
+        mast_report_mock = {
+            'AS-lab001': {
+                'status': 'FAILED',
+                'data': [
+                    {
+                        'details': 'android:usesCleartextTraffic="true"',
+                        'description': '偵測到 App 可能透過 cleartext (HTTP) 進行網路傳輸，存在中間人攻擊風險。'
+                    }
+                ]
+            }
+        }
+        # 測試 zh-TW
+        rep_zh_tw = build_static_reporter('zh-TW', rules_mock, mast_report_mock)
+        tbl_tw = rep_zh_tw.saved_elements[14]
+        cell_text_tw = tbl_tw._cellvalues[1][1].text
+        self.assertIn('偵測到 App 可能透過', cell_text_tw)
+
+        # 測試 zh
+        rep_zh = build_static_reporter('zh', rules_mock, mast_report_mock)
+        tbl_zh = rep_zh.saved_elements[14]
+        cell_text_zh = tbl_zh._cellvalues[1][1].text
+        self.assertIn('偵測到 App 可能透過', cell_text_zh)
+
+    def test_empty_details_with_cjk_desc_does_not_render_lone_dot(self):
+        """AC-04: When details is empty and description is CJK, English report must not render lone dot."""
+        rules_mock = {
+            'AS-lab017': {
+                'title': 'Debuggable Flag Enabled',
+                'desc': 'Application is marked as debuggable.',
+                'mas': '4.1.2.6.1',
+                'owasp_mobile': 'M1'
+            }
+        }
+        mast_report_mock = {
+            'AS-lab017': {
+                'status': 'FAILED',
+                'isDetected': True,
+                'data': [
+                    {
+                        'details': '',
+                        'description': '應用程式在 AndroidManifest.xml 中設定了 android:debuggable="true"'
+                    }
+                ]
+            }
+        }
+        reporter = build_static_reporter('en', rules_mock, mast_report_mock)
+        tbl = reporter.saved_elements[14]
+        rule_cell_text = tbl._cellvalues[1][1].text
+
+        # 斷言觸發了空 finding 提示，且絕不包含孤立黑點 &bull; <br/>
+        self.assertIn('manual review recommended', rule_cell_text)
+        self.assertNotIn('&bull; <br/>', rule_cell_text)
+        self.assertNotIn('&bull; <br/><br/>', rule_cell_text)
+
 
 if __name__ == '__main__':
     unittest.main()

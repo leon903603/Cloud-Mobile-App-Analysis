@@ -1,4 +1,5 @@
 from reportlab.pdfgen import canvas
+import re
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, PageBreak, CondPageBreak, Image, Spacer, Table, TableStyle)
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER, TA_JUSTIFY
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -28,7 +29,7 @@ class PDFPSReporte:
     def __init__(self, path, lang, system, rules, result):
         self.system = system
         self.rules = rules
-        self.lang = lang
+        self.lang = 'zh-TW' if str(lang).lower().startswith('zh') else str(lang)
         self.appInfo = deepcopy(result)
         self.urlList = self.appInfo.pop('url_list', [])
         self.masterReport = self.appInfo.pop('mast_report', {})
@@ -39,7 +40,7 @@ class PDFPSReporte:
         self.vulnerabilities = self.appInfo.pop('vulnerabilities', [])
         self.summary = self.appInfo.pop('summary', {})
 
-        i18n.set('locale', lang)
+        i18n.set('locale', self.lang)
 
         self.elements = []
 
@@ -446,13 +447,9 @@ class PDFPSReporte:
                 temp_result = ""
                 # 避免空的 data: []
                 if (self.masterReport[rule].get('data')):
-                    temp_result += """
-                    <br/><br/>
-                    <b>{description_title}</b><br/>
-                    """.format(
-                        description_title = i18n.t('label.detail_info_title')
-                    )
-                    
+                    finding_content = ""
+                    is_zh = str(getattr(self, 'lang', '') or i18n.get('locale', '')).lower().startswith('zh')
+
                     # 暫時先限字數，似乎套件跨頁會故障
                     MAX_DETAIL_CHARS = 3000
                     for detail_item in self.masterReport[rule]['data'][:1]:
@@ -460,23 +457,37 @@ class PDFPSReporte:
                             _d_details = detail_item.get('details', '')
                             _item_desc = detail_item.get('description', '')
                             if len(_d_details) > MAX_DETAIL_CHARS:
-                                trunc_note = " ... [內容長度超出安全限制已截斷]" if self.lang.lower().startswith('zh') else " ... [Truncated for layout safety]"
+                                trunc_note = " ... [內容長度超出安全限制已截斷]" if is_zh else " ... [Truncated for layout safety]"
                                 _d_details = _d_details[:MAX_DETAIL_CHARS] + trunc_note
                             if len(_item_desc) > MAX_DETAIL_CHARS:
-                                trunc_note = " ... [內容長度超出安全限制已截斷]" if self.lang.lower().startswith('zh') else " ... [Truncated for layout safety]"
+                                trunc_note = " ... [內容長度超出安全限制已截斷]" if is_zh else " ... [Truncated for layout safety]"
                                 _item_desc = _item_desc[:MAX_DETAIL_CHARS] + trunc_note
 
-                            if _item_desc and _item_desc != content.get('desc', ''):
-                                temp_result += """• {details}<br/>{description}<br/><br/>""".format(
-                                        details = _esc(_d_details),
-                                        description = _esc(_item_desc),
-                                )
-                            else:
-                                temp_result += """• {details}<br/><br/>""".format(
-                                        details = _esc(_d_details),
-                                )
+                            has_cjk = bool(re.search(r'[\u4e00-\u9fff]', _item_desc))
+                            should_print_desc = bool(
+                                _item_desc
+                                and _item_desc != content.get('desc', '')
+                                and (is_zh or not has_cjk)
+                            )
+
+                            effective_desc = _esc(_item_desc) if should_print_desc else ''
+                            effective_details = _esc(_d_details).strip()
+
+                            if effective_details and effective_desc:
+                                finding_content += f"&bull; {effective_details}<br/>{effective_desc}<br/><br/>"
+                            elif effective_details:
+                                finding_content += f"&bull; {effective_details}<br/><br/>"
+                            elif effective_desc:
+                                finding_content += f"&bull; {effective_desc}<br/><br/>"
                         except:
                             print("data structure does not include 'details' or 'description' key")
+
+                    # 唯有在 finding_content 確有實質內容時才印出 Detail: 標題
+                    if finding_content:
+                        temp_result += "<br/><br/><b>{description_title}</b><br/>{content}".format(
+                            description_title = i18n.t('label.detail_info_title'),
+                            content = finding_content
+                        )
                 result_cell += temp_result
             except:
                 print("lab report does not contain 'data' or no matched rule with", rule)

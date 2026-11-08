@@ -1,11 +1,11 @@
+import os
+import re
 from xml.sax.saxutils import escape as _xml_escape
 
 def _esc(val):
     if not val:
         return ''
     return _xml_escape(str(val))
-
-import os
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, PageBreak, Image, Spacer, Table, TableStyle)
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER, TA_JUSTIFY
@@ -28,11 +28,12 @@ class PDFPSReporte:
     def __init__(self, path, lang, system, rules, result):
         self.system = system
         self.rules = rules
+        self.lang = 'zh-TW' if str(lang).lower().startswith('zh') else str(lang)
         self.urlList = result.pop('url_list')
         self.masterReport = result.pop('mast_report')
         self.appInfo = result
 
-        i18n.set('locale', lang)
+        i18n.set('locale', self.lang)
 
         self.elements = []
 
@@ -65,7 +66,14 @@ class PDFPSReporte:
         # Build
 
         # self.styleSheet
-        self.doc = SimpleDocTemplate(path, pagesize=A4)
+        self.doc = SimpleDocTemplate(
+            path,
+            pagesize=A4,
+            rightMargin=36,
+            leftMargin=36,
+            topMargin=36,
+            bottomMargin=36
+        )
         self.doc.build(self.elements)
 
     def Header(self):
@@ -122,7 +130,7 @@ class PDFPSReporte:
         table.setStyle(tStyle)
         self.elements.append(table)
 
-        spacer = Spacer(10, 50)
+        spacer = Spacer(10, 25)
         self.elements.append(spacer)
         
 
@@ -231,27 +239,44 @@ class PDFPSReporte:
             try:
                 temp_result = ""
                 # 避免空的 data: []
-                if (self.masterReport[rule]['data']):
-                    temp_result += """
-                    <br/><br/>
-                    <b>{description_title}</b><br/>
-                    """.format(
-                        description_title = i18n.t('label.detail_info_title')
-                    )
-                    
+                if (self.masterReport[rule].get('data')):
+                    finding_content = ""
+                    # 判斷是否為中文語系
+                    is_zh = str(getattr(self, 'lang', '') or i18n.get('locale', '')).lower().startswith('zh')
+
                     # 暫時先限字數，似乎套件跨頁會故障
                     for detail_item in self.masterReport[rule]['data'][:1]:
                         try:
                             d_text = detail_item.get('details', '')
                             d_desc = str(detail_item.get('description', ''))
-                            esc_details = _esc(d_text[:800])
-                            esc_desc = _esc(d_desc[:800])
-                            if d_desc and d_desc != content.get('desc', ''):
-                                temp_result += f"&bull; {esc_details}<br/>{esc_desc}<br/><br/>"
-                            else:
-                                temp_result += f"&bull; {esc_details}<br/><br/>"
+                            esc_details = _esc(d_text[:800]).strip()
+                            esc_desc = _esc(d_desc[:800]).strip()
+
+                            has_cjk = bool(re.search(r'[\u4e00-\u9fff]', d_desc))
+                            should_print_desc = bool(
+                                d_desc
+                                and d_desc != content.get('desc', '')
+                                and (is_zh or not has_cjk)
+                            )
+
+                            effective_desc = esc_desc if should_print_desc else ''
+                            effective_details = esc_details
+
+                            if effective_details and effective_desc:
+                                finding_content += f"&bull; {effective_details}<br/>{effective_desc}<br/><br/>"
+                            elif effective_details:
+                                finding_content += f"&bull; {effective_details}<br/><br/>"
+                            elif effective_desc:
+                                finding_content += f"&bull; {effective_desc}<br/><br/>"
                         except Exception:
                             pass
+
+                    # 唯有在 finding_content 確有實質內容時才印出 Detail: 標題，避免孤立圓點或空標題
+                    if finding_content:
+                        temp_result += "<br/><br/><b>{description_title}</b><br/>{content}".format(
+                            description_title = i18n.t('label.detail_info_title'),
+                            content = finding_content
+                        )
                 result_cell += temp_result
             except:
                 print("lab report does not contain 'data' or no matched rule with", rule)
@@ -273,7 +298,7 @@ class PDFPSReporte:
         table.setStyle(tStyle)
         self.elements.append(table)
 
-        spacer = Spacer(10, 50)
+        spacer = Spacer(10, 25)
         self.elements.append(spacer)
         
 
