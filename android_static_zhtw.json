@@ -1,18 +1,18 @@
 {
     "AS-lab001": {
         "title": "SSL Connection / Cleartext HTTP 傳輸檢查",
-        "mas": "4.1.2.4.1",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-NETWORK-1|MSTG-NETWORK-1|MSTG-NETWORK-2",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
         "cve": "CWE-319",
-        "desc": "App 不應使用 cleartext (HTTP) 進行網路傳輸。本檢查採三層架構:\n\n1. AndroidManifest 層 — 檢查 <application> 上的 android:usesCleartextTraffic 屬性以及 target SDK。Android 9 (API 28) 以上預設為 false; 顯式設為 true 是最高風險配置。\n2. Network Security Config 層 — 解析 android:networkSecurityConfig 指向的 res/xml/<config>.xml,讀取 <base-config cleartextTrafficPermitted> 與各 <domain-config> 的 cleartext 設定。\n3. Smali bytecode source -> sink 層 — 在每個 App 自身 method 內,將 const-string http URL(已過濾 namespace / 框架 URI)與真實的網路 sink (WebView.loadUrl / WebView.loadDataWithBaseURL / java.net.URL.openConnection / HttpURLConnection / OkHttpClient.newCall / Volley StringRequest) 進行同 method 配對,僅在兩者共存時標記。\n\n嚴重度:\n- CRITICAL: http URL 確實流入網路 sink (真實的 cleartext 風險)。\n- WARNING: App code 中找到 http URL,但同 method 內無 sink (可能是 dead code、log 字串,或跨 method 使用)。\n- INFO: AndroidManifest 或 NSC 已禁止 cleartext,但 code 中仍有 http URL (作業系統已阻擋,但應清理)。\n\n限制: 採同 method 啟發式,無 taint 追蹤;若 URL 透過 helper method 傳遞會漏報。NSC 解析涵蓋 base-config + domain-config,不含 <pin-set> 或 trust anchors。\n\n參考: https://developer.android.com/training/articles/security-config | https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-1/"
+        "desc": "App 不應使用 cleartext (HTTP) 進行網路傳輸。本檢查採三層架構:\n\n1. AndroidManifest 層 — 檢查 <application> 上的 android:usesCleartextTraffic 屬性以及 target SDK。Android 9 (API 28) 以上預設為 false; 顯式設為 true 是最高風險配置。\n2. Network Security Config 層 — 解析 android:networkSecurityConfig 指向的 res/xml/<config>.xml,讀取 <base-config cleartextTrafficPermitted> 與各 <domain-config> 的 cleartext 設定。\n3. Smali bytecode source -> sink 層 — 在每個 App 自身 method 內,將 const-string http URL(已過濾 namespace / 框架 URI)與真實的網路 sink (WebView.loadUrl / WebView.loadDataWithBaseURL / java.net.URL.openConnection / HttpURLConnection / OkHttpClient.newCall / Volley StringRequest) 進行同 method 配對,僅在兩者共存時標記。\n\n嚴重度:\n- CRITICAL: http URL 確實流入網路 sink (真實的 cleartext 風險)。\n- WARNING: App code 中找到 http URL,但同 method 內無 sink (可能是 dead code、log 字串,或跨 method 使用)。\n- INFO: AndroidManifest 或 NSC 已禁止 cleartext,但 code 中仍有 http URL (作業系統已阻擋,但應清理)。\n\n限制: 採同 method 啟發式,無 taint 追蹤;若 URL 透過 helper method 傳遞會漏報。NSC 解析涵蓋 base-config + domain-config,不含 <pin-set> 或 trust anchors。\n\n參考: https://developer.android.com/training/articles/security-config"
     },
     "AS-lab002": {
         "title": "安全相關 Methods 檢查",
         "mas": "",
-        "mast": "5.2.3",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-9|MSTG-ARCH-10|MSTG-CRYPTO-4",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -22,7 +22,7 @@
     "AS-lab003": {
         "title": "安全相關 Classes 檢查",
         "mas": "",
-        "mast": "5.2.3",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-9|MSTG-ARCH-10|MSTG-CRYPTO-4",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -31,8 +31,8 @@
     },
     "AS-lab004": {
         "title": "存取權限 'com.android.vending.BILLING'",
-        "mas": "4.1.3.1",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "INFO",
@@ -42,7 +42,7 @@
     "AS-lab005": {
         "title": "存取權限 'android.permission.READ_CONTACTS'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -52,7 +52,7 @@
     "AS-lab006": {
         "title": "存取權限 'android.permission.READ_CALL_LOG'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -62,7 +62,7 @@
     "AS-lab007": {
         "title": "存取權限 'android.permission.ACCESS_FINE_LOCATION'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -72,7 +72,7 @@
     "AS-lab008": {
         "title": "傳送 GPS 訊息的 code",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-2",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -82,7 +82,7 @@
     "AS-lab009": {
         "title": "存取權限 'android.permission.READ_SMS'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -92,7 +92,7 @@
     "AS-lab010": {
         "title": "存取權限 'android.permission.RECORD_AUDIO'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -151,18 +151,18 @@
     },
     "AS-lab016": {
         "title": "引用函式庫已知漏洞檢測",
-        "mas": "4.1.5.3.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-CODE-3",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
         "cve": "",
-        "desc": "引用的函式庫有已知漏洞，攻擊者可直接利用公開的攻擊方法。\n\n判定：從 APK 辨識函式庫名稱與版本，包括 Java 函式庫（META-INF/*.version、Google 函式庫的 .properties、pom.properties；沒有版本檔的常見函式庫如 Gson、OkHttp、Jackson、BouncyCastle 從程式碼的類別辨識並讀取版本字串，其他函式庫用類別名稱到 Maven Central 反查，版本另讀函式庫的 BuildConfig.VERSION_NAME）、網頁函式庫（assets 與 React Native bundle 裡的 JavaScript，依 Retire.js 規則與內嵌的 package.json；Cordova 框架讀 cordova.js 的版本）、React Native 框架（ReactNativeVersion）、.NET 組件（版本資源）、Flutter 套件（libapp.so 裡的套件名稱），以及原生函式庫 .so 與 Unity 引擎的版本字串（沒有版本字串的 .so 用匯出的函式名稱或檔名對到 NVD 產品）；Java、網頁、.NET、Flutter 套件查 OSV，原生函式庫與 Unity 查 NVD，有 CVE 編號且 CVSS v3.0 分數 ≥ 7 即不符合（只有 v3.1 分數的，以相同評分項目用 v3.0 公式重算；分數取自 GitHub 審核的漏洞資料，分數最高的前 5 個再以 NVD 確認）；libwebp 另以符號判斷是否未修補 CVE-2023-4863。有引用函式庫但讀不到版本，且該函式庫有 CVSS ≥ 7 的漏洞版本時，列為 Not evaluated，列出受影響的版本，需人工排查；加殼看不到程式碼、網頁程式碼被加密，或混淆把 class 搬到短套件而認不出函式庫時，列為 Not evaluated，並請開發者提供未加殼、未混淆的 APK；.NET 組件被壓縮、查詢失敗、CVE 沒有 CVSS v3 分數，或完全辨識不到函式庫版本，也列為 Not evaluated。\n\n修正：把列出的函式庫更新到細節中建議的版本（更新後該函式庫列出的漏洞全部修補）；加殼或混淆造成 Not evaluated 時，請提供未加殼、未混淆的 APK。\n\n限制：沒有版本資訊的 Java 函式庫依 Maven Central 反查，只採用 groupId 與套件名稱一致的結果，服務沒回應的套件不列入判定；網頁函式庫只認 Retire.js 規則涵蓋的函式庫與內嵌 package.json；Flutter 套件編譯後沒有版本，只能列出受影響版本；App 自己寫的 .so 與 NVD 查不到的產品不列入判定。\n\n參考: https://osv.dev/ | https://nvd.nist.gov/ | https://mas.owasp.org/MASVS/controls/MASVS-CODE-3/"
+        "desc": "引用的函式庫有已知漏洞，攻擊者可直接利用公開的攻擊方法。\n\n判定：從 APK 辨識函式庫名稱與版本，包括 Java 函式庫（META-INF/*.version、Google 函式庫的 .properties、pom.properties；沒有版本檔的常見函式庫如 Gson、OkHttp、Jackson、BouncyCastle 從程式碼的類別辨識並讀取版本字串，其他函式庫用類別名稱到 Maven Central 反查，版本另讀函式庫的 BuildConfig.VERSION_NAME）、網頁函式庫（assets 與 React Native bundle 裡的 JavaScript，依 Retire.js 規則與內嵌的 package.json；Cordova 框架讀 cordova.js 的版本）、React Native 框架（ReactNativeVersion）、.NET 組件（版本資源）、Flutter 套件（libapp.so 裡的套件名稱），以及原生函式庫 .so 與 Unity 引擎的版本字串（沒有版本字串的 .so 用匯出的函式名稱或檔名對到 NVD 產品）；Java、網頁、.NET、Flutter 套件查 OSV，原生函式庫與 Unity 查 NVD，有 CVE 編號且 CVSS v3.0 分數 ≥ 7 即不符合（只有 v3.1 分數的，以相同評分項目用 v3.0 公式重算；分數取自 GitHub 審核的漏洞資料，分數最高的前 5 個再以 NVD 確認）；libwebp 另以符號判斷是否未修補 CVE-2023-4863。有引用函式庫但讀不到版本，且該函式庫有 CVSS ≥ 7 的漏洞版本時，列為 Not evaluated，列出受影響的版本，需人工排查；加殼看不到程式碼、網頁程式碼被加密，或混淆把 class 搬到短套件而認不出函式庫時，列為 Not evaluated，並請開發者提供未加殼、未混淆的 APK；.NET 組件被壓縮、查詢失敗、CVE 沒有 CVSS v3 分數，或完全辨識不到函式庫版本，也列為 Not evaluated。\n\n修正：把列出的函式庫更新到細節中建議的版本（更新後該函式庫列出的漏洞全部修補）；加殼或混淆造成 Not evaluated 時，請提供未加殼、未混淆的 APK。\n\n限制：沒有版本資訊的 Java 函式庫依 Maven Central 反查，只採用 groupId 與套件名稱一致的結果，服務沒回應的套件不列入判定；網頁函式庫只認 Retire.js 規則涵蓋的函式庫與內嵌 package.json；Flutter 套件編譯後沒有版本，只能列出受影響版本；App 自己寫的 .so 與 NVD 查不到的產品不列入判定。\n\n參考: https://osv.dev/ | https://nvd.nist.gov/"
     },
     "AS-lab017": {
         "title": "Android Debug Mode 檢查",
-        "mas": "4.1.5.5.9",
-        "mast": "5.2.5",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-RESILIENCE-4|MSTG-CODE-2|MSTG-CODE-3|MSTG-CODE-4",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -171,7 +171,7 @@
     },
     "AS-lab018": {
         "title": "FileProvider 不當設定",
-        "mas": "4.1.2.3.7",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-STORAGE-1|MSTG-STORAGE-2",
         "owasp_mobile": "M2",
@@ -182,7 +182,7 @@
     "AS-lab019": {
         "title": "AndroidManifest PermissionGroup Checking",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -192,7 +192,7 @@
     "AS-lab020": {
         "title": "AndroidManifest 使用權限確認",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -202,7 +202,7 @@
     "AS-lab021": {
         "title": "網路存取檢查",
         "mas": "",
-        "mast": "5.2.3",
+        "mast": "",
         "real_mstg": "MSTG-NETWORK-2",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -211,18 +211,18 @@
     },
     "AS-lab022": {
         "title": "Base64 編碼敏感資料偵測",
-        "mas": "4.1.2.3.8",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M5",
         "level": "CRITICAL",
         "cve": "CWE-312",
-        "desc": "Base64 本身不是漏洞 — App 圖示、JWT token、二進位資源、SDK 內部資料全部都用 Base64 編碼。本檢查只報「解碼後內容符合真實風險 pattern」的 Base64:\n\n嚴重度:\n- CRITICAL: 解碼後是 cleartext http:// URL (資料外傳 / MITM 風險)\n- CRITICAL: 解碼後符合已知 secret pattern (AWS Access Key / Google API Key / JWT Token)\n- WARNING: 解碼後含敏感關鍵字 (password / api_key / secret / token / credential / bearer / authorization)\n- (靜默忽略): 隨機二進位、一般文字、無風險內容\n\n概念上是 lab_074 (明文 hardcoded secret) 的 Base64 編碼對應版本。兩者形成雙層偵測: lab_074 抓直白的明文,lab_022 抓開發者以為『Base64 編一下就藏起來』的 security through obscurity 寫法。\n\n偵測機制:\n1. 掃描 App 自身 method 內每個 const-string\n2. 形狀檢查: 符合 Base64 字元集、長度 8~4096\n3. base64.b64decode 解碼\n4. UTF-8 decode (跳過二進位)\n5. Pattern 比對: http:// 開頭 / secret regex / 敏感關鍵字\n\n已知限制: 無法偵測跨多個 const-string 拼接的 Base64 或動態建構的字串。JWT header ({\"alg\":...) 已明確排除為良性內容。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+        "desc": "Base64 本身不是漏洞 — App 圖示、JWT token、二進位資源、SDK 內部資料全部都用 Base64 編碼。本檢查只報「解碼後內容符合真實風險 pattern」的 Base64:\n\n嚴重度:\n- CRITICAL: 解碼後是 cleartext http:// URL (資料外傳 / MITM 風險)\n- CRITICAL: 解碼後符合已知 secret pattern (AWS Access Key / Google API Key / JWT Token)\n- WARNING: 解碼後含敏感關鍵字 (password / api_key / secret / token / credential / bearer / authorization)\n- (靜默忽略): 隨機二進位、一般文字、無風險內容\n\n概念上是 lab_074 (明文 hardcoded secret) 的 Base64 編碼對應版本。兩者形成雙層偵測: lab_074 抓直白的明文,lab_022 抓開發者以為『Base64 編一下就藏起來』的 security through obscurity 寫法。\n\n偵測機制:\n1. 掃描 App 自身 method 內每個 const-string\n2. 形狀檢查: 符合 Base64 字元集、長度 8~4096\n3. base64.b64decode 解碼\n4. UTF-8 decode (跳過二進位)\n5. Pattern 比對: http:// 開頭 / secret regex / 敏感關鍵字\n\n已知限制: 無法偵測跨多個 const-string 拼接的 Base64 或動態建構的字串。JWT header ({\"alg\":...) 已明確排除為良性內容。\n\n參考:"
     },
     "AS-lab023": {
         "title": "WebView addJavascriptInterface RCE 漏洞檢查",
-        "mas": "4.1.5.1.2",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-5|MSTG-PLATFORM-8",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -231,8 +231,8 @@
     },
     "AS-lab024": {
         "title": "金鑰保護檢查",
-        "mas": "4.1.2.3.7|4.1.2.3.8",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-11|MSTG-CRYPTO-1|MSTG-CRYPTO-2|MSTG-CRYPTO-3|MSTG-AUTH-4",
         "owasp_mobile": "M2, M5",
         "level": "CRITICAL",
@@ -252,27 +252,27 @@
     "AS-lab026": {
         "title": "檢查是否獲取 package 簽名",
         "mas": "",
-        "mast": "5.2.5",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-12",
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。\n\n本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少簽章完整性檢查。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
+        "desc": "App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。\n\n本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少簽章完整性檢查。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: | https://developer.android.com/reference/android/content/pm/SigningInfo"
     },
     "AS-lab027": {
         "title": "防止螢幕擷取的設定",
-        "mas": "4.1.2.3.9",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-3",
         "owasp_mobile": "M6",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。\n\n本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。\n\n限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+        "desc": "App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。\n\n本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。\n\n限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。\n\n參考: | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime指令檢查",
-        "mas": "4.1.5.1.1",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M10",
         "level": "CRITICAL",
@@ -281,8 +281,8 @@
     },
     "AS-lab029": {
         "title": "SSL 實作檢查 (在自定義的classes檢驗 Host Name)",
-        "mas": "4.1.4.2.3|4.1.5.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-3",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -291,8 +291,8 @@
     },
     "AS-lab030": {
         "title": "SSL 實作檢查 (辨識Host Name)",
-        "mas": "4.1.4.2.3|4.1.5.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-3",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -301,8 +301,8 @@
     },
     "AS-lab031": {
         "title": "SSL實作檢查 (不安全的 component)",
-        "mas": "4.1.5.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-3|MSTG-ARCH-4|MSTG-NETWORK-1|MSTG-NETWORK-2",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -311,8 +311,8 @@
     },
     "AS-lab032": {
         "title": "SSL實作檢查(HttpHost)",
-        "mas": "4.1.2.4.1",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -321,8 +321,8 @@
     },
     "AS-lab033": {
         "title": "SSL 實作檢查(WebViewClient for WebView)",
-        "mas": "4.2.2.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-5",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -331,8 +331,8 @@
     },
     "AS-lab034": {
         "title": "WebView 安全配置檢查",
-        "mas": "4.1.5.4.2",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-2|MSTG-PLATFORM-5|MSTG-PLATFORM-8",
         "owasp_mobile": "M7",
         "level": "CRITICAL",
@@ -341,7 +341,7 @@
     },
     "AS-lab035": {
         "title": "Certificate Pinning 憑證固定缺失檢測",
-        "mas": "4.1.4.2.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-NETWORK-4",
         "owasp_mobile": "M3",
@@ -351,8 +351,8 @@
     },
     "AS-lab036": {
         "title": "Intent Redirection 意圖重定向漏洞偵測",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.2",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-1|MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -361,8 +361,8 @@
     },
     "AS-lab037": {
         "title": "APP sandbox權限檢查",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-2|MSTG-STORAGE-8",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
@@ -372,7 +372,7 @@
     "AS-lab038": {
         "title": "原生函式庫載入程式碼檢查",
         "mas": "",
-        "mast": "5.2.5",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M10",
         "level": "NOTICE",
@@ -381,38 +381,38 @@
     },
     "AS-lab039": {
         "title": "資料分享聲明檢查",
-        "mas": "4.1.2.5.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2|MASVS-PRIVACY-3",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 自動把敏感資料交給裝置上其他 App，卻沒有告知或取得同意，使用者不知道資料被誰拿走。\n\n判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），且確定是敏感資料（extra 或欄位名稱含密碼、帳號、電話、定位、通訊錄等，或讀取了定位、通訊錄、裝置 ID 等 API），往上追呼叫路徑也沒經過同意對話框或分享開關，即不符合。開啟畫面、分享選單、拍照等使用者看得到的操作，送給系統的固定廣播（媒體掃描等），以及程式內比對呼叫者簽章的 provider 都不算。看不出是否為敏感資料、接收者不明、程式碼看不到或開關名稱看不出來的管道列為 Not evaluated，細節會列出原因。\n\n修正：不需要分享就設 android:exported=\"false\"、用 setPackage() 指定接收的 App，或改用 signature 等級的權限；需要分享就在分享前先取得使用者同意。\n\n限制：敏感資料只看名稱與 API，不追蹤資料流；分享開關只認名稱含 share、consent、privacy 等字的設定；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
+        "desc": "App 自動把敏感資料交給裝置上其他 App，卻沒有告知或取得同意，使用者不知道資料被誰拿走。\n\n判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），且確定是敏感資料（extra 或欄位名稱含密碼、帳號、電話、定位、通訊錄等，或讀取了定位、通訊錄、裝置 ID 等 API），往上追呼叫路徑也沒經過同意對話框或分享開關，即不符合。開啟畫面、分享選單、拍照等使用者看得到的操作，送給系統的固定廣播（媒體掃描等），以及程式內比對呼叫者簽章的 provider 都不算。看不出是否為敏感資料、接收者不明、程式碼看不到或開關名稱看不出來的管道列為 Not evaluated，細節會列出原因。\n\n修正：不需要分享就設 android:exported=\"false\"、用 setPackage() 指定接收的 App，或改用 signature 等級的權限；需要分享就在分享前先取得使用者同意。\n\n限制：敏感資料只看名稱與 API，不追蹤資料流；分享開關只認名稱含 share、consent、privacy 等字的設定；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。\n\n參考: | https://developer.android.com/training/sharing/send"
     },
     "AS-lab040": {
         "title": "拒絕資料分享檢查",
-        "mas": "4.1.2.5.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2|MASVS-PRIVACY-4",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 自動把敏感資料分享給其他 App，使用者卻無法拒絕。\n\n判定：AS-lab039 找到的自動分享管道（確定是敏感資料）中，呼叫路徑上沒有讀取分享開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合；只有同意對話框、沒有可事後關閉的開關，使用者同意後無法撤回，也不符合。開關的值傳到其他地方才判斷、開關名稱看不出來，或看不出是否為敏感資料的，列為 Not evaluated。分享選單可取消，不算。\n\n修正：在設定頁提供「允許分享資料」開關，分享前先讀取開關，關閉時不分享。\n\n限制：分享開關只認名稱含 share、consent、privacy 等字的設定；不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
+        "desc": "App 自動把敏感資料分享給其他 App，使用者卻無法拒絕。\n\n判定：AS-lab039 找到的自動分享管道（確定是敏感資料）中，呼叫路徑上沒有讀取分享開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合；只有同意對話框、沒有可事後關閉的開關，使用者同意後無法撤回，也不符合。開關的值傳到其他地方才判斷、開關名稱看不出來，或看不出是否為敏感資料的，列為 Not evaluated。分享選單可取消，不算。\n\n修正：在設定頁提供「允許分享資料」開關，分享前先讀取開關，關閉時不分享。\n\n限制：分享開關只認名稱含 share、consent、privacy 等字的設定；不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。\n\n參考: | https://developer.android.com/training/sharing/send"
     },
     "AS-lab041": {
         "title": "發布說明（資料安全性聲明）檢查",
-        "mas": "4.1.1.1.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-1|MASVS-PRIVACY-1",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 或其使用的 SDK 會取得敏感資料，但 Google Play「資料安全性」沒有聲明，使用者下載前不知道。\n\n判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面、相機可能只用來掃碼、SDK 已在 Manifest 關閉收集，或有 INTERNET 權限但 App 程式碼看不到網路請求的，列為 Not evaluated。\n\n修正：資料會傳出就在 Google Play Console「資料安全性」補聲明該類別；不再使用就移除權限、相關程式碼或 SDK。\n\n限制：只比對資料安全性的資料類別，權限用途說明及未上架 App 的調查表需人工確認；引用到相關 API 就算讀取；沒有追蹤資料流，App 有發網路請求就推定資料會傳出；SDK 只認內建清單。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
+        "desc": "App 或其使用的 SDK 會取得敏感資料，但 Google Play「資料安全性」沒有聲明，使用者下載前不知道。\n\n判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面、相機可能只用來掃碼、SDK 已在 Manifest 關閉收集，或有 INTERNET 權限但 App 程式碼看不到網路請求的，列為 Not evaluated。\n\n修正：資料會傳出就在 Google Play Console「資料安全性」補聲明該類別；不再使用就移除權限、相關程式碼或 SDK。\n\n限制：只比對資料安全性的資料類別，權限用途說明及未上架 App 的調查表需人工確認；引用到相關 API 就算讀取；沒有追蹤資料流，App 有發網路請求就推定資料會傳出；SDK 只認內建清單。\n\n參考: | https://support.google.com/googleplay/android-developer/answer/10787469"
     },
     "AS-lab042": {
         "title": "加殼/動態載入程式碼偵測",
         "mas": "",
-        "mast": "5.2.5",
+        "mast": "",
         "real_mstg": "MASVS-RESILIENCE-2|MSTG-ARCH-2",
         "owasp_mobile": "M7",
         "level": "WARNING",
@@ -421,8 +421,8 @@
     },
     "AS-lab043": {
         "title": "外部空間儲存",
-        "mas": "4.1.2.3.7",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1|MSTG-STORAGE-5|MSTG-STORAGE-6|MSTG-STORAGE-10",
         "owasp_mobile": "M2",
         "level": "WARNING",
@@ -431,8 +431,8 @@
     },
     "AS-lab044": {
         "title": "Dirty Stream 路徑穿越攻擊漏洞",
-        "mas": "4.1.5.1.2",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-CODE-4|MSTG-PLATFORM-2",
         "owasp_mobile": "M7",
         "level": "CRITICAL",
@@ -441,8 +441,8 @@
     },
     "AS-lab045": {
         "title": "AndroidManifest ProtectionLevel為 dangerous 的權限檢查",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
@@ -451,8 +451,8 @@
     },
     "AS-lab046": {
         "title": "AndroidManifest Normal ProtectionLevel of Permission Checking",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M2",
         "level": "WARNING",
@@ -461,7 +461,7 @@
     },
     "AS-lab047": {
         "title": "AndroidManifest Exported Lost Prefix 檢查",
-        "mas": "4.1.2.5.3|4.1.5.1.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-ARCH-5|MSTG-PLATFORM-4",
         "owasp_mobile": "M2",
@@ -471,8 +471,8 @@
     },
     "AS-lab048": {
         "title": "AndroidManifest Exported Components 檢查",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.2",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-3|MSTG-AUTH-9|MSTG-PLATFORM-4",
         "owasp_mobile": "M2",
         "level": "WARNING",
@@ -481,8 +481,8 @@
     },
     "AS-lab049": {
         "title": "AndroidManifest ContentProvider Exported 檢查",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-AUTH-9|MSTG-PLATFORM-4",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -492,7 +492,7 @@
     "AS-lab050": {
         "title": "AndroidManifest \\\"intent-filter\\\" 設定檢查",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-2",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -502,7 +502,7 @@
     "AS-lab051": {
         "title": "Implicit Service Checking",
         "mas": "",
-        "mast": "5.2.7",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -511,8 +511,8 @@
     },
     "AS-lab052": {
         "title": "Android SQLite 資料庫漏洞檢查",
-        "mas": "4.1.5.1.1",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -521,8 +521,8 @@
     },
     "AS-lab053": {
         "title": "Android SQLite 資料庫加密 (SQLCipher)",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "M5",
         "level": "NOTICE",
@@ -531,8 +531,8 @@
     },
     "AS-lab054": {
         "title": "Android SQLite 資料庫加密 (SQLite Encryption Extension (SEE))",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "M5",
         "level": "NOTICE",
@@ -542,7 +542,7 @@
     "AS-lab055": {
         "title": "金鑰用來加密 Android SQLite 資料庫",
         "mas": "",
-        "mast": "5.2.7",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -551,18 +551,18 @@
     },
     "AS-lab056": {
         "title": "Root Detection 實作檢查",
-        "mas": "4.1.5.5.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-1",
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
+        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考:"
     },
     "AS-lab057": {
         "title": "讀取裝置/用戶敏感識別碼 (IMEI / IMSI / 門號)",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "WARNING",
@@ -572,7 +572,7 @@
     "AS-lab058": {
         "title": "讀取 Settings.Secure.ANDROID_ID",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "WARNING",
@@ -591,18 +591,18 @@
     },
     "AS-lab060": {
         "title": "弱對稱/非對稱加密演算法檢查",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-CRYPTO-1",
         "owasp_mobile": "M5",
         "level": "CRITICAL",
         "cve": "CWE-327",
-        "desc": "解析 App 自身程式碼中 Cipher.getInstance(transformation) 的字串參數,以完整 transformation (algorithm/mode/padding) 分級,而非只看演算法名稱。\n\n嚴重度:\n- CRITICAL: ECB mode (任何演算法都受影響 — 相同明文 block 產生相同密文,洩漏結構) / DES (56-bit key,可暴力破解) / RC4 (keystream 有偏差) / RC2 / Blowfish。\n- WARNING: CBC mode (語意安全但需不可預測的 IV — IV 來源驗證為後續工作) / 3DES (DESede,已被 NIST 棄用)。\n- INFO: GCM / CCM / ChaCha20-Poly1305 等 authenticated encryption (業界推薦)。\n- UNKNOWN: transformation 為動態變數,無法靜態分類。\n\n注意: 雜湊函式 (MessageDigest) 不是加密 (沒有 key、不可逆),已獨立為 lab_079 處理。\n\n本次未涵蓋 (留待後續):\n- Hardcoded IV 偵測 (IvParameterSpec const-byte 來源追蹤)\n- Key size 強度檢查 (RSA < 2048、AES < 128)\n- PBKDF2 iteration count 檢查\n- KeyGenParameterSpec.Builder 配置稽核\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/ | https://cwe.mitre.org/data/definitions/327.html"
+        "desc": "解析 App 自身程式碼中 Cipher.getInstance(transformation) 的字串參數,以完整 transformation (algorithm/mode/padding) 分級,而非只看演算法名稱。\n\n嚴重度:\n- CRITICAL: ECB mode (任何演算法都受影響 — 相同明文 block 產生相同密文,洩漏結構) / DES (56-bit key,可暴力破解) / RC4 (keystream 有偏差) / RC2 / Blowfish。\n- WARNING: CBC mode (語意安全但需不可預測的 IV — IV 來源驗證為後續工作) / 3DES (DESede,已被 NIST 棄用)。\n- INFO: GCM / CCM / ChaCha20-Poly1305 等 authenticated encryption (業界推薦)。\n- UNKNOWN: transformation 為動態變數,無法靜態分類。\n\n注意: 雜湊函式 (MessageDigest) 不是加密 (沒有 key、不可逆),已獨立為 lab_079 處理。\n\n本次未涵蓋 (留待後續):\n- Hardcoded IV 偵測 (IvParameterSpec const-byte 來源追蹤)\n- Key size 強度檢查 (RSA < 2048、AES < 128)\n- PBKDF2 iteration count 檢查\n- KeyGenParameterSpec.Builder 配置稽核\n\n參考: | https://cwe.mitre.org/data/definitions/327.html"
     },
     "AS-lab061": {
         "title": "AndroidManifest sharedUserId 檢查",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -611,7 +611,7 @@
     },
     "AS-lab063": {
         "title": "不安全的檔案刪除檢查",
-        "mas": "4.1.2.3.5",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M9",
@@ -631,8 +631,8 @@
     },
     "AS-lab065": {
         "title": "WebView 進階配置檢查",
-        "mas": "4.1.2.3.7|4.1.2.5.3",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-2|MSTG-PLATFORM-6|MSTG-PLATFORM-7",
         "owasp_mobile": "M3",
         "level": "WARNING",
@@ -642,7 +642,7 @@
     "AS-lab066": {
         "title": "AndroidManifest Adb Backup 檢查",
         "mas": "",
-        "mast": "5.2.7",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M2",
         "level": "NOTICE",
@@ -651,8 +651,8 @@
     },
     "AS-lab067": {
         "title": "SSL證書的正確性檢查",
-        "mas": "4.1.4.2.2|4.1.4.2.3",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-NETWORK-1|MSTG-NETWORK-2|MSTG-NETWORK-3|MSTG-NETWORK-4",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -671,7 +671,7 @@
     },
     "AS-lab069": {
         "title": "Overlay Attack (Tapjacking) 覆蓋攻擊防護檢測",
-        "mas": "4.1.5.1.3",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-PLATFORM-9",
         "owasp_mobile": "M1",
@@ -681,7 +681,7 @@
     },
     "AS-lab070": {
         "title": "使用者拒絕蒐集敏感性資料之權利 — Runtime Permission 檢測",
-        "mas": "4.1.2.1.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PRIVACY-4",
         "owasp_mobile": "M8",
@@ -691,7 +691,7 @@
     },
     "AS-lab071": {
         "title": "偵測 App 程式碼中的除錯日誌呼叫 (Log.d / Log.v)",
-        "mas": "4.1.2.3.16",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
@@ -701,67 +701,67 @@
     },
     "AS-lab072": {
         "title": "鍵盤快取保護 — 敏感輸入欄位未設定 inputType 保護",
-        "mas": "4.1.2.3.11",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
         "level": "WARNING",
         "cve": "",
-        "desc": "Android 軟體鍵盤（IME）預設會執行自動修正、預測文字及使用者字典學習功能，這些功能會將使用者輸入的文字存入鍵盤 App 的私有資料庫。若使用者安裝了惡意或存在漏洞的第三方鍵盤，所有快取的輸入內容（包含密碼、PIN、CVV 等）都可能因此洩漏。\n\n正確的防護方式是在敏感 EditText 欄位設定 android:inputType，使用 textPassword、numberPassword 或 textNoSuggestions 等可停用快取的值。\n\n本檢查項目掃描所有 res/layout/ XML 檔案，找出 hint 或 id 暗示為敏感輸入的 EditText 欄位，並驗證是否設定了適當的 inputType。\n\n參考：https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0006/"
+        "desc": "Android 軟體鍵盤（IME）預設會執行自動修正、預測文字及使用者字典學習功能，這些功能會將使用者輸入的文字存入鍵盤 App 的私有資料庫。若使用者安裝了惡意或存在漏洞的第三方鍵盤，所有快取的輸入內容（包含密碼、PIN、CVV 等）都可能因此洩漏。\n\n正確的防護方式是在敏感 EditText 欄位設定 android:inputType，使用 textPassword、numberPassword 或 textNoSuggestions 等可停用快取的值。\n\n本檢查項目掃描所有 res/layout/ XML 檔案，找出 hint 或 id 暗示為敏感輸入的 EditText 欄位，並驗證是否設定了適當的 inputType。\n\n參考："
     },
     "AS-lab073": {
         "title": "備份資料敏感性資料保護 — allowBackup 與敏感儲存 API 偵測",
-        "mas": "4.1.2.3.14",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
         "level": "NOTICE",
         "cve": "",
-        "desc": "當 android:allowBackup 為 true（或未設定，API < 31 預設為 true），Android 備份機制可能將 App 的 SharedPreferences、SQLite 資料庫及內部檔案一併備份。若程式碼中使用了這些敏感儲存 API，且未設定備份排除規則（fullBackupContent / dataExtractionRules），任何能透過 USB 或實體接觸裝置的人都可利用 ADB backup 指令取出這些資料。\n\n本檢查執行兩項驗證：\n1. AndroidManifest.xml — 檢查 allowBackup、fullBackupContent（API 23-30）及 dataExtractionRules（API 31+）設定。\n2. Smali 掃描 — 偵測 App 自身程式碼中的敏感儲存 API 呼叫（SharedPreferences、SQLite、File I/O、External Storage）。\n\n當 allowBackup 存在風險，且偵測到敏感儲存 API 呼叫或未設定備份排除規則時，才會回報 Finding。\n\n參考：https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/ | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0262/"
+        "desc": "當 android:allowBackup 為 true（或未設定，API < 31 預設為 true），Android 備份機制可能將 App 的 SharedPreferences、SQLite 資料庫及內部檔案一併備份。若程式碼中使用了這些敏感儲存 API，且未設定備份排除規則（fullBackupContent / dataExtractionRules），任何能透過 USB 或實體接觸裝置的人都可利用 ADB backup 指令取出這些資料。\n\n本檢查執行兩項驗證：\n1. AndroidManifest.xml — 檢查 allowBackup、fullBackupContent（API 23-30）及 dataExtractionRules（API 31+）設定。\n2. Smali 掃描 — 偵測 App 自身程式碼中的敏感儲存 API 呼叫（SharedPreferences、SQLite、File I/O、External Storage）。\n\n當 allowBackup 存在風險，且偵測到敏感儲存 API 呼叫或未設定備份排除規則時，才會回報 Finding。\n\n參考："
     },
     "AS-lab074": {
         "title": "程式碼中含有硬編碼敏感資料（API Key / 密碼 / Token）",
-        "mas": "4.1.2.3.8",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
         "cve": "",
-        "desc": "敏感資料（API Key、密碼、Token、憑證等）不應直接硬編碼在 App 的 bytecode 或 XML 資源檔中。本檢查涵蓋兩個來源：\n1. Smali bytecode — 掃描 App 自身 method 的 const-string 指令，以關鍵字比對及正規表示式（Google API Key、AWS Access Key、JWT Token）進行過濾；純 pattern 比對需額外通過 Shannon entropy >= 4.5。\n2. res/values XML — 比對 <string> 元素的 name 屬性或值是否符合敏感關鍵字或 pattern。\n\n已排除第三方 library 程式碼。關鍵字命中（如 name='api_key'）直接 flag；純 pattern 命中需 entropy >= 4.5 以降低誤報率。\n\n參考：https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+        "desc": "敏感資料（API Key、密碼、Token、憑證等）不應直接硬編碼在 App 的 bytecode 或 XML 資源檔中。本檢查涵蓋兩個來源：\n1. Smali bytecode — 掃描 App 自身 method 的 const-string 指令，以關鍵字比對及正規表示式（Google API Key、AWS Access Key、JWT Token）進行過濾；純 pattern 比對需額外通過 Shannon entropy >= 4.5。\n2. res/values XML — 比對 <string> 元素的 name 屬性或值是否符合敏感關鍵字或 pattern。\n\n已排除第三方 library 程式碼。關鍵字命中（如 name='api_key'）直接 flag；純 pattern 命中需 entropy >= 4.5 以降低誤報率。\n\n參考："
     },
     "AS-lab075": {
         "title": "敏感性資料應儲存於系統憑證儲存設施（AndroidKeyStore）",
-        "mas": "4.1.2.3.10",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-1",
         "owasp_mobile": "M2",
         "level": "NOTICE",
         "cve": "CWE-312|CWE-321",
-        "desc": "敏感的加密金鑰應儲存於 Android 系統憑證儲存設施（AndroidKeyStore），而非使用安全性較低的 KeyStore provider（如 BKS、JKS、PKCS12）。本檢查掃描 App 自身程式碼的 smali bytecode，找出 KeyStore.getInstance() 呼叫並分類其 provider 參數：\n- PASS：僅使用 AndroidKeyStore。\n- WARNING：未偵測到任何 KeyStore API（建議人工確認），或 AndroidKeyStore 與不安全 provider 混用。\n- CRITICAL：僅使用不安全的 provider，未使用 AndroidKeyStore。\n\n靜態分析限制聲明：\n1. 本檢測僅確認 KeyStore.getInstance() 參數，無法驗證金鑰保護參數（如 KeyGenParameterSpec）是否正確設定。\n2. 第三方加密函式庫（如 Tink、EncryptedSharedPreferences）可能已內部使用 AndroidKeyStore，但從 smali 層不易辨識，可能產生誤判。\n3. 建議搭配動態分析確認金鑰實際儲存位置及保護強度。\n\n參考：https://developer.android.com/training/articles/keystore | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0051/"
+        "desc": "敏感的加密金鑰應儲存於 Android 系統憑證儲存設施（AndroidKeyStore），而非使用安全性較低的 KeyStore provider（如 BKS、JKS、PKCS12）。本檢查掃描 App 自身程式碼的 smali bytecode，找出 KeyStore.getInstance() 呼叫並分類其 provider 參數：\n- PASS：僅使用 AndroidKeyStore。\n- WARNING：未偵測到任何 KeyStore API（建議人工確認），或 AndroidKeyStore 與不安全 provider 混用。\n- CRITICAL：僅使用不安全的 provider，未使用 AndroidKeyStore。\n\n靜態分析限制聲明：\n1. 本檢測僅確認 KeyStore.getInstance() 參數，無法驗證金鑰保護參數（如 KeyGenParameterSpec）是否正確設定。\n2. 第三方加密函式庫（如 Tink、EncryptedSharedPreferences）可能已內部使用 AndroidKeyStore，但從 smali 層不易辨識，可能產生誤判。\n3. 建議搭配動態分析確認金鑰實際儲存位置及保護強度。\n\n參考：https://developer.android.com/training/articles/keystore"
     },
     "AS-lab076": {
         "title": "Deep Link 安全檢查 — scheme / autoVerify / host",
-        "mas": "4.1.2.3.12",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-1",
         "owasp_mobile": "M8",
         "level": "WARNING",
         "cve": "CWE-939",
-        "desc": "風險：Deep Link 是 App 對外的入口，外部 App、瀏覽器或惡意連結都能帶著 URI 參數開啟它。設定不當時，其他 App 可攔截原本要交給本 App 的連結（例如登入、付款連結裡的參數），或連結在傳輸中被竄改。\n\n判定：只看 AndroidManifest。對外開放（沒有設 exported=\"false\"）的 activity / activity-alias，intent-filter 含 action.VIEW + category.BROWSABLE + scheme，符合任一項即不符合：(1) scheme 是 http，明文傳輸可被竄改（HIGH）；(2) http / https 沒設 android:autoVerify=\"true\"，其他 App 可宣告相同 host 攔截（MEDIUM）；(3) 自訂 scheme，無法做網域驗證，任何 App 都能註冊相同 scheme 攔截，有沒有 host 都一樣（MEDIUM）。mailto、tel、file、content、market 等多個 App 共用的系統 scheme 不算。\n\n修正：敏感流程改用 https App Links 並設 android:autoVerify=\"true\"，在網站放 assetlinks.json；不需要對外的 Activity 設 android:exported=\"false\"；不要在 Deep Link 參數放 token、密碼等敏感資料。\n\n限制：不判斷連結是否帶敏感資料、接收端有沒有驗證參數，需動態測試複驗；看不到 assetlinks.json 是否正確部署；參數流入 WebView、SQL 等危險操作由 AS-lab077 檢查。\n\n參考: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks"
+        "desc": "風險：Deep Link 是 App 對外的入口，外部 App、瀏覽器或惡意連結都能帶著 URI 參數開啟它。設定不當時，其他 App 可攔截原本要交給本 App 的連結（例如登入、付款連結裡的參數），或連結在傳輸中被竄改。\n\n判定：只看 AndroidManifest。對外開放（沒有設 exported=\"false\"）的 activity / activity-alias，intent-filter 含 action.VIEW + category.BROWSABLE + scheme，符合任一項即不符合：(1) scheme 是 http，明文傳輸可被竄改（HIGH）；(2) http / https 沒設 android:autoVerify=\"true\"，其他 App 可宣告相同 host 攔截（MEDIUM）；(3) 自訂 scheme，無法做網域驗證，任何 App 都能註冊相同 scheme 攔截，有沒有 host 都一樣（MEDIUM）。mailto、tel、file、content、market 等多個 App 共用的系統 scheme 不算。\n\n修正：敏感流程改用 https App Links 並設 android:autoVerify=\"true\"，在網站放 assetlinks.json；不需要對外的 Activity 設 android:exported=\"false\"；不要在 Deep Link 參數放 token、密碼等敏感資料。\n\n限制：不判斷連結是否帶敏感資料、接收端有沒有驗證參數，需動態測試複驗；看不到 assetlinks.json 是否正確部署；參數流入 WebView、SQL 等危險操作由 AS-lab077 檢查。\n\n參考: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://developer.android.com/training/app-links/verify-android-applinks"
     },
     "AS-lab077": {
         "title": "Deep Link Injection — sink method 檢查",
-        "mas": "4.1.5.4.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-3",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
         "cve": "CWE-20|CWE-79|CWE-89|CWE-22|CWE-78",
-        "desc": "Deep Link 帶進來的 URI 參數若未經驗證即流向敏感操作，攻擊者可透過構造惡意連結觸發各種 injection。本檢查針對 lab_076 找出的 Deep Link Activity，掃描其 method 中是否同時出現 source 與 sink。\n\n偵測的 source（取 Deep Link 參數）：\n- Intent.getData()\n- Uri.getQueryParameter() / getQueryParameterNames()\n- Uri.getPath() / getPathSegments() / getLastPathSegment()\n- Uri.getFragment() / getEncodedQuery()\n\n偵測的 sink 與對應風險：\n- WebView.loadUrl() / loadDataWithBaseURL()  → Open Redirect / XSS（若搭配 addJavascriptInterface 可達 RCE）\n- Intent.parseUri()                          → Intent Redirection（CWE-927，可繞過 exported=false 啟動私有元件）\n- new File() / FileInputStream / FileOutputStream → 路徑穿越（CWE-22，可讀寫任意路徑）\n- SQLiteDatabase.execSQL() / rawQuery()     → SQL Injection（CWE-89）\n- Runtime.exec()                             → 命令注入（CWE-78）\n\n限制：\n1. 啟發式偵測 — 只檢查同一 method 內是否同時出現 source 與 sink，並未做 taint 追蹤。source 和 sink 之間可能無實際資料流，會產生誤報。\n2. 跨 method 漏報 — 若 source 與 sink 分散在不同 method（例如透過成員變數傳遞），本檢查不會發現。\n3. 建議搭配人工 code review 或動態 fuzzing 確認真實風險。\n\n參考：\n- https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw\n- https://mas.owasp.org/MASTG/tests/android/MASVS-PLATFORM/MASTG-TEST-0029/\n- https://owasp.org/www-community/attacks/Mobile_Code_Injection"
+        "desc": "Deep Link 帶進來的 URI 參數若未經驗證即流向敏感操作，攻擊者可透過構造惡意連結觸發各種 injection。本檢查針對 lab_076 找出的 Deep Link Activity，掃描其 method 中是否同時出現 source 與 sink。\n\n偵測的 source（取 Deep Link 參數）：\n- Intent.getData()\n- Uri.getQueryParameter() / getQueryParameterNames()\n- Uri.getPath() / getPathSegments() / getLastPathSegment()\n- Uri.getFragment() / getEncodedQuery()\n\n偵測的 sink 與對應風險：\n- WebView.loadUrl() / loadDataWithBaseURL()  → Open Redirect / XSS（若搭配 addJavascriptInterface 可達 RCE）\n- Intent.parseUri()                          → Intent Redirection（CWE-927，可繞過 exported=false 啟動私有元件）\n- new File() / FileInputStream / FileOutputStream → 路徑穿越（CWE-22，可讀寫任意路徑）\n- SQLiteDatabase.execSQL() / rawQuery()     → SQL Injection（CWE-89）\n- Runtime.exec()                             → 命令注入（CWE-78）\n\n限制：\n1. 啟發式偵測 — 只檢查同一 method 內是否同時出現 source 與 sink，並未做 taint 追蹤。source 和 sink 之間可能無實際資料流，會產生誤報。\n2. 跨 method 漏報 — 若 source 與 sink 分散在不同 method（例如透過成員變數傳遞），本檢查不會發現。\n3. 建議搭配人工 code review 或動態 fuzzing 確認真實風險。\n\n參考：\n- https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw\n-\n- https://owasp.org/www-community/attacks/Mobile_Code_Injection"
     },
     "AS-lab078": {
         "title": "ZIP 路徑穿越 (ZipSlip) 漏洞檢查",
-        "mas": "4.1.5.1.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-CODE-4",
         "owasp_mobile": "M7",
@@ -771,67 +771,67 @@
     },
     "AS-lab079": {
         "title": "弱雜湊函式檢查 (MessageDigest)",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-CRYPTO-1|MSTG-CRYPTO-4",
         "owasp_mobile": "M5",
         "level": "CRITICAL",
         "cve": "CWE-327|CWE-328",
-        "desc": "解析 App 自身程式碼中 MessageDigest.getInstance(algorithm) 的字串參數,辨識已破解或 collision-prone 的雜湊函式。本檢測自 lab_060 拆出獨立成項,因為雜湊不是加密 — 沒有 key、不可逆 (input -> 固定長度指紋),屬於完全不同的密碼學原語,依正確密碼學分類應獨立處理。\n\n嚴重度:\n- CRITICAL: MD5 / MD2 / MD4 / SHA-1 — 全數已被破解或具實際的 chosen-prefix collision 攻擊 (SHA-1 的 SHAttered、MD5 的 HashClash)。\n- INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 系列 — NIST 推薦的安全雜湊。\n- UNKNOWN: 演算法為動態變數,無法靜態分類。\n\n注意: 程式碼中出現弱雜湊不一定代表實際漏洞 — MD5 用作 cache key 或非安全用途的 checksum 並不可利用。用途分類 (password hash vs file checksum vs cache key) 屬後續工作。\n\n本次未涵蓋 (留待後續):\n- 用途分類 (password storage / authentication / 非安全 checksum)\n- HMAC 演算法強度檢查 (Mac.getInstance pattern)\n- 迭代雜湊偵測 (PBKDF2 iteration count、salt 來源)\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/ | https://cwe.mitre.org/data/definitions/328.html | https://shattered.io/"
+        "desc": "解析 App 自身程式碼中 MessageDigest.getInstance(algorithm) 的字串參數,辨識已破解或 collision-prone 的雜湊函式。本檢測自 lab_060 拆出獨立成項,因為雜湊不是加密 — 沒有 key、不可逆 (input -> 固定長度指紋),屬於完全不同的密碼學原語,依正確密碼學分類應獨立處理。\n\n嚴重度:\n- CRITICAL: MD5 / MD2 / MD4 / SHA-1 — 全數已被破解或具實際的 chosen-prefix collision 攻擊 (SHA-1 的 SHAttered、MD5 的 HashClash)。\n- INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 系列 — NIST 推薦的安全雜湊。\n- UNKNOWN: 演算法為動態變數,無法靜態分類。\n\n注意: 程式碼中出現弱雜湊不一定代表實際漏洞 — MD5 用作 cache key 或非安全用途的 checksum 並不可利用。用途分類 (password hash vs file checksum vs cache key) 屬後續工作。\n\n本次未涵蓋 (留待後續):\n- 用途分類 (password storage / authentication / 非安全 checksum)\n- HMAC 演算法強度檢查 (Mac.getInstance pattern)\n- 迭代雜湊偵測 (PBKDF2 iteration count、salt 來源)\n\n參考: | https://cwe.mitre.org/data/definitions/328.html | https://shattered.io/"
     },
     "AS-lab080": {
         "title": "剪貼簿敏感資料外洩檢查",
-        "mas": "4.1.2.3.11",
-        "mast": "5.2.2",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-STORAGE-1|MSTG-STORAGE-10",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
         "cve": "CWE-200",
-        "desc": "Android 系統剪貼簿是全域的 — 任何已安裝的 App,以及部分輸入法 (IME),都能隨時讀取剪貼簿內容 (Android 10 以前無限制,之後限前景 App)。將密碼、PIN、卡號、token 等機密複製到剪貼簿,會曝露給其他 App 及監控剪貼簿的惡意程式。\n\n偵測策略 — same-method co-occurrence (低誤報):\n1. 在 App 自身 method 內找到剪貼簿寫入 API:\n   - ClipboardManager.setPrimaryClip(ClipData)  (現代)\n   - ClipboardManager.setText(CharSequence)     (deprecated)\n2. 掃描同一 method 內的 const-string (涵蓋 ClipData label 及任何字面欄位提示)。\n3. 依關鍵字分級:\n   - CRITICAL: 明確機密關鍵字 (password / passwd / pin / cvv / ssn / credit card / secret key / private key)\n   - WARNING: 可能敏感關鍵字 (token / account / auth / credential / otp / api key / session)\n   - (不報): 剪貼簿寫入但無敏感關鍵字 — 如複製訂單編號、分享連結等正常用途,主動抑制以避免噪音\n\n限制: 僅同 method 啟發式,無 taint 追蹤。若機密在其他 method 組裝後才複製會漏報;反之關鍵字只是提示,不保證被複製的值就是機密。建議對命中項目人工複查。\n\n修補建議: 避免將敏感資料複製到剪貼簿;若無法避免,Android 13+ 可在 ClipData 標記 EXTRA_IS_SENSITIVE,並在使用後清空剪貼簿。\n\n參考: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling | https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-1/"
+        "desc": "Android 系統剪貼簿是全域的 — 任何已安裝的 App,以及部分輸入法 (IME),都能隨時讀取剪貼簿內容 (Android 10 以前無限制,之後限前景 App)。將密碼、PIN、卡號、token 等機密複製到剪貼簿,會曝露給其他 App 及監控剪貼簿的惡意程式。\n\n偵測策略 — same-method co-occurrence (低誤報):\n1. 在 App 自身 method 內找到剪貼簿寫入 API:\n   - ClipboardManager.setPrimaryClip(ClipData)  (現代)\n   - ClipboardManager.setText(CharSequence)     (deprecated)\n2. 掃描同一 method 內的 const-string (涵蓋 ClipData label 及任何字面欄位提示)。\n3. 依關鍵字分級:\n   - CRITICAL: 明確機密關鍵字 (password / passwd / pin / cvv / ssn / credit card / secret key / private key)\n   - WARNING: 可能敏感關鍵字 (token / account / auth / credential / otp / api key / session)\n   - (不報): 剪貼簿寫入但無敏感關鍵字 — 如複製訂單編號、分享連結等正常用途,主動抑制以避免噪音\n\n限制: 僅同 method 啟發式,無 taint 追蹤。若機密在其他 method 組裝後才複製會漏報;反之關鍵字只是提示,不保證被複製的值就是機密。建議對命中項目人工複查。\n\n修補建議: 避免將敏感資料複製到剪貼簿;若無法避免,Android 13+ 可在 ClipData 標記 EXTRA_IS_SENSITIVE,並在使用後清空剪貼簿。\n\n參考: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling"
     },
     "AS-lab081": {
         "title": "使用者輸入驗證檢查 (型別 / 長度)",
-        "mas": "4.1.5.4.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-CODE-4",
         "owasp_mobile": "M4",
         "level": "WARNING",
         "cve": "CWE-20",
-        "desc": "未限制使用者輸入的型別與長度時，攻擊者可輸入預期外的字元或超長字串，觸發 SQL Injection、命令注入、路徑穿越等注入攻擊，或造成後端處理異常；密碼類欄位若無長度上限，超長輸入可能造成雜湊運算資源耗盡。\n\n本檢查解析 res/layout 及其限定詞目錄（layout-land、layout-v21 等）下的 layout XML，找出 EditText / AutoCompleteTextView 系列欄位，檢查 android:inputType（型別限制，所有欄位皆檢查）與 android:maxLength（長度限制，僅檢查敏感／密碼類欄位，因一般欄位如搜尋欄、備註欄不設長度上限屬正常用法）。\n\n報告僅列出 WARNING（敏感／密碼類欄位缺少型別或長度限制）；一般輸入欄位缺少型別限制屬低風險，仍會偵測並保留於檢測結果，但不列入報告。\n\n限制：僅檢查 layout XML 的宣告；以程式碼實作的驗證（InputFilter）與程式化建立的介面（Jetpack Compose、WebView 表單）皆掃不到，建議對命中項目人工複查。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
+        "desc": "未限制使用者輸入的型別與長度時，攻擊者可輸入預期外的字元或超長字串，觸發 SQL Injection、命令注入、路徑穿越等注入攻擊，或造成後端處理異常；密碼類欄位若無長度上限，超長輸入可能造成雜湊運算資源耗盡。\n\n本檢查解析 res/layout 及其限定詞目錄（layout-land、layout-v21 等）下的 layout XML，找出 EditText / AutoCompleteTextView 系列欄位，檢查 android:inputType（型別限制，所有欄位皆檢查）與 android:maxLength（長度限制，僅檢查敏感／密碼類欄位，因一般欄位如搜尋欄、備註欄不設長度上限屬正常用法）。\n\n報告僅列出 WARNING（敏感／密碼類欄位缺少型別或長度限制）；一般輸入欄位缺少型別限制屬低風險，仍會偵測並保留於檢測結果，但不列入報告。\n\n限制：僅檢查 layout XML 的宣告；以程式碼實作的驗證（InputFilter）與程式化建立的介面（Jetpack Compose、WebView 表單）皆掃不到，建議對命中項目人工複查。\n\n參考: | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
     },
     "AS-lab082": {
         "title": "模擬器偵測檢查",
-        "mas": "4.1.5.5.7",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-1",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。\n\n本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少模擬器偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+        "desc": "App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。\n\n本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少模擬器偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考:"
     },
     "AS-lab083": {
         "title": "USB 偵錯模式偵測檢查",
-        "mas": "4.1.5.5.8",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-2",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。\n\n本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 USB 偵錯偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+        "desc": "App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。\n\n本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 USB 偵錯偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。\n\n參考: | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
     },
     "AS-lab084": {
         "title": "程式碼混淆檢查",
-        "mas": "4.1.5.5.6",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-3",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。\n\n判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。\n\n修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。\n\n限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
+        "desc": "App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。\n\n判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。\n\n修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。\n\n限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。\n\n參考: | https://developer.android.com/build/shrink-code"
     },
     "AS-lab085": {
         "title": "交易資源使用聲明檢查",
-        "mas": "4.1.3.1.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
@@ -841,22 +841,22 @@
     },
     "AS-lab086": {
         "title": "敏感性資料儲存聲明檢查",
-        "mas": "4.1.2.3.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-1|MASVS-STORAGE-1|MASVS-PRIVACY-4",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 把敏感資料存在裝置上，卻沒有先告知並取得使用者同意。\n\n判定：App 把敏感資料寫進 SharedPreferences、DataStore、SQLite 或檔案（名稱含密碼、token、電話、帳號等，訊息、筆記、通訊錄、行事曆資料表，或資料來自定位、通訊錄、裝置 ID、密碼輸入框），且整個 App 找不到任何同意或告知機制，即不符合。沒有儲存敏感資料視為符合。有讀寫同意狀態、同意畫面或同意管理 SDK 的，因靜態無法確認同意在儲存之前、涵蓋所有存的資料，列為 Not evaluated，並列出 Google Play 資料安全性的比對結果；只有隱私權政策連結、文字或條款畫面，無法確認儲存前有取得同意，列為 Not evaluated；名稱像敏感資料但存的是數字、存的是使用者輸入的文字、加密後的資料、轉成 JSON 的物件，或寫檔、資料表的內容看不出用途，或看不到 App 程式碼的，也列為 Not evaluated。\n\n修正：第一次儲存敏感資料前顯示聲明並取得同意，記錄同意狀態，未同意不儲存。\n\n限制：不看聲明內容；商店說明文字與未上架 App 的調查表需人工確認；存的內容只認名稱、資料表名稱、輸入框文字、加密資料與 JSON 物件；SharedPreferences 只看 key 名稱。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+        "desc": "App 把敏感資料存在裝置上，卻沒有先告知並取得使用者同意。\n\n判定：App 把敏感資料寫進 SharedPreferences、DataStore、SQLite 或檔案（名稱含密碼、token、電話、帳號等，訊息、筆記、通訊錄、行事曆資料表，或資料來自定位、通訊錄、裝置 ID、密碼輸入框），且整個 App 找不到任何同意或告知機制，即不符合。沒有儲存敏感資料視為符合。有讀寫同意狀態、同意畫面或同意管理 SDK 的，因靜態無法確認同意在儲存之前、涵蓋所有存的資料，列為 Not evaluated，並列出 Google Play 資料安全性的比對結果；只有隱私權政策連結、文字或條款畫面，無法確認儲存前有取得同意，列為 Not evaluated；名稱像敏感資料但存的是數字、存的是使用者輸入的文字、加密後的資料、轉成 JSON 的物件，或寫檔、資料表的內容看不出用途，或看不到 App 程式碼的，也列為 Not evaluated。\n\n修正：第一次儲存敏感資料前顯示聲明並取得同意，記錄同意狀態，未同意不儲存。\n\n限制：不看聲明內容；商店說明文字與未上架 App 的調查表需人工確認；存的內容只認名稱、資料表名稱、輸入框文字、加密資料與 JSON 物件；SharedPreferences 只看 key 名稱。\n\n參考: | https://developer.android.com/training/data-storage"
     },
     "AS-lab087": {
         "title": "拒絕敏感性資料儲存檢查",
-        "mas": "4.1.2.3.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-1|MASVS-PRIVACY-4",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 儲存敏感資料，使用者卻無法拒絕。\n\n判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（標準規定未聲明的資料無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。\n\n修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。\n\n限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；基準(2) 拒絕後確實沒有儲存需動態檢測。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+        "desc": "App 儲存敏感資料，使用者卻無法拒絕。\n\n判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（標準規定未聲明的資料無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。\n\n修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。\n\n限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；基準(2) 拒絕後確實沒有儲存需動態檢測。\n\n參考: | https://developer.android.com/training/data-storage"
     }
 }

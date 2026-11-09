@@ -1,18 +1,18 @@
 {
     "AS-lab001": {
         "title": "SSL Connection / Cleartext HTTP Traffic Check",
-        "mas": "4.1.2.4.1",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-NETWORK-1|MSTG-NETWORK-1|MSTG-NETWORK-2",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
         "cve": "CWE-319",
-        "desc": "App must not transmit data over cleartext HTTP. This check uses a three-layer architecture:\n\n1. AndroidManifest layer — inspects android:usesCleartextTraffic on the <application> element and target SDK. Android 9 (API 28) and above default to false; explicit true is the riskiest config.\n2. Network Security Config layer — parses res/xml/<config>.xml referenced by android:networkSecurityConfig. Reads <base-config cleartextTrafficPermitted> and per-domain <domain-config> overrides.\n3. Smali bytecode source -> sink layer — within each app-owned method, pairs const-string http URLs (with namespace/framework URIs filtered out) against real network sinks (WebView.loadUrl / WebView.loadDataWithBaseURL / java.net.URL.openConnection / HttpURLConnection / OkHttpClient.newCall / Volley StringRequest). Co-located source+sink in the same method is flagged.\n\nSeverity:\n- CRITICAL: http URL flows to a network sink in the same method (real cleartext risk).\n- WARNING: http URLs found in app code but no co-located sink (potentially dead code, log strings, or cross-method usage).\n- INFO: AndroidManifest / NSC blocks cleartext but http URLs still present in code (already mitigated by OS, but should be cleaned up).\n\nLimitations: same-method heuristic only — no taint tracking. Cross-method data flow (URL passed through helper functions) may be missed. NSC parsing handles base-config + domain-config but not <pin-set> or trust anchors.\n\nRef: https://developer.android.com/training/articles/security-config | https://mas.owasp.org/MASVS/controls/MASVS-NETWORK-1/"
+        "desc": "App must not transmit data over cleartext HTTP. This check uses a three-layer architecture:\n\n1. AndroidManifest layer — inspects android:usesCleartextTraffic on the <application> element and target SDK. Android 9 (API 28) and above default to false; explicit true is the riskiest config.\n2. Network Security Config layer — parses res/xml/<config>.xml referenced by android:networkSecurityConfig. Reads <base-config cleartextTrafficPermitted> and per-domain <domain-config> overrides.\n3. Smali bytecode source -> sink layer — within each app-owned method, pairs const-string http URLs (with namespace/framework URIs filtered out) against real network sinks (WebView.loadUrl / WebView.loadDataWithBaseURL / java.net.URL.openConnection / HttpURLConnection / OkHttpClient.newCall / Volley StringRequest). Co-located source+sink in the same method is flagged.\n\nSeverity:\n- CRITICAL: http URL flows to a network sink in the same method (real cleartext risk).\n- WARNING: http URLs found in app code but no co-located sink (potentially dead code, log strings, or cross-method usage).\n- INFO: AndroidManifest / NSC blocks cleartext but http URLs still present in code (already mitigated by OS, but should be cleaned up).\n\nLimitations: same-method heuristic only — no taint tracking. Cross-method data flow (URL passed through helper functions) may be missed. NSC parsing handles base-config + domain-config but not <pin-set> or trust anchors.\n\nRef: https://developer.android.com/training/articles/security-config"
     },
     "AS-lab002": {
         "title": "Safety Related Methods Inspection",
         "mas": "",
-        "mast": "5.2.3",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-9|MSTG-ARCH-10|MSTG-CRYPTO-4",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -22,7 +22,7 @@
     "AS-lab003": {
         "title": "Safety Related Classes Inspection",
         "mas": "",
-        "mast": "5.2.3",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-9|MSTG-ARCH-10|MSTG-CRYPTO-4",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -31,8 +31,8 @@
     },
     "AS-lab004": {
         "title": "Access privileges 'com.android.vending.BILLING'",
-        "mas": "4.1.3.1",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "INFO",
@@ -42,7 +42,7 @@
     "AS-lab005": {
         "title": "Access privileges 'android.permission.READ_CONTACTS'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -52,7 +52,7 @@
     "AS-lab006": {
         "title": "Access privileges 'android.permission.READ_CALL_LOG'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -62,7 +62,7 @@
     "AS-lab007": {
         "title": "Access privileges 'android.permission.ACCESS_FINE_LOCATION'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -72,7 +72,7 @@
     "AS-lab008": {
         "title": "sending GPS messages checking",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-2",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -82,7 +82,7 @@
     "AS-lab009": {
         "title": "Access privileges 'android.permission.READ_SMS'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -92,7 +92,7 @@
     "AS-lab010": {
         "title": "Access privileges 'android.permission.RECORD_AUDIO'",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "NOTICE",
@@ -151,18 +151,18 @@
     },
     "AS-lab016": {
         "title": "Referenced Library Known Vulnerability Detection",
-        "mas": "4.1.5.3.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-CODE-3",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
         "cve": "",
-        "desc": "The app uses libraries with known vulnerabilities that attackers can exploit with public methods.\n\nFails when: a library identified in the APK has a CVE with a CVSS v3.0 score >= 7 (CVEs scored only in v3.1 are recalculated with the v3.0 formula from the same metrics; scores come from GitHub-reviewed advisories and the five highest are confirmed with NVD), checked with OSV for Java, web, .NET and Flutter packages and with NVD for native libraries and Unity. Libraries are identified from Java libraries (META-INF/*.version, Google library .properties, pom.properties; common libraries without version files, such as Gson, OkHttp, Jackson and BouncyCastle, from their classes and version strings in the code, and other libraries by looking up their class names on Maven Central, with versions also read from the library's BuildConfig.VERSION_NAME), web libraries (JavaScript in assets and React Native bundles, using Retire.js rules and embedded package.json; the Cordova framework from cordova.js), the React Native framework (ReactNativeVersion), .NET assemblies (version resources), Flutter packages (package names in libapp.so), and version strings in native .so files and the Unity engine (.so files without version strings are matched to NVD products by exported function names or file names); libwebp is also checked by symbols for unpatched CVE-2023-4863. A library that is used but whose version cannot be read, and that has versions with CVSS >= 7 vulnerabilities, is reported as Not evaluated with the affected versions for manual review; packed apps whose code is not visible, apps whose web code is encrypted, and apps whose obfuscation moved classes into short packages so libraries cannot be identified, are reported as Not evaluated, and the developer is asked for an unpacked, unobfuscated APK; compressed .NET assemblies, lookup failures, CVEs without a CVSS v3 score, or no identifiable library version are also reported as Not evaluated.\n\nFix: update each listed library to the version given in the details, which fixes all listed CVEs of that library; when packing or obfuscation causes Not evaluated, provide an unpacked, unobfuscated APK.\n\nLimitation: Java libraries without version information are identified through Maven Central, using only results whose groupId matches the package name, and packages the service does not answer for are not judged; web libraries only from Retire.js rules and embedded package.json; Flutter packages have no version after compiling, so only the affected versions are listed; the app's own .so files and products not found in NVD are not judged.\n\nRef: https://osv.dev/ | https://nvd.nist.gov/ | https://mas.owasp.org/MASVS/controls/MASVS-CODE-3/"
+        "desc": "The app uses libraries with known vulnerabilities that attackers can exploit with public methods.\n\nFails when: a library identified in the APK has a CVE with a CVSS v3.0 score >= 7 (CVEs scored only in v3.1 are recalculated with the v3.0 formula from the same metrics; scores come from GitHub-reviewed advisories and the five highest are confirmed with NVD), checked with OSV for Java, web, .NET and Flutter packages and with NVD for native libraries and Unity. Libraries are identified from Java libraries (META-INF/*.version, Google library .properties, pom.properties; common libraries without version files, such as Gson, OkHttp, Jackson and BouncyCastle, from their classes and version strings in the code, and other libraries by looking up their class names on Maven Central, with versions also read from the library's BuildConfig.VERSION_NAME), web libraries (JavaScript in assets and React Native bundles, using Retire.js rules and embedded package.json; the Cordova framework from cordova.js), the React Native framework (ReactNativeVersion), .NET assemblies (version resources), Flutter packages (package names in libapp.so), and version strings in native .so files and the Unity engine (.so files without version strings are matched to NVD products by exported function names or file names); libwebp is also checked by symbols for unpatched CVE-2023-4863. A library that is used but whose version cannot be read, and that has versions with CVSS >= 7 vulnerabilities, is reported as Not evaluated with the affected versions for manual review; packed apps whose code is not visible, apps whose web code is encrypted, and apps whose obfuscation moved classes into short packages so libraries cannot be identified, are reported as Not evaluated, and the developer is asked for an unpacked, unobfuscated APK; compressed .NET assemblies, lookup failures, CVEs without a CVSS v3 score, or no identifiable library version are also reported as Not evaluated.\n\nFix: update each listed library to the version given in the details, which fixes all listed CVEs of that library; when packing or obfuscation causes Not evaluated, provide an unpacked, unobfuscated APK.\n\nLimitation: Java libraries without version information are identified through Maven Central, using only results whose groupId matches the package name, and packages the service does not answer for are not judged; web libraries only from Retire.js rules and embedded package.json; Flutter packages have no version after compiling, so only the affected versions are listed; the app's own .so files and products not found in NVD are not judged.\n\nRef: https://osv.dev/ | https://nvd.nist.gov/"
     },
     "AS-lab017": {
         "title": "Android Debug Mode Checking",
-        "mas": "4.1.5.5.9",
-        "mast": "5.2.5",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-RESILIENCE-4|MSTG-CODE-2|MSTG-CODE-3|MSTG-CODE-4",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -171,7 +171,7 @@
     },
     "AS-lab018": {
         "title": "Improper FileProvider Configuration",
-        "mas": "4.1.2.3.7",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-STORAGE-1|MSTG-STORAGE-2",
         "owasp_mobile": "M2",
@@ -182,7 +182,7 @@
     "AS-lab019": {
         "title": "AndroidManifest PermissionGroup Checking",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -192,7 +192,7 @@
     "AS-lab020": {
         "title": "AndroidManifest permission Checking",
         "mas": "",
-        "mast": "5.2.1",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -202,7 +202,7 @@
     "AS-lab021": {
         "title": "Network Access Checking",
         "mas": "",
-        "mast": "5.2.3",
+        "mast": "",
         "real_mstg": "MSTG-NETWORK-2",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -211,18 +211,18 @@
     },
     "AS-lab022": {
         "title": "Base64-encoded Sensitive Content Detection",
-        "mas": "4.1.2.3.8",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M5",
         "level": "CRITICAL",
         "cve": "CWE-312",
-        "desc": "Base64 itself is NOT a vulnerability — App icons, JWT tokens, binary resources, and SDK internal data are all Base64-encoded. This check flags only Base64 strings whose DECODED content matches actual risk patterns:\n\nSeverity:\n- CRITICAL: decoded content is a cleartext http:// URL (data exfiltration / MITM risk)\n- CRITICAL: decoded content matches a known secret pattern (AWS Access Key, Google API Key, JWT Token)\n- WARNING: decoded content contains sensitive keywords (password / api_key / secret / token / credential / bearer / authorization)\n- (silently ignored): random binary, normal text, non-risky content\n\nConceptually this is the Base64-encoded counterpart of lab_074 (hardcoded plaintext secrets). Together they form a two-layer detection: lab_074 catches naive plaintext, lab_022 catches naive Base64 obfuscation (security through obscurity).\n\nDetection mechanics:\n1. Scan every const-string in app-owned methods\n2. Shape check: matches Base64 charset, length 8~4096\n3. Decode via base64.b64decode\n4. UTF-8 decode (skip binary)\n5. Pattern match: http:// prefix / secret regex / sensitive keyword\n\nKnown limitation: cannot detect Base64 strings split across multiple const-strings or constructed dynamically. JWT headers ({\"alg\":...) are explicitly excluded as benign.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+        "desc": "Base64 itself is NOT a vulnerability — App icons, JWT tokens, binary resources, and SDK internal data are all Base64-encoded. This check flags only Base64 strings whose DECODED content matches actual risk patterns:\n\nSeverity:\n- CRITICAL: decoded content is a cleartext http:// URL (data exfiltration / MITM risk)\n- CRITICAL: decoded content matches a known secret pattern (AWS Access Key, Google API Key, JWT Token)\n- WARNING: decoded content contains sensitive keywords (password / api_key / secret / token / credential / bearer / authorization)\n- (silently ignored): random binary, normal text, non-risky content\n\nConceptually this is the Base64-encoded counterpart of lab_074 (hardcoded plaintext secrets). Together they form a two-layer detection: lab_074 catches naive plaintext, lab_022 catches naive Base64 obfuscation (security through obscurity).\n\nDetection mechanics:\n1. Scan every const-string in app-owned methods\n2. Shape check: matches Base64 charset, length 8~4096\n3. Decode via base64.b64decode\n4. UTF-8 decode (skip binary)\n5. Pattern match: http:// prefix / secret regex / sensitive keyword\n\nKnown limitation: cannot detect Base64 strings split across multiple const-strings or constructed dynamically. JWT headers ({\"alg\":...) are explicitly excluded as benign."
     },
     "AS-lab023": {
         "title": "WebView addJavascriptInterface RCE vulnerability",
-        "mas": "4.1.5.1.2",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-5|MSTG-PLATFORM-8",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -231,8 +231,8 @@
     },
     "AS-lab024": {
         "title": "Key Protection Inspection",
-        "mas": "4.1.2.3.7|4.1.2.3.8",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-11|MSTG-CRYPTO-1|MSTG-CRYPTO-2|MSTG-CRYPTO-3|MSTG-AUTH-4",
         "owasp_mobile": "M2, M5",
         "level": "CRITICAL",
@@ -252,27 +252,27 @@
     "AS-lab026": {
         "title": "Check if package signatures are obtained",
         "mas": "",
-        "mast": "5.2.5",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-12",
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally.\n\nThis check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, the signature integrity check is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
+        "desc": "When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally.\n\nThis check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, the signature integrity check is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended. | https://developer.android.com/reference/android/content/pm/SigningInfo"
     },
     "AS-lab027": {
         "title": "Screen capture prevention settings",
-        "mas": "4.1.2.3.9",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-3",
         "owasp_mobile": "M6",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data.\n\nThis check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing.\n\nLimitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+        "desc": "When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data.\n\nThis check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing.\n\nLimitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended. | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime Command Checking",
-        "mas": "4.1.5.1.1",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M10",
         "level": "CRITICAL",
@@ -281,8 +281,8 @@
     },
     "AS-lab029": {
         "title": "SSL Implementation Check (Check Host Name in custom classes)",
-        "mas": "4.1.4.2.3|4.1.5.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-3",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -291,8 +291,8 @@
     },
     "AS-lab030": {
         "title": "SSL Implementation Check (Identify Host Name)",
-        "mas": "4.1.4.2.3|4.1.5.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-3",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -301,8 +301,8 @@
     },
     "AS-lab031": {
         "title": "SSL implementation check (insecure component)",
-        "mas": "4.1.5.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-ARCH-3|MSTG-ARCH-4|MSTG-NETWORK-1|MSTG-NETWORK-2",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -311,8 +311,8 @@
     },
     "AS-lab032": {
         "title": "SSL implementation Check (HttpHost)",
-        "mas": "4.1.2.4.1",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -321,8 +321,8 @@
     },
     "AS-lab033": {
         "title": "SSL Implementation Check (WebViewClient for WebView)",
-        "mas": "4.2.2.1.2",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-5",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -331,8 +331,8 @@
     },
     "AS-lab034": {
         "title": "WebView Security Configuration Audit",
-        "mas": "4.1.5.4.2",
-        "mast": "5.2.3",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-2|MSTG-PLATFORM-5|MSTG-PLATFORM-8",
         "owasp_mobile": "M7",
         "level": "CRITICAL",
@@ -341,7 +341,7 @@
     },
     "AS-lab035": {
         "title": "Certificate Pinning Missing Detection",
-        "mas": "4.1.4.2.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-NETWORK-4",
         "owasp_mobile": "M3",
@@ -351,8 +351,8 @@
     },
     "AS-lab036": {
         "title": "Intent Redirection Vulnerability Detection",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.2",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-1|MSTG-PLATFORM-1",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -361,8 +361,8 @@
     },
     "AS-lab037": {
         "title": "APP sandbox permission check",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-2|MSTG-STORAGE-8",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
@@ -372,7 +372,7 @@
     "AS-lab038": {
         "title": "native library checking",
         "mas": "",
-        "mast": "5.2.5",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M10",
         "level": "NOTICE",
@@ -381,38 +381,38 @@
     },
     "AS-lab039": {
         "title": "Data Sharing Notice Check",
-        "mas": "4.1.2.5.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2|MASVS-PRIVACY-3",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "The app automatically hands sensitive data to other apps on the device without notice or consent, so users don't know who gets their data.\n\nFails when: an automatic sharing channel (ContentProvider reachable by other apps, broadcast with data and no receiver, grantUriPermission) carries sensitive data (extra or field names such as password, account, phone, location, contacts, or location / contacts / device ID APIs are read) and its call path has no consent dialog or sharing switch. Actions the user sees (opening a screen, the share sheet, taking a photo), fixed system broadcasts (e.g. media scanner) and providers that verify the caller's signature in code are not counted. Channels whose data sensitivity, receiver, code or switch key cannot be determined are reported as Not evaluated, with the reason in the details.\n\nFix: if sharing is not needed, set android:exported=\"false\", target the receiver with setPackage(), or use a signature-level permission; if it is needed, get user consent before sharing.\n\nLimitation: sensitive data is judged only by names and APIs, data flow is not traced; only settings whose key contains share, consent, privacy, etc. count as sharing switches; only 4 levels of callers are traced; Compose dialogs, intents built in other methods and native code are not seen; the wording of store and in-app notices needs manual review.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
+        "desc": "The app automatically hands sensitive data to other apps on the device without notice or consent, so users don't know who gets their data.\n\nFails when: an automatic sharing channel (ContentProvider reachable by other apps, broadcast with data and no receiver, grantUriPermission) carries sensitive data (extra or field names such as password, account, phone, location, contacts, or location / contacts / device ID APIs are read) and its call path has no consent dialog or sharing switch. Actions the user sees (opening a screen, the share sheet, taking a photo), fixed system broadcasts (e.g. media scanner) and providers that verify the caller's signature in code are not counted. Channels whose data sensitivity, receiver, code or switch key cannot be determined are reported as Not evaluated, with the reason in the details.\n\nFix: if sharing is not needed, set android:exported=\"false\", target the receiver with setPackage(), or use a signature-level permission; if it is needed, get user consent before sharing.\n\nLimitation: sensitive data is judged only by names and APIs, data flow is not traced; only settings whose key contains share, consent, privacy, etc. count as sharing switches; only 4 levels of callers are traced; Compose dialogs, intents built in other methods and native code are not seen; the wording of store and in-app notices needs manual review. | https://developer.android.com/training/sharing/send"
     },
     "AS-lab040": {
         "title": "Data Sharing Refusal Check",
-        "mas": "4.1.2.5.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2|MASVS-PRIVACY-4",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "The app automatically shares sensitive data with other apps but users cannot refuse it.\n\nFails when: an automatic sharing channel from AS-lab039 that carries sensitive data has no read of a sharing switch (SharedPreferences, DataStore) on its call path, or the switch is read but not used to decide whether to share; a consent dialog without a switch that can be turned off later also fails, because users cannot withdraw consent. Switches whose value is checked elsewhere, switches whose key cannot be identified, and data whose sensitivity cannot be determined are reported as Not evaluated. The share sheet can be cancelled and is not counted.\n\nFix: add an \"allow data sharing\" switch in settings and check it before sharing; do not share when it is off.\n\nLimitation: only settings whose key contains share, consent, privacy, etc. count as sharing switches; does not confirm that the check actually blocks the sharing; DataStore switches can only be confirmed as read. Details list the switch key, its default value and whether it appears in the settings screen.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
+        "desc": "The app automatically shares sensitive data with other apps but users cannot refuse it.\n\nFails when: an automatic sharing channel from AS-lab039 that carries sensitive data has no read of a sharing switch (SharedPreferences, DataStore) on its call path, or the switch is read but not used to decide whether to share; a consent dialog without a switch that can be turned off later also fails, because users cannot withdraw consent. Switches whose value is checked elsewhere, switches whose key cannot be identified, and data whose sensitivity cannot be determined are reported as Not evaluated. The share sheet can be cancelled and is not counted.\n\nFix: add an \"allow data sharing\" switch in settings and check it before sharing; do not share when it is off.\n\nLimitation: only settings whose key contains share, consent, privacy, etc. count as sharing switches; does not confirm that the check actually blocks the sharing; DataStore switches can only be confirmed as read. Details list the switch key, its default value and whether it appears in the settings screen. | https://developer.android.com/training/sharing/send"
     },
     "AS-lab041": {
         "title": "Release Notes (Data Safety Declaration) Check",
-        "mas": "4.1.1.1.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-1|MASVS-PRIVACY-1",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "The app or an SDK it uses obtains sensitive data that is not declared in Google Play Data safety, so users don't know about it before installing.\n\nFails when: the app itself reads sensitive data (holds the permission and actually reads it, e.g. location, contacts, audio, device IDs) and makes network requests, or it bundles a data-collecting SDK (e.g. Firebase Analytics, AdMob), and the Data safety page does not list that category. Apps not on Google Play, pages that cannot be fetched, a camera that may only scan codes, an SDK whose collection is disabled in the manifest, or an app with INTERNET permission whose own code shows no network request are reported as Not evaluated.\n\nFix: if the data leaves the device, declare the category in the Google Play Console Data safety form; if it is no longer used, remove the permission, related code or SDK.\n\nLimitation: only Data safety categories are compared; permission purposes and the questionnaire of unpublished apps need manual review; referencing a related API counts as reading it; data flow is not traced, network requests are taken to mean the data may leave the device; only SDKs on the built-in list are recognized.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
+        "desc": "The app or an SDK it uses obtains sensitive data that is not declared in Google Play Data safety, so users don't know about it before installing.\n\nFails when: the app itself reads sensitive data (holds the permission and actually reads it, e.g. location, contacts, audio, device IDs) and makes network requests, or it bundles a data-collecting SDK (e.g. Firebase Analytics, AdMob), and the Data safety page does not list that category. Apps not on Google Play, pages that cannot be fetched, a camera that may only scan codes, an SDK whose collection is disabled in the manifest, or an app with INTERNET permission whose own code shows no network request are reported as Not evaluated.\n\nFix: if the data leaves the device, declare the category in the Google Play Console Data safety form; if it is no longer used, remove the permission, related code or SDK.\n\nLimitation: only Data safety categories are compared; permission purposes and the questionnaire of unpublished apps need manual review; referencing a related API counts as reading it; data flow is not traced, network requests are taken to mean the data may leave the device; only SDKs on the built-in list are recognized. | https://support.google.com/googleplay/android-developer/answer/10787469"
     },
     "AS-lab042": {
         "title": "Packer / Dynamic Code Loading Detection",
         "mas": "",
-        "mast": "5.2.5",
+        "mast": "",
         "real_mstg": "MASVS-RESILIENCE-2|MSTG-ARCH-2",
         "owasp_mobile": "M7",
         "level": "WARNING",
@@ -421,8 +421,8 @@
     },
     "AS-lab043": {
         "title": "External storage",
-        "mas": "4.1.2.3.7",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1|MSTG-STORAGE-5|MSTG-STORAGE-6|MSTG-STORAGE-10",
         "owasp_mobile": "M2",
         "level": "WARNING",
@@ -431,8 +431,8 @@
     },
     "AS-lab044": {
         "title": "Dirty Stream Path Traversal Attack",
-        "mas": "4.1.5.1.2",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-CODE-4|MSTG-PLATFORM-2",
         "owasp_mobile": "M7",
         "level": "CRITICAL",
@@ -441,8 +441,8 @@
     },
     "AS-lab045": {
         "title": "AndroidManifest ProtectionLevel dangerous checking",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
@@ -451,8 +451,8 @@
     },
     "AS-lab046": {
         "title": "AndroidManifest Normal ProtectionLevel of Permission Checking",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-1",
         "owasp_mobile": "M2",
         "level": "WARNING",
@@ -461,7 +461,7 @@
     },
     "AS-lab047": {
         "title": "AndroidManifest Exported Lost Prefix check",
-        "mas": "4.1.2.5.3|4.1.5.1.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-ARCH-5|MSTG-PLATFORM-4",
         "owasp_mobile": "M2",
@@ -471,8 +471,8 @@
     },
     "AS-lab048": {
         "title": "AndroidManifest Exported Components check",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.2",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-3|MSTG-AUTH-9|MSTG-PLATFORM-4",
         "owasp_mobile": "M2",
         "level": "WARNING",
@@ -481,8 +481,8 @@
     },
     "AS-lab049": {
         "title": "AndroidManifest ContentProvider Exported check",
-        "mas": "4.1.2.5.3",
-        "mast": "5.2.1",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-AUTH-9|MSTG-PLATFORM-4",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -492,7 +492,7 @@
     "AS-lab050": {
         "title": "AndroidManifest \\\"intent-filter\\\" setting",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "MSTG-PLATFORM-2",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
@@ -502,7 +502,7 @@
     "AS-lab051": {
         "title": "Implicit Service Checking",
         "mas": "",
-        "mast": "5.2.7",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "",
         "level": "CRITICAL",
@@ -511,8 +511,8 @@
     },
     "AS-lab052": {
         "title": "Android SQLite Database Vulnerability Check",
-        "mas": "4.1.5.1.1",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -521,8 +521,8 @@
     },
     "AS-lab053": {
         "title": "Android SQLite Database Encryption (SQLCipher)",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "M5",
         "level": "NOTICE",
@@ -531,8 +531,8 @@
     },
     "AS-lab054": {
         "title": "Android SQLite Database Encryption (SQLite Encryption Extension (SEE))",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-STORAGE-1",
         "owasp_mobile": "M5",
         "level": "NOTICE",
@@ -542,7 +542,7 @@
     "AS-lab055": {
         "title": "Android SQLite key protection",
         "mas": "",
-        "mast": "5.2.7",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -551,18 +551,18 @@
     },
     "AS-lab056": {
         "title": "Root Detection Implementation Check",
-        "mas": "4.1.5.5.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-1",
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow.\n\nThis check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, root detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
+        "desc": "When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow.\n\nThis check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, root detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended."
     },
     "AS-lab057": {
         "title": "Sensitive Device / Subscriber Identifier Read (IMEI / IMSI / Phone Number)",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "WARNING",
@@ -572,7 +572,7 @@
     "AS-lab058": {
         "title": "Settings.Secure.ANDROID_ID Read",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "WARNING",
@@ -591,18 +591,18 @@
     },
     "AS-lab060": {
         "title": "Weak Symmetric/Asymmetric Cipher Check",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-CRYPTO-1",
         "owasp_mobile": "M5",
         "level": "CRITICAL",
         "cve": "CWE-327",
-        "desc": "Parses Cipher.getInstance(transformation) string arguments in app-owned code and classifies findings by full transformation (algorithm/mode/padding) rather than algorithm name alone.\n\nSeverity:\n- CRITICAL: ECB mode (any algorithm — identical plaintext blocks produce identical ciphertext) / DES (56-bit key, brute-forceable) / RC4 (biased keystream) / RC2 / Blowfish.\n- WARNING: CBC mode (semantically secure but requires unpredictable IV — IV-source verification is future work) / 3DES (DESede, deprecated by NIST).\n- INFO: GCM / CCM / ChaCha20-Poly1305 (authenticated encryption — recommended).\n- UNKNOWN: transformation string is dynamic (variable argument), cannot be classified statically.\n\nNote: Hash functions (MessageDigest) are NOT encryption (no key, one-way) and are covered separately in lab_079.\n\nFuture work (not yet implemented):\n- Hardcoded IV detection (IvParameterSpec const-byte source tracking)\n- Key size enforcement (RSA < 2048, AES < 128)\n- PBKDF2 iteration count check\n- KeyGenParameterSpec.Builder configuration audit\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/ | https://cwe.mitre.org/data/definitions/327.html"
+        "desc": "Parses Cipher.getInstance(transformation) string arguments in app-owned code and classifies findings by full transformation (algorithm/mode/padding) rather than algorithm name alone.\n\nSeverity:\n- CRITICAL: ECB mode (any algorithm — identical plaintext blocks produce identical ciphertext) / DES (56-bit key, brute-forceable) / RC4 (biased keystream) / RC2 / Blowfish.\n- WARNING: CBC mode (semantically secure but requires unpredictable IV — IV-source verification is future work) / 3DES (DESede, deprecated by NIST).\n- INFO: GCM / CCM / ChaCha20-Poly1305 (authenticated encryption — recommended).\n- UNKNOWN: transformation string is dynamic (variable argument), cannot be classified statically.\n\nNote: Hash functions (MessageDigest) are NOT encryption (no key, one-way) and are covered separately in lab_079.\n\nFuture work (not yet implemented):\n- Hardcoded IV detection (IvParameterSpec const-byte source tracking)\n- Key size enforcement (RSA < 2048, AES < 128)\n- PBKDF2 iteration count check\n- KeyGenParameterSpec.Builder configuration audit | https://cwe.mitre.org/data/definitions/327.html"
     },
     "AS-lab061": {
         "title": "AndroidManifest sharedUserId check",
         "mas": "",
-        "mast": "5.2.2",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
         "level": "NOTICE",
@@ -611,7 +611,7 @@
     },
     "AS-lab063": {
         "title": "Unsafe file deletion check",
-        "mas": "4.1.2.3.5",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M9",
@@ -631,8 +631,8 @@
     },
     "AS-lab065": {
         "title": "WebView Advanced Configuration Audit",
-        "mas": "4.1.2.3.7|4.1.2.5.3",
-        "mast": "5.2.7",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-PLATFORM-2|MSTG-PLATFORM-6|MSTG-PLATFORM-7",
         "owasp_mobile": "M3",
         "level": "WARNING",
@@ -642,7 +642,7 @@
     "AS-lab066": {
         "title": "AndroidManifest Adb Backup check",
         "mas": "",
-        "mast": "5.2.7",
+        "mast": "",
         "real_mstg": "",
         "owasp_mobile": "M2",
         "level": "NOTICE",
@@ -651,8 +651,8 @@
     },
     "AS-lab067": {
         "title": "SSL Correctness check of the certificate",
-        "mas": "4.1.4.2.2|4.1.4.2.3",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MSTG-NETWORK-1|MSTG-NETWORK-2|MSTG-NETWORK-3|MSTG-NETWORK-4",
         "owasp_mobile": "M3",
         "level": "CRITICAL",
@@ -671,7 +671,7 @@
     },
     "AS-lab069": {
         "title": "Overlay Attack (Tapjacking) Prevention Detection",
-        "mas": "4.1.5.1.3",
+        "mas": "",
         "mast": "",
         "real_mstg": "MSTG-PLATFORM-9",
         "owasp_mobile": "M1",
@@ -681,7 +681,7 @@
     },
     "AS-lab070": {
         "title": "User Right to Refuse Sensitive Data Collection — Runtime Permission Mechanism Detection",
-        "mas": "4.1.2.1.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PRIVACY-4",
         "owasp_mobile": "M8",
@@ -691,7 +691,7 @@
     },
     "AS-lab071": {
         "title": "Debug Log Calls Detected in App Code (Log.d / Log.v)",
-        "mas": "4.1.2.3.16",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
@@ -701,67 +701,67 @@
     },
     "AS-lab072": {
         "title": "Keyboard Cache Protection — Sensitive Input Fields Without inputType Protection",
-        "mas": "4.1.2.3.11",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
         "level": "WARNING",
         "cve": "",
-        "desc": "Android's soft keyboard (IME) performs autocorrect, predictive text, and user dictionary learning by default. These functions store the text users type into the keyboard app's private database. If a malicious or compromised third-party keyboard is installed, any cached input — including passwords, PINs, and CVV numbers — may be exposed.\n\nThe correct mitigation is to set android:inputType on sensitive EditText fields to a value that disables caching, such as textPassword, numberPassword, or textNoSuggestions.\n\nThis check scans all res/layout/ XML files for EditText fields whose hint or id suggests sensitive input, and verifies that an appropriate inputType is set.\n\nRef: https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0006/"
+        "desc": "Android's soft keyboard (IME) performs autocorrect, predictive text, and user dictionary learning by default. These functions store the text users type into the keyboard app's private database. If a malicious or compromised third-party keyboard is installed, any cached input — including passwords, PINs, and CVV numbers — may be exposed.\n\nThe correct mitigation is to set android:inputType on sensitive EditText fields to a value that disables caching, such as textPassword, numberPassword, or textNoSuggestions.\n\nThis check scans all res/layout/ XML files for EditText fields whose hint or id suggests sensitive input, and verifies that an appropriate inputType is set."
     },
     "AS-lab073": {
         "title": "Backup Sensitive Data Protection — allowBackup & Sensitive Storage API Detection",
-        "mas": "4.1.2.3.14",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
         "level": "NOTICE",
         "cve": "",
-        "desc": "When android:allowBackup is true (or not set, which defaults to true on API < 31), the Android backup mechanism may include app data such as SharedPreferences, SQLite databases, and internal files. If sensitive data is stored using these APIs without configuring backup exclusion rules (fullBackupContent / dataExtractionRules), that data can be extracted via ADB backup by anyone with physical or USB access to the device.\n\nThis check performs two verifications:\n1. AndroidManifest.xml — inspects allowBackup, fullBackupContent (API 23-30), and dataExtractionRules (API 31+).\n2. Smali scan — detects calls to sensitive storage APIs (SharedPreferences, SQLite, File I/O, External Storage) in app-owned code.\n\nA finding is reported when allowBackup risk is present AND sensitive storage APIs are used OR no exclusion rules are configured.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/ | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0262/"
+        "desc": "When android:allowBackup is true (or not set, which defaults to true on API < 31), the Android backup mechanism may include app data such as SharedPreferences, SQLite databases, and internal files. If sensitive data is stored using these APIs without configuring backup exclusion rules (fullBackupContent / dataExtractionRules), that data can be extracted via ADB backup by anyone with physical or USB access to the device.\n\nThis check performs two verifications:\n1. AndroidManifest.xml — inspects allowBackup, fullBackupContent (API 23-30), and dataExtractionRules (API 31+).\n2. Smali scan — detects calls to sensitive storage APIs (SharedPreferences, SQLite, File I/O, External Storage) in app-owned code.\n\nA finding is reported when allowBackup risk is present AND sensitive storage APIs are used OR no exclusion rules are configured."
     },
     "AS-lab074": {
         "title": "Hardcoded Sensitive Data in Source Code (API Key / Password / Token)",
-        "mas": "4.1.2.3.8",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-2",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
         "cve": "",
-        "desc": "Sensitive values such as API keys, passwords, tokens, or credentials must not be hardcoded in the app's bytecode or XML resource files. This check scans two sources:\n1. Smali bytecode — const-string instructions in app-owned methods, filtered by keyword matching and/or regex pattern matching (Google API Key, AWS Access Key, JWT Token) with Shannon entropy >= 4.5 for pattern-only matches.\n2. res/values XML — <string> elements whose name attribute or value matches sensitive keywords or patterns.\n\nThird-party library code is excluded. Keyword matches (e.g. name='api_key') are flagged unconditionally; pattern-only matches require entropy >= 4.5 to reduce false positives.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+        "desc": "Sensitive values such as API keys, passwords, tokens, or credentials must not be hardcoded in the app's bytecode or XML resource files. This check scans two sources:\n1. Smali bytecode — const-string instructions in app-owned methods, filtered by keyword matching and/or regex pattern matching (Google API Key, AWS Access Key, JWT Token) with Shannon entropy >= 4.5 for pattern-only matches.\n2. res/values XML — <string> elements whose name attribute or value matches sensitive keywords or patterns.\n\nThird-party library code is excluded. Keyword matches (e.g. name='api_key') are flagged unconditionally; pattern-only matches require entropy >= 4.5 to reduce false positives."
     },
     "AS-lab075": {
         "title": "Sensitive Data Must Be Stored in System Credential Storage (AndroidKeyStore)",
-        "mas": "4.1.2.3.10",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-1",
         "owasp_mobile": "M2",
         "level": "NOTICE",
         "cve": "CWE-312|CWE-321",
-        "desc": "Sensitive cryptographic keys must be stored in the Android system credential store (AndroidKeyStore) rather than in less secure KeyStore providers such as BKS, JKS, or PKCS12. This check scans smali bytecode for KeyStore.getInstance() calls in app-owned code and classifies the provider argument:\n- PASS: Only AndroidKeyStore is used.\n- WARNING: No KeyStore API detected (manual review required), or AndroidKeyStore is used alongside insecure providers.\n- CRITICAL: Only insecure providers are used with no AndroidKeyStore.\n\nStatic analysis limitations:\n1. Only KeyStore.getInstance() arguments are verified; key protection parameters (e.g. KeyGenParameterSpec) are not checked.\n2. Third-party libraries such as Tink or EncryptedSharedPreferences may internally use AndroidKeyStore but are not easily identifiable at the smali level, which may produce false positives.\n3. Dynamic analysis is recommended to confirm actual key storage location and protection strength.\n\nRef: https://developer.android.com/training/articles/keystore | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0051/"
+        "desc": "Sensitive cryptographic keys must be stored in the Android system credential store (AndroidKeyStore) rather than in less secure KeyStore providers such as BKS, JKS, or PKCS12. This check scans smali bytecode for KeyStore.getInstance() calls in app-owned code and classifies the provider argument:\n- PASS: Only AndroidKeyStore is used.\n- WARNING: No KeyStore API detected (manual review required), or AndroidKeyStore is used alongside insecure providers.\n- CRITICAL: Only insecure providers are used with no AndroidKeyStore.\n\nStatic analysis limitations:\n1. Only KeyStore.getInstance() arguments are verified; key protection parameters (e.g. KeyGenParameterSpec) are not checked.\n2. Third-party libraries such as Tink or EncryptedSharedPreferences may internally use AndroidKeyStore but are not easily identifiable at the smali level, which may produce false positives.\n3. Dynamic analysis is recommended to confirm actual key storage location and protection strength.\n\nRef: https://developer.android.com/training/articles/keystore"
     },
     "AS-lab076": {
         "title": "Deep Link Security Check — scheme / autoVerify / host",
-        "mas": "4.1.2.3.12",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-1",
         "owasp_mobile": "M8",
         "level": "WARNING",
         "cve": "CWE-939",
-        "desc": "Deep links are a public entry point: other apps, browsers or malicious links can open them with URI parameters. When misconfigured, another app can intercept links meant for this app (e.g. parameters in login or payment links), or the link can be tampered with in transit.\n\nFails when: only the AndroidManifest is checked. An activity / activity-alias reachable from outside (not exported=\"false\") whose intent-filter has action.VIEW + category.BROWSABLE + a scheme fails if any of these holds: (1) the scheme is http, plaintext that can be tampered with (HIGH); (2) http / https without android:autoVerify=\"true\", so other apps can declare the same host and intercept it (MEDIUM); (3) a custom scheme, which cannot be domain-verified, so any app can register the same scheme and intercept it, with or without a host (MEDIUM). Public schemes shared by many apps (mailto, tel, file, content, market, etc.) are not counted.\n\nFix: use https App Links with android:autoVerify=\"true\" for sensitive flows and publish assetlinks.json on the website; set android:exported=\"false\" on activities that need no external access; do not put tokens, passwords or other sensitive data in deep link parameters.\n\nLimitation: whether a link carries sensitive data and whether the receiver validates parameters are not judged and need dynamic testing; correct deployment of assetlinks.json cannot be seen; parameters flowing into WebView, SQL or other dangerous operations are checked by AS-lab077.\n\nRef: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks"
+        "desc": "Deep links are a public entry point: other apps, browsers or malicious links can open them with URI parameters. When misconfigured, another app can intercept links meant for this app (e.g. parameters in login or payment links), or the link can be tampered with in transit.\n\nFails when: only the AndroidManifest is checked. An activity / activity-alias reachable from outside (not exported=\"false\") whose intent-filter has action.VIEW + category.BROWSABLE + a scheme fails if any of these holds: (1) the scheme is http, plaintext that can be tampered with (HIGH); (2) http / https without android:autoVerify=\"true\", so other apps can declare the same host and intercept it (MEDIUM); (3) a custom scheme, which cannot be domain-verified, so any app can register the same scheme and intercept it, with or without a host (MEDIUM). Public schemes shared by many apps (mailto, tel, file, content, market, etc.) are not counted.\n\nFix: use https App Links with android:autoVerify=\"true\" for sensitive flows and publish assetlinks.json on the website; set android:exported=\"false\" on activities that need no external access; do not put tokens, passwords or other sensitive data in deep link parameters.\n\nLimitation: whether a link carries sensitive data and whether the receiver validates parameters are not judged and need dynamic testing; correct deployment of assetlinks.json cannot be seen; parameters flowing into WebView, SQL or other dangerous operations are checked by AS-lab077.\n\nRef: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://developer.android.com/training/app-links/verify-android-applinks"
     },
     "AS-lab077": {
         "title": "Deep Link Injection — sink method check",
-        "mas": "4.1.5.4.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-3",
         "owasp_mobile": "M1",
         "level": "CRITICAL",
         "cve": "CWE-20|CWE-79|CWE-89|CWE-22|CWE-78",
-        "desc": "URI parameters delivered via deep links must be validated before flowing into sensitive operations; otherwise an attacker can craft a malicious link to trigger various injection attacks. This check targets the deep link Activity classes identified by lab_076 and scans their methods for the simultaneous presence of a source and a sink.\n\nSources detected (deep link parameter extraction):\n- Intent.getData()\n- Uri.getQueryParameter() / getQueryParameterNames()\n- Uri.getPath() / getPathSegments() / getLastPathSegment()\n- Uri.getFragment() / getEncodedQuery()\n\nSinks detected and their associated risks:\n- WebView.loadUrl() / loadDataWithBaseURL()  → Open Redirect / XSS (with addJavascriptInterface this can escalate to RCE)\n- Intent.parseUri()                          → Intent Redirection (CWE-927; can bypass exported=false to launch private components)\n- new File() / FileInputStream / FileOutputStream → Path Traversal (CWE-22)\n- SQLiteDatabase.execSQL() / rawQuery()     → SQL Injection (CWE-89)\n- Runtime.exec()                             → Command Injection (CWE-78)\n\nLimitations:\n1. Heuristic — same-method co-occurrence only. No taint tracking; source and sink may have no real data flow, producing false positives.\n2. Cross-method blind spot — vulnerabilities split across methods (e.g. via member variables) will be missed.\n3. Manual code review or dynamic fuzzing is recommended to confirm real risk.\n\nRef:\n- https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks\n- https://mas.owasp.org/MASTG/tests/android/MASVS-PLATFORM/MASTG-TEST-0029/\n- https://owasp.org/www-community/attacks/Mobile_Code_Injection"
+        "desc": "URI parameters delivered via deep links must be validated before flowing into sensitive operations; otherwise an attacker can craft a malicious link to trigger various injection attacks. This check targets the deep link Activity classes identified by lab_076 and scans their methods for the simultaneous presence of a source and a sink.\n\nSources detected (deep link parameter extraction):\n- Intent.getData()\n- Uri.getQueryParameter() / getQueryParameterNames()\n- Uri.getPath() / getPathSegments() / getLastPathSegment()\n- Uri.getFragment() / getEncodedQuery()\n\nSinks detected and their associated risks:\n- WebView.loadUrl() / loadDataWithBaseURL()  → Open Redirect / XSS (with addJavascriptInterface this can escalate to RCE)\n- Intent.parseUri()                          → Intent Redirection (CWE-927; can bypass exported=false to launch private components)\n- new File() / FileInputStream / FileOutputStream → Path Traversal (CWE-22)\n- SQLiteDatabase.execSQL() / rawQuery()     → SQL Injection (CWE-89)\n- Runtime.exec()                             → Command Injection (CWE-78)\n\nLimitations:\n1. Heuristic — same-method co-occurrence only. No taint tracking; source and sink may have no real data flow, producing false positives.\n2. Cross-method blind spot — vulnerabilities split across methods (e.g. via member variables) will be missed.\n3. Manual code review or dynamic fuzzing is recommended to confirm real risk.\n\nRef:\n- https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks\n-\n- https://owasp.org/www-community/attacks/Mobile_Code_Injection"
     },
     "AS-lab078": {
         "title": "ZIP Path Traversal (ZipSlip) Vulnerability Check",
-        "mas": "4.1.5.1.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-CODE-4",
         "owasp_mobile": "M7",
@@ -771,67 +771,67 @@
     },
     "AS-lab079": {
         "title": "Weak Hash Function Check (MessageDigest)",
-        "mas": "4.1.2.3.6",
-        "mast": "5.2.6",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-CRYPTO-1|MSTG-CRYPTO-4",
         "owasp_mobile": "M5",
         "level": "CRITICAL",
         "cve": "CWE-327|CWE-328",
-        "desc": "Parses MessageDigest.getInstance(algorithm) string arguments in app-owned code and identifies broken or collision-prone hash functions. Split from lab_060 because hashing is NOT encryption — it has no key and is one-way (input -> fixed-length fingerprint), making it a fundamentally different cryptographic primitive that deserves separate classification per correct security taxonomy.\n\nSeverity:\n- CRITICAL: MD5 / MD2 / MD4 / SHA-1 — all considered broken or collision-prone. Practical chosen-prefix collisions are demonstrated for SHA-1 (SHAttered) and MD5 (HashClash).\n- INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 family — NIST recommended.\n- UNKNOWN: dynamic algorithm argument (variable string), cannot classify statically.\n\nNote: A weak hash being present in code does not always mean a real vulnerability — MD5 used as a cache key or non-security checksum is not exploitable. Usage classification (password hash vs file checksum vs cache key) is future work.\n\nFuture work (not yet implemented):\n- Usage classification (password storage / authentication / non-security checksum)\n- HMAC algorithm strength check (Mac.getInstance pattern)\n- Iterated hashing detection (PBKDF2 iteration count, salt source)\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/ | https://cwe.mitre.org/data/definitions/328.html | https://shattered.io/"
+        "desc": "Parses MessageDigest.getInstance(algorithm) string arguments in app-owned code and identifies broken or collision-prone hash functions. Split from lab_060 because hashing is NOT encryption — it has no key and is one-way (input -> fixed-length fingerprint), making it a fundamentally different cryptographic primitive that deserves separate classification per correct security taxonomy.\n\nSeverity:\n- CRITICAL: MD5 / MD2 / MD4 / SHA-1 — all considered broken or collision-prone. Practical chosen-prefix collisions are demonstrated for SHA-1 (SHAttered) and MD5 (HashClash).\n- INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 family — NIST recommended.\n- UNKNOWN: dynamic algorithm argument (variable string), cannot classify statically.\n\nNote: A weak hash being present in code does not always mean a real vulnerability — MD5 used as a cache key or non-security checksum is not exploitable. Usage classification (password hash vs file checksum vs cache key) is future work.\n\nFuture work (not yet implemented):\n- Usage classification (password storage / authentication / non-security checksum)\n- HMAC algorithm strength check (Mac.getInstance pattern)\n- Iterated hashing detection (PBKDF2 iteration count, salt source) | https://cwe.mitre.org/data/definitions/328.html | https://shattered.io/"
     },
     "AS-lab080": {
         "title": "Sensitive Data Copied to System Clipboard",
-        "mas": "4.1.2.3.11",
-        "mast": "5.2.2",
+        "mas": "",
+        "mast": "",
         "real_mstg": "MASVS-STORAGE-1|MSTG-STORAGE-10",
         "owasp_mobile": "M2",
         "level": "CRITICAL",
         "cve": "CWE-200",
-        "desc": "The Android system clipboard is global — any installed app, and some input method editors (IMEs), can read its contents at any time (before Android 10) or while in the foreground. Copying secrets such as passwords, PINs, card numbers, or tokens into the clipboard exposes them to other apps and clipboard-monitoring malware.\n\nDetection strategy — same-method co-occurrence (low false positive):\n1. Find a clipboard write API call in an app-owned method:\n   - ClipboardManager.setPrimaryClip(ClipData)  (modern)\n   - ClipboardManager.setText(CharSequence)     (deprecated)\n2. Scan const-strings in the SAME method (this covers the ClipData label and any literal field hints).\n3. Classify by keyword:\n   - CRITICAL: explicit secret keyword (password / passwd / pin / cvv / ssn / credit card / secret key / private key)\n   - WARNING: possibly-sensitive keyword (token / account / auth / credential / otp / api key / session)\n   - (not reported): clipboard write with no sensitive keyword — normal usage such as copying an order id or share link, suppressed to avoid noise\n\nLimitation: same-method heuristic only, no taint tracking. A secret assembled in a different method and then copied will be missed; conversely the keyword is a hint, not proof the copied value is the secret. Manual review recommended for confirmed findings.\n\nMitigation: avoid copying sensitive data to the clipboard; if unavoidable, on Android 13+ mark the ClipData with EXTRA_IS_SENSITIVE, and clear the clipboard after use.\n\nRef: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling | https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-1/"
+        "desc": "The Android system clipboard is global — any installed app, and some input method editors (IMEs), can read its contents at any time (before Android 10) or while in the foreground. Copying secrets such as passwords, PINs, card numbers, or tokens into the clipboard exposes them to other apps and clipboard-monitoring malware.\n\nDetection strategy — same-method co-occurrence (low false positive):\n1. Find a clipboard write API call in an app-owned method:\n   - ClipboardManager.setPrimaryClip(ClipData)  (modern)\n   - ClipboardManager.setText(CharSequence)     (deprecated)\n2. Scan const-strings in the SAME method (this covers the ClipData label and any literal field hints).\n3. Classify by keyword:\n   - CRITICAL: explicit secret keyword (password / passwd / pin / cvv / ssn / credit card / secret key / private key)\n   - WARNING: possibly-sensitive keyword (token / account / auth / credential / otp / api key / session)\n   - (not reported): clipboard write with no sensitive keyword — normal usage such as copying an order id or share link, suppressed to avoid noise\n\nLimitation: same-method heuristic only, no taint tracking. A secret assembled in a different method and then copied will be missed; conversely the keyword is a hint, not proof the copied value is the secret. Manual review recommended for confirmed findings.\n\nMitigation: avoid copying sensitive data to the clipboard; if unavoidable, on Android 13+ mark the ClipData with EXTRA_IS_SENSITIVE, and clear the clipboard after use.\n\nRef: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling"
     },
     "AS-lab081": {
         "title": "User Input Validation Check (type / length)",
-        "mas": "4.1.5.4.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-CODE-4",
         "owasp_mobile": "M4",
         "level": "WARNING",
         "cve": "CWE-20",
-        "desc": "When user input has no declared type or length constraint, an attacker can supply unexpected characters or an overly long string, enabling SQL injection, command injection, path traversal, or backend processing failures; a password field with no length cap allows input long enough to exhaust hashing resources.\n\nThis check parses the layout XML under res/layout and its qualifier directories (layout-land, layout-v21, etc.), locates EditText / AutoCompleteTextView family fields, and verifies android:inputType (type constraint, checked on every field) and android:maxLength (length constraint, checked on sensitive / password fields only, since ordinary fields such as search or comment boxes legitimately have no length cap).\n\nOnly WARNING findings (sensitive / password field missing a type or length constraint) are listed; an ordinary input field missing a type constraint is low risk and is still detected and kept in the result data, but omitted from the report.\n\nLimitation: only the layout XML declarations are inspected; validation implemented in code (InputFilter) and programmatically built UI (Jetpack Compose, WebView forms) are not covered, so manual review of flagged items is recommended.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
+        "desc": "When user input has no declared type or length constraint, an attacker can supply unexpected characters or an overly long string, enabling SQL injection, command injection, path traversal, or backend processing failures; a password field with no length cap allows input long enough to exhaust hashing resources.\n\nThis check parses the layout XML under res/layout and its qualifier directories (layout-land, layout-v21, etc.), locates EditText / AutoCompleteTextView family fields, and verifies android:inputType (type constraint, checked on every field) and android:maxLength (length constraint, checked on sensitive / password fields only, since ordinary fields such as search or comment boxes legitimately have no length cap).\n\nOnly WARNING findings (sensitive / password field missing a type or length constraint) are listed; an ordinary input field missing a type constraint is low risk and is still detected and kept in the result data, but omitted from the report.\n\nLimitation: only the layout XML declarations are inspected; validation implemented in code (InputFilter) and programmatically built UI (Jetpack Compose, WebView forms) are not covered, so manual review of flagged items is recommended. | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
     },
     "AS-lab082": {
         "title": "Emulator Detection Check",
-        "mas": "4.1.5.5.7",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-1",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily.\n\nThis check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, emulator detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
+        "desc": "When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily.\n\nThis check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, emulator detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended."
     },
     "AS-lab083": {
         "title": "USB Debugging Detection Check",
-        "mas": "4.1.5.5.8",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-2",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access.\n\nThis check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, USB debugging detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended.\n\nRef: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+        "desc": "When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access.\n\nThis check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, USB debugging detection is considered missing.\n\nLimitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended. | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
     },
     "AS-lab084": {
         "title": "Code Obfuscation Check",
-        "mas": "4.1.5.5.6",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-RESILIENCE-3",
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "The app code is not obfuscated, so decompiled code is easy to read and protections are easy to find and bypass.\n\nFails when: in the app's own packages (the manifest package and the package of the launcher activity), excluding compiler-generated code and names that must be kept such as JNI, the ratios of short names like a, b, aa for classes, methods and fields are all below 30%. When these packages have fewer than 10 classes, code moved into short packages such as o or a.b (DexGuard, R8 repackaging) counts as obfuscated; otherwise (e.g. packed apps) the result is Not evaluated.\n\nFix: enable R8/ProGuard for release builds (minifyEnabled true) and remove -dontobfuscate.\n\nLimitation: only name obfuscation is checked; string encryption and control-flow obfuscation are not; when the app's own packages are visible, code moved to other packages is not counted; criterion (2), whether the code can be deobfuscated, needs manual testing.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
+        "desc": "The app code is not obfuscated, so decompiled code is easy to read and protections are easy to find and bypass.\n\nFails when: in the app's own packages (the manifest package and the package of the launcher activity), excluding compiler-generated code and names that must be kept such as JNI, the ratios of short names like a, b, aa for classes, methods and fields are all below 30%. When these packages have fewer than 10 classes, code moved into short packages such as o or a.b (DexGuard, R8 repackaging) counts as obfuscated; otherwise (e.g. packed apps) the result is Not evaluated.\n\nFix: enable R8/ProGuard for release builds (minifyEnabled true) and remove -dontobfuscate.\n\nLimitation: only name obfuscation is checked; string encryption and control-flow obfuscation are not; when the app's own packages are visible, code moved to other packages is not counted; criterion (2), whether the code can be deobfuscated, needs manual testing. | https://developer.android.com/build/shrink-code"
     },
     "AS-lab085": {
         "title": "Transaction Resource Usage Notice Check",
-        "mas": "4.1.3.1.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "",
         "owasp_mobile": "",
@@ -841,22 +841,22 @@
     },
     "AS-lab086": {
         "title": "Sensitive Data Storage Notice Check",
-        "mas": "4.1.2.3.1",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-PLATFORM-1|MASVS-STORAGE-1|MASVS-PRIVACY-4",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "The app stores sensitive data on the device without first telling users and getting their consent.\n\nFails when: the app writes sensitive data to SharedPreferences, DataStore, SQLite or files (names such as password, token, phone, account, message, note, contact or calendar tables, or data from location, contacts, device IDs or password fields) and no consent or notice mechanism is found anywhere in the app. Apps that store no sensitive data pass. A stored consent state, a consent screen or a consent management SDK is reported as Not evaluated with the Google Play Data safety comparison, since static analysis cannot confirm that consent comes before storing and covers all stored data; only a privacy policy link, text or terms screen cannot confirm that consent is obtained before storing and is reported as Not evaluated, as are names that look sensitive but hold numbers, stored user-typed text, encrypted data, serialized objects, or file and table content that cannot be identified, and apps whose code is not visible.\n\nFix: show a notice and get consent before sensitive data is first stored, record the consent, and do not store without it.\n\nLimitation: does not check the notice wording; the store description and the survey form for unpublished apps need manual review; stored content is recognized only by key and table names, input text, encrypted data and serialized objects; SharedPreferences values are judged by key name only.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+        "desc": "The app stores sensitive data on the device without first telling users and getting their consent.\n\nFails when: the app writes sensitive data to SharedPreferences, DataStore, SQLite or files (names such as password, token, phone, account, message, note, contact or calendar tables, or data from location, contacts, device IDs or password fields) and no consent or notice mechanism is found anywhere in the app. Apps that store no sensitive data pass. A stored consent state, a consent screen or a consent management SDK is reported as Not evaluated with the Google Play Data safety comparison, since static analysis cannot confirm that consent comes before storing and covers all stored data; only a privacy policy link, text or terms screen cannot confirm that consent is obtained before storing and is reported as Not evaluated, as are names that look sensitive but hold numbers, stored user-typed text, encrypted data, serialized objects, or file and table content that cannot be identified, and apps whose code is not visible.\n\nFix: show a notice and get consent before sensitive data is first stored, record the consent, and do not store without it.\n\nLimitation: does not check the notice wording; the store description and the survey form for unpublished apps need manual review; stored content is recognized only by key and table names, input text, encrypted data and serialized objects; SharedPreferences values are judged by key name only. | https://developer.android.com/training/data-storage"
     },
     "AS-lab087": {
         "title": "Sensitive Data Storage Refusal Check",
-        "mas": "4.1.2.3.2",
+        "mas": "",
         "mast": "",
         "real_mstg": "MASVS-STORAGE-1|MASVS-PRIVACY-4",
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "The app stores sensitive data but users cannot refuse it.\n\nFails when: for the sensitive data storage found by AS-lab086, the call path of the write has no read of an option such as \"remember account\", \"save password\" or \"auto login\" (SharedPreferences, DataStore or an on-screen checkbox), or the option is read but not used to decide whether to store; it also fails when AS-lab086 fails, since users cannot refuse undeclared data (as the standard states). Cases where AS-lab086 is Not evaluated (declaration not confirmed), options checked elsewhere, options whose key cannot be identified, paths decided only by settings with unrecognized names, storage done after a dialog button, and storage whose writing code is not located (Room tables, DataStore keys) are reported as Not evaluated.\n\nFix: offer options such as \"remember account\" or \"save password\", check them before writing, and when turned off do not store and delete what was stored.\n\nLimitation: only settings named like remember or save plus a credential word (remember_password, save_account), auto login, biometric or app lock count as options; only 4 levels of callers are traced; criterion (2), that nothing is stored after refusal, needs dynamic testing.\n\nRef: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+        "desc": "The app stores sensitive data but users cannot refuse it.\n\nFails when: for the sensitive data storage found by AS-lab086, the call path of the write has no read of an option such as \"remember account\", \"save password\" or \"auto login\" (SharedPreferences, DataStore or an on-screen checkbox), or the option is read but not used to decide whether to store; it also fails when AS-lab086 fails, since users cannot refuse undeclared data (as the standard states). Cases where AS-lab086 is Not evaluated (declaration not confirmed), options checked elsewhere, options whose key cannot be identified, paths decided only by settings with unrecognized names, storage done after a dialog button, and storage whose writing code is not located (Room tables, DataStore keys) are reported as Not evaluated.\n\nFix: offer options such as \"remember account\" or \"save password\", check them before writing, and when turned off do not store and delete what was stored.\n\nLimitation: only settings named like remember or save plus a credential word (remember_password, save_account), auto login, biometric or app lock count as options; only 4 levels of callers are traced; criterion (2), that nothing is stored after refusal, needs dynamic testing. | https://developer.android.com/training/data-storage"
     }
 }
