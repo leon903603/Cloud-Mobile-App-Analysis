@@ -5,8 +5,11 @@ import zipfile
 import json
 import subprocess
 import base64
+import math
 import urllib.request
 import urllib.error
+import urllib.parse
+import concurrent.futures
 from flask import Flask, request, jsonify, send_file
 from androguard.misc import AnalyzeAPK
 
@@ -107,6 +110,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         file.save(save_path)
         apk_path = save_path
 
+        STORAGE_RESULT_CACHE.clear()
         try:
             a, d, dx = AnalyzeAPK(apk_path)
         except Exception as e:
@@ -560,70 +564,27 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         }), 200
 
     #----------------------------------------------------------------
-    # CVE-2023-4863 libwebp.so  BuildHuffmanTable Heap OverFlow
+    # 4.1.5.3.1 — 函式庫引用安全
     @app.route('/androguard/lab_016', methods=['GET'])
     def detect_lab_016():
         """
-        CVE-2023-4863: Detect vulnerable libwebp native libraries in the APK.
-        Scans .so files for vulnerable strings (WebPCopyPlane, WebPCopyPixels, VP8LBuildHuffmanTable)
-        and checks if the patched string (VP8LHuffmanTablesAllocate) is absent.
-        If vulnerable strings are found but the safe string is missing, the library is affected.
+        風險: 引用有已知漏洞的函式庫, 攻擊者可直接利用公開漏洞。
+        檢測: 辨識函式庫名稱與版本: Java (META-INF/*.version、Google *.properties、pom.properties; 沒有版本檔的常見函式庫
+              從 DEX 類別辨識、從字串取版本)、網頁 (assets / React Native bundle 的 JavaScript, Retire.js 規則與內嵌 package.json)、
+              .NET 組件 (版本資源)、Flutter 套件 (libapp.so 的套件名稱)、.so 與 Unity 引擎的版本字串;
+              Java / 網頁 / .NET / Flutter 用 OSV 查詢、.so 與 Unity 用 NVD CPE 查詢; libwebp 另用符號比對 CVE-2023-4863。
+        結果: 有 CVE 且 CVSS v3.0 >= 7 (只有 v3.1 的用 v3.0 公式重算; 前 LIB_MAX_NVD_CONFIRM 個用 NVD 分數確認) -> WARNING; 查詢失敗、CVE 沒有 v3 分數、完全辨識不到函式庫,
+              或有引用函式庫但讀不到版本、且該函式庫有 CVSS >= 7 的漏洞版本 -> NOT_EVALUATED (列出受影響版本); 其他 -> PASS。
+              加殼看不到程式碼、網頁程式碼加密、或混淆把 class 搬到短套件 (函式庫認不出來) -> NOT_EVALUATED, 請提供未加殼 / 未混淆的 APK;
+              .NET 組件被壓縮 -> NOT_EVALUATED。
+              沒有版本記錄的 Java 函式庫用類別名稱到 Maven Central 反查, 版本另讀函式庫的 BuildConfig.VERSION_NAME;
+              框架本身: React Native (ReactNativeVersion)、Cordova (cordova.js); 沒有版本字串的 .so 用匯出函式名稱 / 檔名對到 NVD 產品,
+              兩者讀不到版本, 有高風險 CVE 就 NOT_EVALUATED。
+        限制: 網頁只認 LIB_JS_SIGNATURES 與內嵌 package.json; Flutter 套件沒有版本; App 自己的 .so 與 NVD 沒有的產品認不出來。
         """
-        results = []
-        vulnerable_strings = [b'WebPCopyPlane', b'WebPCopyPixels', b'VP8LBuildHuffmanTable']
-        safe_string = b'VP8LHuffmanTablesAllocate'
+        return jsonify(dict(library_vuln_result(a, d), lab_id="lab_016",
+                            description="Referenced library known vulnerability check (CVE with CVSS v3 >= 7)")), 200
 
-        try:
-            all_files = a.get_files()
-            so_files = [f for f in all_files if f.endswith('.so')]
-
-            for so_file in so_files:
-                try:
-                    file_data = a.get_file(so_file)
-                    if not file_data:
-                        continue
-
-                    # Check for vulnerable strings
-                    matched = [s.decode() for s in vulnerable_strings if s in file_data]
-                    # Check for safe (patched) string
-                    has_safe = safe_string in file_data
-
-                    if matched and not has_safe:
-                        results.append({
-                            "file": so_file,
-                            "matched_strings": matched,
-                            "patched": False,
-                            "status": "VULNERABLE"
-                        })
-                    elif matched and has_safe:
-                        results.append({
-                            "file": so_file,
-                            "matched_strings": matched,
-                            "patched": True,
-                            "status": "PATCHED"
-                        })
-                except Exception as e:
-                    print(f"Error reading {so_file}: {e}")
-                    continue
-
-        except Exception as e:
-            return jsonify({
-                "error": f"Failed to scan native libraries: {str(e)}",
-                "results": []
-            }), 500
-
-        vulnerable_count = sum(1 for r in results if r["status"] == "VULNERABLE")
-
-        return jsonify({
-            "results": results,
-            "so_files_scanned": len(so_files) if 'so_files' in dir() else 0,
-            "vulnerable_count": vulnerable_count,
-            "has_vulnerability": vulnerable_count > 0,
-            "lab_id": "lab_016",
-            "cve": "CVE-2023-4863",
-            "description": "libwebp VP8LBuildHuffmanTable Heap Overflow detection"
-        }), 200
-    
     # 不當對 FileProvider 揭露目錄
     @app.route('/androguard/lab_018', methods=['GET'])
     def detect_lab_018():
@@ -4227,11 +4188,15 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         """
         風險: 交易前沒告知商品、金額、付款方式, 使用者可能在不知情下付款。
         檢測: 找交易管道 (見 find_payment_channels): Google Play 內購由平台畫面顯示商品 / 金額 / 付款方式 -> 沒問題;
-              Google Pay 檢查 App 組的請求有沒有金額 (totalPrice) 與商品明細 (displayItems);
-              第三方支付 SDK、NFC 感應支付、自建交易畫面、找不到交易畫面的金融 App (銀行、證券) -> 畫面內容看不到。
-        結果: Google Pay 請求有交易資訊卻沒有金額 -> WARNING; 其他看不到的管道 -> NOT_EVALUATED (報告顯示 Not evaluated);
+              Google Pay 檢查 App 自己組的請求有沒有 MAS 要求的商品名稱 (displayItems)、金額 (totalPrice)、交易方式 (allowedPaymentMethods);
+              Samsung Pay 同樣檢查 App 組的付款畫面 (CustomSheet) 有沒有金額 (AmountBoxControl)、商品明細 (addItem);
+              其他商店內購 (華為、Samsung、Amazon) 同 Play 內購; 第三方支付 SDK、網頁金流網址、電子支付 App (街口等)、
+              信用卡 CVV 欄位、交易專用介面文字 (含點數兌換、儲值、購票、證券下單)、NFC 感應支付、自建交易畫面、找不到交易畫面的金融 App
+              -> 畫面內容看不到; NFC 付款服務要求解鎖 (requireDeviceUnlock) -> 現場授權, 符合; 有內購時其他管道也照樣檢查。
+        結果: Google Pay 請求缺金額或交易方式 -> WARNING; 只缺商品名稱 (可能已顯示在 App 結帳頁) 與其他看不到的管道 -> NOT_EVALUATED;
               只有 Play 內購或沒有交易 -> PASS。
-        限制: 只認清單內的 SDK 與名稱關鍵字; 僅收款 (不適用) 與外匯、期貨、虛擬貨幣的例外需人工判斷。
+        限制: 只看請求欄位有沒有出現, 不看值; 只認清單內的 SDK 與名稱關鍵字;
+              僅收款 (不適用) 與外匯、期貨、虛擬貨幣的例外需人工判斷。
         """
         keep = app_class_filter(a)
         channels = find_payment_channels(a, dx, keep)
@@ -4246,6 +4211,119 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "count":       len(findings),
             "lab_id":      "lab_085",
             "description": "Transaction notice check (payment requests without product name or amount)",
+        }), 200
+
+    # 4.1.2.3.1 — 敏感性資料儲存聲明
+    @app.route('/androguard/lab_086', methods=['GET'])
+    def detect_lab_086():
+        """
+        風險: App 把敏感資料存在裝置上, 沒先告知並取得同意。
+        檢測: 找敏感資料寫進 SharedPreferences / DataStore / SQLite / 檔案 (見 find_sensitive_storage),
+              有的話再找同意機制 (見 find_storage_consent): 讀寫同意狀態、同意畫面、同意管理 SDK -> 有取得同意;
+              只有隱私權政策連結 / 文字、條款畫面 -> 只有告知。
+              有同意機制時再看 Google Play 資料安全性頁面有沒有列出每一類儲存的資料 (商店聲明), 列給人工確認。
+        結果: 確定有儲存敏感資料且完全沒有同意或告知 -> WARNING;
+              有同意機制 (靜態確認不了同意在儲存之前、涵蓋所有資料)、只有告知、只有待確認的儲存、程式碼看不到
+              -> NOT_EVALUATED; 沒有儲存敏感資料 -> PASS。
+        限制: 不看聲明內容; 商店說明文字、未上架 App 的調查表需人工確認。
+        """
+        r = storage_consent_result(a, dx)
+        verdict = r["verdict_086"]
+        return jsonify({
+            "verdict":     verdict,
+            "has_finding": verdict == "WARNING",
+            "reason":      r["reason"],
+            "storage":     storage_items(r["storage"]),
+            # 無法判定時連同確定的儲存一起列出, 供人工確認
+            "review":      storage_items(r["review"] + (r["storage"] if verdict == "NOT_EVALUATED" else [])),
+            "consent":     r["consent"],
+            "own_classes": r["own_classes"],
+            "count":       len(r["storage"]) if verdict == "WARNING" else 0,
+            "lab_id":      "lab_086",
+            "description": "Sensitive data storage notice check (stored without consent or notice)",
+        }), 200
+
+    # 4.1.2.3.2 — 拒絕敏感性資料儲存
+    @app.route('/androguard/lab_087', methods=['GET'])
+    def detect_lab_087():
+        """
+        風險: 使用者無法拒絕 App 儲存敏感資料。
+        檢測: 同 lab_086 的敏感資料儲存, 從寫入的 method 往上追 4 層呼叫: 有沒有讀「記住帳號 / 儲存密碼」這類開關
+              (SharedPreferences、DataStore、勾選框 isChecked), 且讀到的值拿來決定要不要儲存。
+              lab_086 不符合 (沒聲明) 時此項也不符合 (標準規定)。
+        結果: lab_086 WARNING, 或確定的儲存在路徑上完全沒讀設定 / 開關讀了沒拿來判斷 -> WARNING;
+              開關值傳到別處、開關 key 看不出來、只有名稱認不出的設定拿來判斷、對話框按鈕後才儲存、
+              找不到寫入位置 (Room、DataStore key)、待確認的儲存、lab_086 NOT_EVALUATED -> NOT_EVALUATED (有開關的儲存也列出); 其他 -> PASS。
+        限制: 開關只認 key 名稱 (remember、save 等); 不確認拒絕後真的沒存 (基準(2) 需動態)。
+        """
+        r = storage_consent_result(a, dx)
+        items = []
+        if r["verdict_086"] != "WARNING":
+            cache = {"methods": {}, "getters": {}}
+            try:
+                arsc = a.get_android_resources()
+            except Exception:
+                arsc = None
+            cache["getters"]["_arsc"] = arsc
+
+            def kind_of(key):
+                if isinstance(key, int) and not isinstance(key, bool):
+                    key = resource_name(arsc, key)
+                # 混淆後的欄位名 (H、aB) 看不出用途
+                if not isinstance(key, str) or len(key) <= 2:
+                    return ("unknown", None)
+                return ("share", key) if STORE_SWITCH_RE.search(split_words(key)) else ("other", key)
+
+            for s in r["storage"]:
+                item = {k: v for k, v in s.items() if k != "method"}
+                if s["method"] is None:
+                    item.update(problem="storing code not located (e.g. Room table, DataStore key)", unverified=True)
+                else:
+                    ev = path_evidence(dx, [s["method"]], cache, kind_of, reader=store_switch_reads)
+                    item["evidence"] = {k: ev[k] for k in ("keys", "other_keys", "gating", "default_on", "dialog")}
+                    item["problem"] = None
+                    if not ev["switch"] and ev["switch_unverified"]:
+                        item.update(problem="a setting is read on the path but its key cannot be identified", unverified=True)
+                    elif not ev["switch"] and ev.get("other_used"):
+                        item.update(problem="settings with unrecognized names decide on the path; one may be the refusal option",
+                                    unverified=True)
+                    elif not ev["switch"] and ev["dialog"]:
+                        # 對話框按下確認才儲存 (例「信任此裝置?」): 使用者可能可以按取消拒絕, 看不到按鈕內容
+                        item.update(problem="stored after a dialog button; the dialog may let users refuse", unverified=True)
+                    elif not ev["switch"]:
+                        item["problem"] = "no option to refuse storing"
+                    elif ev["gating"] == "none":
+                        item["problem"] = "option is read but not used to decide"
+                    elif ev["gating"] == "unknown":
+                        item.update(problem="option value is used elsewhere, effect not verified", unverified=True)
+                items.append(item)
+        findings = [i for i in items if i["problem"] and not i.get("unverified")]
+        review = [i for i in items if i["problem"] and i.get("unverified")] \
+            + [dict(s, problem=s["reason"]) for s in storage_items(r["review"])]
+        if r["verdict_086"] == "WARNING":
+            verdict, reason = "WARNING", "4.1.2.3.1 not met: " + r["reason"]
+            findings = [dict(s, problem="stored without notice, so users cannot refuse it")
+                        for s in storage_items(r["storage"])]
+        elif findings:
+            verdict, reason = "WARNING", "sensitive data stored without an option to refuse"
+        elif review or r["verdict_086"] == "NOT_EVALUATED":
+            verdict, reason = "NOT_EVALUATED", r["reason"] if not review else "refusal option could not be verified"
+            # AS-lab086 無法判定 (聲明不確定): 有開關的儲存也列出來, 給人工確認
+            review += [dict(i, problem="controlled by a user option, but the AS-lab086 declaration could not be confirmed")
+                       for i in items if not i["problem"]]
+        else:
+            verdict, reason = "PASS", r["reason"] if not items else "every storage is controlled by a user option"
+        return jsonify({
+            "verdict":     verdict,
+            "has_finding": verdict == "WARNING",
+            "reason":      reason,
+            "storage":     items,
+            "findings":    findings,
+            "review":      review,
+            "own_classes": r["own_classes"],
+            "count":       len(findings),
+            "lab_id":      "lab_087",
+            "description": "Sensitive data storage refusal check (no user option to refuse storing)",
         }), 200
 
     # 4.1.2.3.7 — WebView advanced configuration audit (complements lab_034)
@@ -4553,7 +4631,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def resolve_activity_name(package_name, activity_name):
         """把 Manifest 的簡寫元件名補成完整 class 名: '.MyActivity' / 'MyActivity' -> 'com.example.app.MyActivity', 已是完整名稱則不變
-        使用: lab036, lab_039, lab_042, lab_077, lab_084, lab_085"""
+        使用: lab036, lab_039, lab_042, lab_077, lab_084, lab_085, lab_086 (透過 find_storage_consent)"""
         if activity_name.startswith('.'):
             return package_name + activity_name
         elif '.' not in activity_name:
@@ -4574,7 +4652,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def app_class_filter(a):
         """回傳 keep(class 名) 判斷函式: 是否為 App 自己的程式碼 (App 套件優先, 再排除 FilteringEngine 與 EXTRA_LIB_PREFIXES)
-        使用: lab_026, lab_027, lab_039, lab_040, lab_041, lab_056, lab_064, lab_082, lab_083, lab_085; 透過 missing_app_components 也給 lab_042 用"""
+        使用: lab_026, lab_027, lab_039, lab_040, lab_041, lab_056, lab_064, lab_082, lab_083, lab_085, lab_086, lab_087; 透過 missing_app_components 也給 lab_042 用"""
         pkg = (a.get_package() or "").replace(".", "/")
         own = ("L" + pkg + "/") if pkg else None
 
@@ -4668,7 +4746,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
     def find_app_sdk_calls(dx, keep, prefixes):
         """App 自己的程式碼有呼叫某個 SDK 的 method (含建構子) 才算有用; 只打包或被其他函式庫帶進來的不算
         回傳 [{"class": SDK class, "library", "caller": 呼叫的位置}], 每個 SDK 只列第一筆
-        使用: lab_026, lab_056, lab_064, lab_082, lab_083"""
+        使用: lab_026, lab_056, lab_064, lab_082, lab_083, lab_086 (透過 find_storage_consent)"""
         found = []
         for prefix, name in prefixes:
             hit = None
@@ -4773,7 +4851,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def split_words(value):
         """駝峰拆成底線並轉小寫, 例 'authToken' -> 'auth_token'
-        使用: lab_039, lab_040 (透過 sensitive_keyword, switch_kind)"""
+        使用: lab_039, lab_040 (透過 sensitive_keyword, switch_kind), lab_086, lab_087"""
         return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", value or "").lower()
 
     def sensitive_keyword(value):
@@ -4784,7 +4862,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def sensitive_api_names():
         """敏感資料 API -> 名稱 (沿用 lab_041 的 DATA_SAFETY_MAP, 不看權限)
-        使用: lab_039, lab_040 (透過 method_sensitive_evidence)"""
+        使用: lab_039, lab_040 (透過 method_sensitive_evidence), lab_086, lab_087 (透過 find_sensitive_storage)"""
         return [(api, e["name"]) for e in DATA_SAFETY_MAP for api in e.get("apis", [])]
 
     def method_sensitive_evidence(ma, api_names, strings=True):
@@ -4828,7 +4906,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def ins_registers(ins):
         """指令用到的暫存器, 例 ['v0', 'v1']; invoke/range 的 'v1 ... v7' 會展開
-        使用: lab_039, lab_040 (透過 find_intent_channels, switch_reads)"""
+        使用: lab_039, lab_040 (透過 find_intent_channels, switch_reads), lab_086, lab_087"""
         try:
             prefix = ins.get_output().split('L', 1)[0]
         except Exception:
@@ -4840,7 +4918,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def invoke_args(name, out, regs):
         """invoke 指令每個參數 (不含 this) 對應的 (型別, 暫存器); long / double 佔兩個暫存器
-        使用: lab_039, lab_040 (透過 find_intent_channels, switch_reads)"""
+        使用: lab_039, lab_040 (透過 find_intent_channels, switch_reads), lab_086, lab_087"""
         m = re.search(r'\(([^)]*)\)', out)
         params = re.findall(r'\[*(?:L[^;]+;|[ZBSCIJFD])', m.group(1).replace(' ', '')) if m else []
         i = 0 if 'static' in name else 1
@@ -5071,7 +5149,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def switch_getter(dx, out, cache):
         """invoke 的對象是「回傳 boolean 且裡面讀 SharedPreferences.getBoolean」的 App method (例 isShareEnabled()) -> 回傳該讀取
-        使用: lab_039, lab_040 (透過 switch_reads)"""
+        使用: lab_039, lab_040 (透過 switch_reads), lab_087 (透過 store_switch_reads)"""
         m = re.search(r'(L[^;]+;)->([^(]+)(\([^)]*\)Z)$', out)
         if not m:
             return None
@@ -5094,7 +5172,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         """一個 method 裡讀使用者開關的地方, 回傳 [{"key", "default", "api", "use"}]
         use: "branch" = 讀到的值拿來做 if 判斷; "passed" = 回傳 / 存欄位 / 傳給其他 method (在別處判斷, 看不到); "unused" = 讀了沒用
         SharedPreferences.getBoolean、回傳開關值的 App method (見 switch_getter) 都算; DataStore 看不到判斷, use 一律 "passed"
-        使用: lab_039, lab_040 (透過 path_evidence)"""
+        使用: lab_039, lab_040 (透過 path_evidence), lab_087 (透過 store_switch_reads)"""
         try:
             instructions = [] if ma.is_external() else list(ma.get_method().get_instructions())
         except Exception:
@@ -5160,15 +5238,17 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         return [{"key": r["key"], "default": r["default"], "api": r["api"],
                  "use": "branch" if r["branch"] else ("passed" if r["passed"] else "unused")} for r in reads]
 
-    def path_evidence(dx, start, cache, kind_of, depth=4, limit=300):
+    def path_evidence(dx, start, cache, kind_of, depth=4, limit=300, reader=None):
         """從 start 的 method 往上追呼叫者 depth 層, 收集同意 / 開關證據
-        kind_of(key) -> ("share", 名稱) 分享開關 / ("other", 名稱) 其他用途的設定 / ("unknown", None) 看不出 key
+        kind_of(key) -> ("share", 名稱) 要找的開關 / ("other", 名稱) 其他用途的設定 / ("unknown", None) 看不出 key
+        reader: 讀開關的函式, 預設 switch_reads (lab_087 用 store_switch_reads, 多認勾選框)
         回傳 {"dialog": 路徑經過對話框按鈕, "switch": 路徑讀了分享開關,
               "switch_unverified": 沒有分享開關, 但讀了看不出 key 的開關 (DataStore 等),
               "gating": "used" (開關值拿來判斷) / "unknown" (值傳到別處, 看不到) / "none" (讀了沒用) / None (沒開關),
-              "keys": 分享開關名稱, "other_keys": 不算分享開關的設定名稱, "default_on": 分享開關預設是開}
+              "keys": 分享開關名稱, "other_keys": 不算分享開關的設定名稱, "other_used": 其他設定的值有拿來做 if 判斷,
+              "default_on": 分享開關預設是開}
         callback (run / onClick) 沒有呼叫者時, 改從建立該物件的地方 (<init> 的呼叫者) 繼續追
-        使用: lab_039, lab_040 (透過 find_auto_share_channels)"""
+        使用: lab_039, lab_040 (透過 find_auto_share_channels), lab_087"""
         dialog, reads = False, []
         frontier, visited = list(start), set()
         for level in range(depth + 1):
@@ -5181,7 +5261,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                 if ma.name == "onClick" and "Landroid/content/DialogInterface;" in str(ma.descriptor):
                     dialog = True
                 if key not in cache["methods"]:
-                    cache["methods"][key] = switch_reads(ma, dx, cache["getters"])
+                    cache["methods"][key] = (reader or switch_reads)(ma, dx, cache["getters"])
                 reads += cache["methods"][key]
                 if level == depth:
                     continue
@@ -5204,6 +5284,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                 "switch_unverified": not share and any(k[0] == "unknown" for _, k in kinds),
                 "keys": sorted({str(n) for _, n in share if n}),
                 "other_keys": sorted({str(k[1]) for _, k in kinds if k[0] == "other"})[:5],
+                "other_used": any(k[0] == "other" and r["use"] == "branch" for r, k in kinds),
                 "default_on": any(r["default"] is True for r, _ in share)}
 
     def settings_switch_keys(a):
@@ -5364,7 +5445,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     # App 自己讀取的敏感資料 -> 資料安全性類別
     # permissions: 需要的權限 (None = 不需權限); apis: 真正讀取資料的呼叫; strings: const-string 特徵
-    # 使用: lab_041 (透過 find_sensitive_data_usage)
+    # 使用: lab_041 (透過 find_sensitive_data_usage); lab_039, lab_040, lab_086, lab_087 (透過 sensitive_api_names)
     DATA_SAFETY_MAP = [
         {"name": "Location",
          "permissions": ["android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION",
@@ -5548,7 +5629,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
     def fetch_play_data_safety(package):
         """抓 Google Play 資料安全性頁面, 回傳 {"status", "declared" (已聲明類別), "url", "fetched_at"}
         status: ok / not_on_play / fetch_failed / parse_failed / invalid_package
-        使用: lab_041"""
+        使用: lab_041, lab_086 (透過 storage_consent_analyze)"""
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+', package or ''):
             return {"status": "invalid_package", "declared": []}
         import hashlib
@@ -5578,13 +5659,13 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
     OBF_RATIO_THRESHOLD = 0.3
 
     # App 自己套件的 class 少於這個數不判斷 (多半是加殼, 程式碼執行時才載入)
-    # 使用: lab_084
+    # 使用: lab_084, lab_016 (透過 lib_code_hidden)
     OBF_MIN_CLASSES = 10
 
     # App 自己的套件幾乎沒有 class 時, 改看被搬到 o、a.b 這類短套件的 class: 達到這個數 -> 程式碼被混淆工具搬走
     # (DexGuard / R8 repackageclasses), 算有混淆; 自己的套件看得到時不看 (搬走的多半是函式庫, 不代表 App 程式碼有混淆)
     # 16 個對照 APK 實測 (2026-10-09): 兆豐 (DexGuard) 1765 個, 元大 (加殼) 0 個
-    # 使用: lab_084
+    # 使用: lab_084, lab_016 (透過 lib_code_hidden)
     OBF_REPACKAGED_MIN = 50
 
     # 兩個字母但常見的真實頂層套件 (國碼、io), 不當作搬移後的短套件
@@ -5612,7 +5693,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     def is_repackaged_class(class_name):
         """class 被混淆工具搬到短套件: 頂層套件是單一字母 (o.X、a.b.C), 或套件每層都 <= 2 字且 class 名稱也是短名稱
-        使用: lab_084 (透過 obfuscation_stats)"""
+        使用: lab_084 (透過 obfuscation_stats), lab_016 (透過 lib_code_hidden)"""
         parts = class_name[1:-1].split("/")
         if len(parts) < 2 or class_name.startswith(OBF_LIB_PREFIXES):
             return False
@@ -5625,7 +5706,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
     def app_own_prefixes(a):
         """App 自己的套件前綴: Manifest package 與啟動 Activity 的套件 (最多 3 層)
         不用 Application class (加殼時是殼的 class); 第三方的元件也不算
-        使用: lab_084 (透過 obfuscation_stats)"""
+        使用: lab_084 (透過 obfuscation_stats), lab_086, lab_087 (透過 storage_consent_result), lab_016 (透過 lib_code_hidden)"""
         package = a.get_package() or ""
         prefixes = set()
         names = [(package, False)]
@@ -5724,6 +5805,15 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         ("Ltech/cherri/tpdirect/",               "TapPay"),
         ("Lcom/samsung/android/sdk/samsungpay/", "Samsung Pay"),
         ("Lsqip/",                               "Square In-App Payments"),
+        ("Lcom/airwallex/android/",              "Airwallex"),
+        ("Lio/primer/android/",                  "Primer"),
+        ("Lcom/processout/sdk/",                 "ProcessOut"),
+        ("Lco/omise/android/",                   "Omise"),
+        ("Lco/xendit/",                          "Xendit"),
+        ("Lcom/judopay/judokit/",                "Judopay"),
+        ("Lcom/paysafe/android/",                "Paysafe"),
+        ("Lcom/recurly/androidsdk/",             "Recurly"),
+        ("Lpayment/sdk/android/",                "Network International"),
     ]
 
     # 只有 App 自己呼叫才算的支付 API (SDK 也用在分享 / 登入, 只看到 class 不算); (API, 名稱)
@@ -5737,16 +5827,168 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
     # transfer 單獨出現不算 (常見於資料傳輸, 如 TransferEntriesActivity)
     # 使用: lab_085 (透過 find_payment_channels)
     TRANSACTION_SCREEN_WORDS = {"checkout", "payment", "pay", "purchase", "remit", "remittance", "order",
-                                "trade", "trading", "topup", "recharge", "cart", "transaction"}
+                                "trade", "trading", "topup", "recharge", "cart", "transaction", "redeem", "redemption", "voucher"}
 
     # 套件名 / App 名稱含這些字 -> 金融 App, 交易畫面可能看不到 (單一 Activity、Flutter、加殼)
     # 使用: lab_085 (透過 find_payment_channels)
     FINANCE_APP_WORDS = ("bank", "pay", "wallet", "securities", "stock", "invest", "finance", "trade", "broker",
                          "futures", "crypto", "銀行", "支付", "錢包", "證券", "金融", "投信", "期貨", "交易")
 
+    # 網頁金流的付款網址 (App 開網頁或導轉付款); (網址片段, 名稱), 網址以官方技術文件為準
+    # 使用: lab_085 (透過 find_payment_channels)
+    PAYMENT_GATEWAY_URLS = [
+        ("payment.ecpay.com.tw",       "ECPay"),       # 綠界 AioCheckOut (含 payment-stage 測試環境)
+        ("payment-stage.ecpay.com.tw", "ECPay"),
+        ("core.newebpay.com",          "NewebPay"),    # 藍新 MPG (ccore 為測試環境)
+        ("api-pay.line.me",            "LINE Pay"),    # LINE Pay Online API (含 sandbox-api-pay)
+        ("checkout.stripe.com",        "Stripe Checkout"),
+        ("paypal.com/checkoutnow",     "PayPal Checkout"),
+    ]
+
+    # 其他應用商店的內購 (購買畫面由商店顯示商品、金額、付款方式, 同 Google Play 內購); (App 呼叫的 API, 名稱), API 以官方文件為準
+    # 使用: lab_085 (透過 find_payment_channels)
+    STORE_BILLING_APIS = [
+        ("Lcom/huawei/hms/iap/IapClient;->createPurchaseIntent", "Huawei IAP"),
+        ("/IapHelper;->startPayment(",                          "Samsung IAP"),
+        ("Lcom/amazon/device/iap/PurchasingService;->purchase(", "Amazon IAP"),
+    ]
+
+    # 台灣常見電子支付 App (跳到錢包 App 付款); 套件名稱以 Google Play 頁面為準 (2026-10-19 查證)
+    # 出現在 Manifest <queries> 或 App 程式碼字串 -> 會跳到該 App 付款
+    # 使用: lab_085 (透過 find_payment_channels)
+    WALLET_APP_PACKAGES = {
+        "com.jkos.app":            "JKOPay 街口支付",
+        "com.pxpayplus.app":       "PX Pay Plus 全支付",
+        "com.easycard.wallet":     "Easy Wallet 悠遊付",
+        "com.linepaytw.upay":      "LINE Pay",
+        "tw.com.icash.a.icashpay": "icash Pay",
+        "com.ipass.ipassmoney":    "iPASS MONEY",
+        "tw.com.twmp.twhcewallet": "Taiwan Pay 台灣Pay",
+    }
+
+    # 交易專用的介面文字 (字串資源的內容): MAS 3.6 交易資源含實體貨幣、點數 / 序號、票券 / 股票
+    # 只用交易才會出現的詞組; 「購買」「Buy」太常見 (內購 App 也有)、「check out」常是「看看」(分享文字) 不用
+    # 使用: lab_085 (透過 find_transaction_text)
+    TRANSACTION_TEXT_ZH = ("確認付款", "付款方式", "支付方式", "結帳", "確認轉帳", "轉帳金額", "確認交易", "交易密碼",
+                           "委託買進", "委託賣出", "確認下單", "兌換點數", "點數兌換", "確認兌換", "儲值金額", "加值金額",
+                           "立即儲值", "購票", "訂票", "付款金額", "應付金額", "訂單金額")
+    TRANSACTION_TEXT_EN = re.compile(r'\b(confirm payment|payment method|place order|checkout|top[ -]?up|redeem points|'
+                                     r'order total|amount due|pay now)\b', re.I)
+
+    # 信用卡輸入欄位: 資源名稱拆字後有這些字 (CVV / CVC 只出現在刷卡付款), 或字串有「末三碼」
+    # 只有卡號、有效期限不算 (會員卡、憑證到期也會用到)
+    # 使用: lab_085 (透過 find_card_form)
+    CARD_CVV_WORDS = {"cvv", "cvv2", "cvc", "cvc2", "cvn", "cvn2"}
+    CARD_CVV_TEXT_RE = re.compile(r'末三碼|背面.{0,4}三碼')
+
+    # Google Pay 請求可能寫在資源檔 (res/raw、assets 的 JSON)
+    # 使用: lab_085 (透過 apk_text_files)
+    PAYMENT_JSON_MAX = 512 * 1024
+
+    def apk_text_files(a, prefixes, suffixes):
+        """APK 裡指定位置的文字檔內容 [(路徑, 文字)]; 讀不到的略過
+        使用: lab_085"""
+        out = []
+        try:
+            files = [f for f in a.get_files() if isinstance(f, str)]
+        except Exception:
+            return out
+        for path in files:
+            if path.startswith(prefixes) and path.endswith(suffixes):
+                try:
+                    raw = a.get_file(path)
+                except Exception:
+                    continue
+                if isinstance(raw, bytes) and len(raw) <= PAYMENT_JSON_MAX:
+                    out.append((path, raw.decode('utf-8', 'replace')))
+        return out
+
+    def find_transaction_text(a):
+        """字串資源內容裡的交易專用詞組 -> 有交易畫面 (含點數兌換、儲值、購票、證券下單); 回傳 [(資源名稱, 詞組)] 最多 5 個
+        使用: lab_085 (透過 find_payment_channels)"""
+        try:
+            xml = a.get_android_resources().get_string_resources(a.get_package())
+        except Exception:
+            return []
+        text = xml.decode('utf-8', 'replace') if isinstance(xml, bytes) else str(xml)
+        hits = []
+        for name, value in re.findall(r'<string name="([^"]+)">([^<]*)</string>', text):
+            word = next((w for w in TRANSACTION_TEXT_ZH if w in value), None)
+            if not word:
+                m = TRANSACTION_TEXT_EN.search(value)
+                word = m.group(0) if m else None
+            if word and len(value) <= 60:
+                hits.append((name, word))
+        seen, out = set(), []
+        for name, word in hits:
+            if word.lower() not in seen:
+                seen.add(word.lower())
+                out.append((name, word))
+        return out[:5]
+
+    def wallet_app_targets(a, dx, keep):
+        """Manifest <queries> 與 App 程式碼字串裡的電子支付 App 套件名稱 -> {名稱: 位置}
+        使用: lab_085 (透過 find_payment_channels)"""
+        found = {}
+        try:
+            ns = '{http://schemas.android.com/apk/res/android}'
+            for q in a.get_android_manifest_xml().iter('queries'):
+                for pkg in q.iter('package'):
+                    name = WALLET_APP_PACKAGES.get(pkg.get(ns + 'name') or '')
+                    if name:
+                        found.setdefault(name, 'AndroidManifest <queries>')
+        except Exception:
+            pass
+        for hit in find_app_const_strings(dx, lambda s: WALLET_APP_PACKAGES.get((s or '').strip()), keep):
+            found.setdefault(hit["indicator"], hit["class"])
+        return found
+
+    def find_card_form(a):
+        """資源 (id、字串名稱與內容) 裡的信用卡安全碼欄位 -> 自建刷卡畫面; 回傳命中的名稱 (最多 5 個)
+        使用: lab_085 (透過 find_payment_channels)"""
+        try:
+            res = a.get_android_resources()
+            package = a.get_package()
+            xml = res.get_id_resources(package) + res.get_string_resources(package)
+        except Exception:
+            return []
+        text = xml.decode('utf-8', 'replace') if isinstance(xml, bytes) else str(xml)
+        hits = set()
+        for name in re.findall(r'name="([^"]+)"', text):
+            words = {w.lower() for w in re.findall(r'[A-Z]?[a-z]+[0-9]*|[A-Z]+[0-9]*(?![a-z])', name)}
+            if words & CARD_CVV_WORDS:
+                hits.add(name)
+        hits.update(m.group(0) for m in CARD_CVV_TEXT_RE.finditer(text))
+        return sorted(hits)[:5]
+
+    def hce_payment_info(a, service):
+        """NFC 卡片模擬服務的設定 (apduservice.xml): 回傳 (是否為付款類, 是否要求解鎖); 讀不到回傳 (None, None)
+        使用: lab_085 (透過 find_payment_channels)"""
+        ns = '{http://schemas.android.com/apk/res/android}'
+        try:
+            from androguard.core.axml import AXMLPrinter
+            manifest = a.get_android_manifest_xml()
+            res = a.get_android_resources()
+            for svc in manifest.iter('service'):
+                name = svc.get(ns + 'name') or ''
+                if resolve_activity_name(a.get_package() or '', name) != resolve_activity_name(a.get_package() or '', service):
+                    continue
+                for md in svc.iter('meta-data'):
+                    if md.get(ns + 'name') != 'android.nfc.cardemulation.host_apdu_service':
+                        continue
+                    rid = int((md.get(ns + 'resource') or '').lstrip('@'), 16)
+                    for _, path in res.get_resolved_res_configs(rid)[:1]:
+                        root = AXMLPrinter(a.get_file(path)).get_xml_obj()
+                        payment = any(g.get(ns + 'category') == 'payment' for g in root.iter('aid-group'))
+                        unlock = (root.get(ns + 'requireDeviceUnlock') or '').lower() == 'true'
+                        return payment, unlock
+        except Exception:
+            pass
+        return None, None
+
     def find_payment_channels(a, dx, keep):
         """找 App 的交易管道, 每個管道: type / where / evidence / problem (None = 沒問題) / confidence (high 或 review)
-        Google Play 內購 -> 沒問題; Google Pay -> 依請求內容判斷; 第三方 SDK、NFC 感應支付、自建交易畫面、找不到畫面的金融 App -> review
+        Google Play 內購 -> 沒問題; Google Pay (App 自己呼叫的) -> 依請求內容判斷; 第三方 SDK (含 SDK 內部呼叫的 Google Pay)、NFC 感應支付、自建交易畫面、找不到畫面的金融 App -> review
         使用: lab_085"""
         channels = []
 
@@ -5763,11 +6005,25 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                                           "permission": billing_perm},
                              "problem": None, "confidence": "high"})
 
-        # 2. Google Pay: App 自己組的請求要有金額 (totalPrice) 與商品明細 (displayItems)
-        gpay = strip_instructions(find_app_references(dx, keep, [
+        # 1b. 其他應用商店的內購 (華為、Samsung、Amazon): 由商店顯示交易資訊, 同 Google Play 內購
+        store = strip_instructions(find_app_references(dx, keep, [api for api, _ in STORE_BILLING_APIS]))
+        for name in sorted({n for api, n in STORE_BILLING_APIS for r in store if r["api"] == api}):
+            refs = [r for r in store if next(n for api, n in STORE_BILLING_APIS if api == r["api"]) == name]
+            channels.append({"type": "store_billing", "where": "%s (%s)" % (name, refs[0]["class"]),
+                             "evidence": {"calls": refs[:5]}, "problem": None, "confidence": "high"})
+        billing = billing + store
+
+        # 2. Google Pay: 檢查 App 自己組的請求有沒有 MAS 要求的商品名稱 (displayItems)、金額 (totalPrice)、交易方式 (allowedPaymentMethods)
+        #    支付 SDK 內部呼叫 Google Pay 的不算 (請求由 SDK 組, 歸到第 3 類)
+        sdk_prefixes = tuple(prefix for prefix, _ in PAYMENT_SDK_PREFIXES)
+
+        def own(class_name):
+            return keep(class_name) and not class_name.startswith(sdk_prefixes)
+
+        gpay = strip_instructions(find_app_references(dx, own, [
             "Lcom/google/android/gms/wallet/PaymentsClient;->loadPaymentData"]))
         if gpay:
-            keys = ("totalPrice", "displayItems", "transactionInfo", "totalPriceStatus")
+            keys = ("totalPrice", "displayItems", "allowedPaymentMethods", "transactionInfo", "totalPriceStatus")
 
             def match(s):
                 s = s or ""
@@ -5775,33 +6031,72 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                 return ",".join(hits) or None
 
             found = set()
-            for hit in find_app_const_strings(dx, match, keep):
+            for hit in find_app_const_strings(dx, match, own):
                 found.update(hit["indicator"].split(","))
-            for ref in find_app_references(dx, keep, [
+            # 請求寫在 res/raw、assets 的 JSON
+            for path, text in apk_text_files(a, ('res/raw/', 'assets/'), ('.json', '.txt')):
+                if '"allowedPaymentMethods"' in text or '"transactionInfo"' in text:
+                    found.update(k for k in keys if ('"%s"' % k) in text)
+            # 舊版 Builder 寫法
+            for ref in find_app_references(dx, own, [
                     "Lcom/google/android/gms/wallet/TransactionInfo$Builder;->setTotalPrice(",   # 不含 setTotalPriceStatus
                     "Lcom/google/android/gms/wallet/TransactionInfo$Builder;",
-                    "Lcom/google/android/gms/wallet/LineItem"]):
+                    "Lcom/google/android/gms/wallet/LineItem",
+                    "Lcom/google/android/gms/wallet/PaymentDataRequest$Builder;->addAllowedPaymentMethod"]):
                 if "setTotalPrice" in ref["api"]:
                     found.add("totalPrice")
                 elif "LineItem" in ref["api"]:
                     found.add("displayItems")
+                elif "addAllowedPaymentMethod" in ref["api"]:
+                    found.add("allowedPaymentMethods")
                 else:
                     found.add("transactionInfo")
             built_here = bool(found & {"transactionInfo", "totalPriceStatus", "totalPrice"})
+            # 缺金額 / 交易方式 -> 交易前一定無法告知; 缺商品名稱 -> 可能已顯示在 App 自己的結帳頁 (MAS 備註: 交易前通知即可)
+            missing = [name for key, name in (("totalPrice", "amount (totalPrice)"),
+                                              ("allowedPaymentMethods", "payment method (allowedPaymentMethods)"))
+                       if key not in found]
             if not built_here:
-                problem, confidence = "payment request is not built in app code (may come from the server)", "review"
-            elif "totalPrice" not in found:
-                problem, confidence = "Google Pay request has no amount (totalPrice)", "high"
+                problem, confidence = ("payment request content not found in app code or resources "
+                                       "(may be built elsewhere, e.g. by the server)"), "review"
+            elif missing:
+                problem, confidence = "Google Pay request has no " + ", ".join(missing), "high"
             elif "displayItems" not in found:
-                problem, confidence = "Google Pay request has no item list (displayItems)", "review"
+                problem, confidence = ("Google Pay request has no item name (displayItems); "
+                                       "check whether the app shows it before paying"), "review"
             else:
                 problem, confidence = None, "high"
             channels.append({"type": "google_pay", "where": gpay[0]["class"],
                              "evidence": {"calls": gpay[:5], "request_fields": sorted(found)},
                              "problem": problem, "confidence": confidence})
 
-        # 3. 第三方支付 SDK: 結帳畫面由 SDK 顯示
-        sdks = [s["library"] for s in find_class_prefixes(dx, PAYMENT_SDK_PREFIXES)]
+        # 2b. Samsung Pay (App 內付款): 跟 Google Pay 一樣由 App 組付款畫面 (CustomSheet), 金額要自己放進 AmountBoxControl
+        #     沒有金額 -> 付款畫面不會顯示金額; 交易方式是使用者在 Samsung Pay 畫面選的卡, 一定會顯示
+        spay = strip_instructions(find_app_references(dx, own, [
+            "Lcom/samsung/android/sdk/samsungpay/v2/payment/PaymentManager;->startInAppPayWithCustomSheet"]))
+        if spay:
+            refs = strip_instructions(find_app_references(dx, own, [
+                "Lcom/samsung/android/sdk/samsungpay/v2/payment/sheet/CustomSheet;-><init>",
+                "Lcom/samsung/android/sdk/samsungpay/v2/payment/sheet/AmountBoxControl;-><init>",
+                "Lcom/samsung/android/sdk/samsungpay/v2/payment/sheet/AmountBoxControl;->setAmountTotal",
+                "Lcom/samsung/android/sdk/samsungpay/v2/payment/sheet/AmountBoxControl;->addItem"]))
+            fields = {r["api"].rsplit("/", 1)[-1] for r in refs}   # CustomSheet;-><init>、AmountBoxControl;->addItem ...
+            if "CustomSheet;-><init>" not in fields:
+                problem, confidence = "Samsung Pay sheet content not found in app code", "review"
+            elif not fields & {"AmountBoxControl;-><init>", "AmountBoxControl;->setAmountTotal"}:
+                problem, confidence = "Samsung Pay sheet has no amount (AmountBoxControl)", "high"
+            elif "AmountBoxControl;->addItem" not in fields:
+                problem, confidence = ("Samsung Pay sheet has no item name (AmountBoxControl.addItem); "
+                                       "check whether the app shows it before paying"), "review"
+            else:
+                problem, confidence = None, "high"
+            channels.append({"type": "samsung_pay", "where": spay[0]["class"],
+                             "evidence": {"calls": spay[:5], "sheet_fields": sorted(fields)},
+                             "problem": problem, "confidence": confidence})
+
+        # 3. 第三方支付 SDK: 結帳畫面由 SDK 顯示 (App 自己呼叫的 Samsung Pay 已在 2b 檢查)
+        sdks = [s["library"] for s in find_class_prefixes(dx, PAYMENT_SDK_PREFIXES)
+                if not (spay and s["library"] == "Samsung Pay")]
         for ref in find_app_references(dx, keep, [api for api, _ in PAYMENT_CALL_APIS]):
             name = next(n for api, n in PAYMENT_CALL_APIS if api == ref["api"])
             if name not in sdks:
@@ -5811,31 +6106,76 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                              "problem": "third-party checkout screen not visible to static analysis",
                              "confidence": "review"})
 
-        # 4. NFC 感應支付 (現場交易): 要確認使用者在現場確認
+        # 4. NFC 感應支付 (現場交易, MAS 基準 (2)): 設定要求解鎖 (requireDeviceUnlock) -> 使用者在現場解鎖授權, 符合;
+        #    非付款類 (門禁、票證等 category="other") 不算交易; 設定讀不到或沒要求解鎖 -> 人工確認
         for service in a.get_services():
             actions = a.get_intent_filters("service", service).get("action", [])
             if "android.nfc.cardemulation.action.HOST_APDU_SERVICE" in actions:
-                channels.append({"type": "nfc_payment", "where": service, "evidence": {},
-                                 "problem": "contactless payment, user confirmation not verifiable",
-                                 "confidence": "review"})
-
-        # 5. 沒有上述管道才看自建交易畫面 (有內購時 PurchaseActivity 等多半就是內購)
-        if not channels:
-            package = a.get_package() or ""
-            for activity in a.get_activities():
-                full = resolve_activity_name(package, activity)
-                if not keep("L" + full.replace(".", "/") + ";"):
+                payment, unlock = hce_payment_info(a, service)
+                if payment is False:
                     continue
-                simple = full.rsplit(".", 1)[-1]
-                words = {w.lower() for w in re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?![a-z])', simple)}
-                lower = simple.lower()
-                hit = (words & TRANSACTION_SCREEN_WORDS) or {w for w in ("checkout", "topup", "recharge") if w in lower}
-                if hit:
-                    channels.append({"type": "custom_flow", "where": full, "evidence": {"words": sorted(hit)},
-                                     "problem": "custom transaction screen, notice content not visible to static analysis",
+                if payment and unlock:
+                    channels.append({"type": "nfc_payment", "where": service, "evidence": {"require_device_unlock": True},
+                                     "problem": None, "confidence": "high"})
+                else:
+                    channels.append({"type": "nfc_payment", "where": service,
+                                     "evidence": {"require_device_unlock": False if payment else None},
+                                     "problem": "contactless payment without requireDeviceUnlock, user confirmation not verifiable"
+                                                if payment else "contactless payment, user confirmation not verifiable",
                                      "confidence": "review"})
 
-        # 6. 還是沒有: 金融 App 的交易畫面可能看不到, 交給人工
+        # 5. 網頁金流: App 程式碼或字串資源有付款網址
+        def gateway(s):
+            s = s or ""
+            return next((n for url, n in PAYMENT_GATEWAY_URLS if url in s), None)
+        gateways = {}
+        for hit in find_app_const_strings(dx, gateway, keep):
+            gateways.setdefault(hit["indicator"], hit["class"])
+        for name, where in sorted(gateways.items()):
+            channels.append({"type": "web_checkout", "where": "%s (%s)" % (name, where), "evidence": {},
+                             "problem": "web checkout page, notice content not visible to static analysis",
+                             "confidence": "review"})
+
+        # 6. 自建刷卡畫面: 資源裡有信用卡安全碼 (CVV) 欄位
+        card = find_card_form(a)
+        if card:
+            channels.append({"type": "card_form", "where": ", ".join(card), "evidence": {"resources": card},
+                             "problem": "credit card input screen, notice content not visible to static analysis",
+                             "confidence": "review"})
+
+        # 6b. 跳到電子支付 App 付款 (街口、全支付、LINE Pay 等): 付款畫面在錢包 App, 看不到
+        for name, where in sorted(wallet_app_targets(a, dx, keep).items()):
+            channels.append({"type": "wallet_app", "where": "%s (%s)" % (name, where), "evidence": {},
+                             "problem": "payment in e-wallet app, notice content not visible to static analysis",
+                             "confidence": "review"})
+
+        # 6c. 交易專用的介面文字 (付款、轉帳、點數兌換、儲值、購票、證券下單)
+        text_hits = find_transaction_text(a)
+        if text_hits:
+            channels.append({"type": "transaction_text", "where": ", ".join("%s: %s" % (n, w) for n, w in text_hits),
+                             "evidence": {"strings": [n for n, _ in text_hits]},
+                             "problem": "transaction screen text found, notice content not visible to static analysis",
+                             "confidence": "review"})
+
+        # 7. 自建交易畫面 (Activity 名稱); 有內購時也要看, 但呼叫內購的畫面本身略過
+        billing_screens = {ref["class"].split("$")[0].rstrip(";") for ref in billing}
+        package = a.get_package() or ""
+        for activity in a.get_activities():
+            full = resolve_activity_name(package, activity)
+            if not keep("L" + full.replace(".", "/") + ";"):
+                continue
+            if "L" + full.replace(".", "/") in billing_screens:
+                continue
+            simple = full.rsplit(".", 1)[-1]
+            words = {w.lower() for w in re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?![a-z])', simple)}
+            lower = simple.lower()
+            hit = (words & TRANSACTION_SCREEN_WORDS) or {w for w in ("checkout", "topup", "recharge") if w in lower}
+            if hit:
+                channels.append({"type": "custom_flow", "where": full, "evidence": {"words": sorted(hit)},
+                                 "problem": "custom transaction screen, notice content not visible to static analysis",
+                                 "confidence": "review"})
+
+        # 8. 還是沒有: 金融 App 的交易畫面可能看不到, 交給人工
         if not channels:
             try:
                 label = a.get_app_name() or ""
@@ -5849,6 +6189,745 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                                  "problem": "financial app, transaction screens not found by static analysis",
                                  "confidence": "review"})
         return channels
+
+    # ---- 敏感資料儲存 ----
+
+    # 寫入裝置的 API: (API 片段, 儲存位置); SharedPreferences / ContentValues 第 1 個參數是 key, 第 2 個是值
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    KEYED_STORE_APIS = [
+        ("Landroid/content/SharedPreferences$Editor;->put", "SharedPreferences"),
+        ("Landroid/content/ContentValues;->put(",           "SQLite"),
+    ]
+    # 值寫進檔案 / DataStore / SQL 的 API (任一參數是敏感資料就算)
+    VALUE_STORE_APIS = [
+        ("Landroidx/datastore/preferences/core/MutablePreferences;->set(", "DataStore"),
+        ("Landroid/database/sqlite/SQLiteDatabase;->execSQL(",              "SQLite"),
+        ("Ljava/nio/file/Files;->write",                                    "File"),
+        ("Lkotlin/io/FilesKt",                                              "File"),   # File.writeText / writeBytes / appendText
+    ]
+    # 寫串流的 API; 同一個 method 有開檔 (FILE_OPEN_APIS) 才算寫檔, 否則可能是網路串流
+    STREAM_WRITE_APIS = ("Ljava/io/OutputStream;->write(", "Ljava/io/FileOutputStream;->write(",
+                         "Ljava/io/Writer;->write(", "Ljava/io/Writer;->append(", "Ljava/io/FileWriter;->write(",
+                         "Ljava/io/OutputStreamWriter;->write(", "Ljava/io/BufferedWriter;->write(",
+                         "Ljava/io/PrintWriter;->print", "Ljava/io/PrintWriter;->write(")
+    FILE_OPEN_APIS = ("Ljava/io/FileOutputStream;-><init>(", "Ljava/io/FileWriter;-><init>(",
+                      "->openFileOutput(", "Ljava/io/RandomAccessFile;-><init>(")
+    # 寫到其他 App / 系統的 provider (相簿、通訊錄), 不是 App 自己儲存
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    RESOLVER_WRITE_APIS = ("Landroid/content/ContentResolver;->insert(", "Landroid/content/ContentResolver;->update(",
+                           "Landroid/content/ContentResolver;->bulkInsert(", "Landroid/content/ContentResolver;->applyBatch(")
+    # DataStore 建 key 的函式; boolean / int 的 key 不會是敏感資料內容
+    DATASTORE_KEY_FUNCS = ("->stringKey(", "->stringSetKey(", "->longKey(", "->floatKey(", "->doubleKey(")
+
+    # 儲存用的敏感 key / 欄位名稱 (比 SENSITIVE_KEYWORD_RE 嚴: location、account、contact 常是路徑或內部 ID, 不算)
+    # 使用: lab_086, lab_087 (透過 storage_key_sensitive)
+    STORAGE_KEYWORD_RE = re.compile(
+        r"(?<![a-z])(password|passwd|passcode|pwd|pin_?code|otp|secret|credentials?|cookies?|"
+        r"(access|refresh|auth|id|session|bearer|login|api|user)?_?token|session_?id|api_?key|access_?key|private_?key|"
+        r"phone(_?number)?|mobile(_?number)?|msisdn|e_?mails?(_?address)?|birthday|birth_?date|"
+        r"id_?card|id_?number|national_id|ssn|card_?(number|no)|credit_card|cvv|iban|account_?(number|no|name)|"
+        r"imei|imsi|iccid|meid|android_?id|advertising_?id|latitude|longitude|lat|lng|"
+        r"user_?name|login_?(id|name)|real_?name|full_?name)(?![a-z])"
+        r"|密碼|帳號|身分證|電話|手機|信用卡|生日")
+    # 存放 MAS 3.4 所列個人隱私資料的資料表名稱 (即時通訊訊息、簡訊、通話記錄、備忘錄、筆記、通訊錄、行事曆)
+    # 使用: lab_086, lab_087 (透過 sql_sensitive_columns)
+    CONTENT_TABLE_RE = re.compile(
+        r"(?<![a-z])(messages?|sms|mms|chats?|conversations?|call_?logs?|memos?|notes?|contacts?|calendars?|attendees?)(?![a-z])")
+    # 不會改寫第一個暫存器的指令 (常數、呼叫、判斷、寫入欄位 / 陣列、return 等)
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    REG_KEEP_PREFIXES = ("const", "invoke", "if-", "iput", "sput", "aput", "return", "throw", "monitor", "check-cast",
+                         "goto", "fill-array", "packed-switch", "sparse-switch", "nop", "filled-new-array")
+    # 靜態看不出內容的資料來源: 輸入框的文字 (筆記、訊息)、加密後的資料 (金鑰、密碼庫); 寫進裝置時列為待確認
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    UNKNOWN_CONTENT_SOURCES = ("text typed by the user", "encrypted data", "serialized object")
+    # 把物件轉成字串的 API (Gson、Moshi、kotlinx.serialization、JSONObject); 存起來時看不出物件裡有哪些欄位
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    SERIALIZE_APIS = ("Lcom/google/gson/Gson;->toJson(", "Lcom/squareup/moshi/JsonAdapter;->toJson(",
+                      "Lkotlinx/serialization/json/Json;->encodeToString(", "Lorg/json/JSONObject;->toString(",
+                      "Lorg/json/JSONArray;->toString(")
+    # 寫入內容看不出來時列出的 API (SharedPreferences / DataStore 的 key 名稱看得出用途, 不列)
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    UNIDENTIFIED_WRITE_APIS = ("Ljava/nio/file/Files;->write", "Lkotlin/io/FilesKt", "Landroid/database/sqlite/SQLiteDatabase;->execSQL(")
+    UNIDENTIFIED_REASON = "content cannot be identified statically; check whether it is sensitive"
+    # 函式庫的資料表 (混淆後 class 名稱看不出是函式庫, 用表名排除): WorkManager、ExoPlayer
+    # 使用: lab_086, lab_087 (透過 sql_text_table)
+    LIB_TABLE_NAMES = {"WorkSpec", "WorkTag", "WorkName", "Dependency", "SystemIdInfo", "WorkProgress", "Preference",
+                       "ExoPlayerVersions"}
+    # 資料表是 SDK 自己的佇列 / 快取, 不是使用者資料 (例 Firebase Analytics 的 messages 表是待上傳事件)
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage)
+    SDK_TABLE_PREFIXES = ("Lcom/google/android/gms/", "Lcom/google/firebase/", "Lcom/google/android/datatransport/",
+                          "Landroidx/work/", "Landroidx/media3/", "Lcom/google/android/exoplayer2/")
+    # 名稱是描述資料的設定 (時間、次數、開關、推播 token), 不是資料本身
+    STORAGE_KEY_EXCLUDE_RE = re.compile(
+        r"(?<![a-z])(time|timestamp|date|count|counter|freq|frequency|reminder|position|enabled?|asked|shown|flag|"
+        r"version|permission|mode|type|status|interval|updated?|setting|prompt|hint|label|length|format|required|"
+        r"visible|verified|policy|size|expires?|expiry|push|fcm|gcm|firebase|notification|registration|apns|"
+        r"author|developer|support|maintainer)s?(?![a-z])")
+
+    # 密碼輸入框: layout 的 inputType (textPassword 0x81 / textWebPassword 0xe1 / numberPassword 0x12) 或 android:password
+    # 使用: lab_086, lab_087 (透過 password_view_names)
+    PASSWORD_INPUT_TYPES = (0x81, 0xe1, 0x12)
+    # 名稱像密碼欄位的 View (欄位名或 R.id 名稱); 看不到 layout 時用
+    PASSWORD_VIEW_RE = re.compile(r"(password|passwd|pwd|passcode|pin_?code|otp|密碼)")
+
+    # 輸入框 / 勾選框的類別名稱結尾
+    # 使用: lab_086, lab_087 (透過 find_sensitive_storage, store_switch_reads)
+    TEXT_INPUT_TYPES = ("EditText;", "TextInputEditText;", "TextInputLayout;", "AutoCompleteTextView;")
+    CHECKABLE_TYPES = ("CheckBox;", "Switch;", "SwitchCompat;", "SwitchMaterial;", "MaterialSwitch;",
+                       "CompoundButton;", "ToggleButton;", "MaterialCheckBox;")
+
+    # 同意 / 隱私相關的 key、畫面、字串
+    # 使用: lab_086 (透過 find_storage_consent)
+    # 只有 privacy / policy 不算 (例 reblogPrivacy 是貼文公開範圍), 要像 privacy_policy、privacy_agreed
+    CONSENT_KEY_RE = re.compile(
+        r"(?<![a-z])(consent(ed|s)?|agree(d|ment|s)?|eula|gdpr|"
+        # accept / terms 單獨出現常是別的意思 (acceptHeader、autoAccept、terms_shown), 要兩個一起
+        r"(accept(ed)?|confirm(ed)?|read|ack(nowledged)?)_([a-z]+_)?(terms|tos|policy|privacy|eula|disclaimer|license|legal|cookies?)|"
+        r"(terms|tos|policy|privacy|eula|disclaimer|license|legal|cookies?)_([a-z]+_)?(accept(ed)?|confirm(ed)?|read|ack(nowledged)?)|"
+        r"privacy_?(policy|notice|statement|agree|agreed|accepted|confirmed?|read))(?![a-z])"
+        r"|同意|條款|隱私權?(政策|聲明)")
+    # 畫面名稱: 同意畫面 (算取得同意) / 聲明畫面 (只顯示條款, 不確定有取得同意)
+    CONSENT_SCREEN_WORDS = {"consent", "agreement", "agree", "eula"}
+    NOTICE_SCREEN_WORDS = {"privacy", "terms", "policy", "disclaimer"}
+    PRIVACY_TEXT_RE = re.compile(r"privacy|隱私|個資|個人資料", re.I)
+    # 函式庫自帶的字串資源前綴, 不算 App 自己的聲明
+    LIB_RES_PREFIXES = ("abc_", "mtrl_", "material_", "common_", "com_facebook_", "fui_", "m3_", "exo_", "androidx_",
+                        "preference_", "fab_", "bottom_sheet_", "appbar_", "search_menu_", "status_bar_", "gms_", "fcm_")
+    # 算「取得同意」的機制 (其他如 privacy_text、notice_screen 只算告知)
+    # 使用: lab_086 (透過 storage_consent_result)
+    CONSENT_TYPES = ("consent_check", "consent_sdk", "consent_screen")
+    # 同意管理 SDK; App 自己有呼叫才算
+    CONSENT_SDK_PREFIXES = [
+        ("Lcom/google/android/ump/", "Google User Messaging Platform"),
+        ("Lcom/onetrust/",           "OneTrust"),
+        ("Lio/didomi/",              "Didomi"),
+        ("Lcom/usercentrics/",       "Usercentrics"),
+        ("Lcom/sourcepoint/",        "Sourcepoint"),
+    ]
+
+    # 拒絕儲存的開關 key (記住帳號、儲存密碼、自動登入、生物辨識登入、App 密碼鎖)
+    # 使用: lab_087
+    STORE_SWITCH_RE = re.compile(
+        r"(?<![a-z])(auto_?login|auto_?fill|(stay|keep)_?(logged|signed)|quick_?login|biometrics?|fingerprint|"
+        r"protection|app_?lock|pin_?lock|"
+        # remember / save 等要接帳密類的字 (keep_screen_on、save_images、auto_save 不算)
+        r"(remember|save|store|keep|persist)_([a-z]+_)?(me|password|passwd|pwd|pass|passcode|pin|account|user|"
+        r"username|user_?name|login|credentials?|id|token|session|card|email|phone|location))(?![a-z])"
+        r"|(?<![a-z])(?<!auto_)(remember|save)$|記住|記憶|儲存|保存|自動登入|快速登入")
+
+    # 儲存的資料 -> Google Play 資料安全性類別 (比對 storage 的 data / key); 密碼、token 等沒有對應類別
+    # 使用: lab_086 (透過 storage_store_unconfirmed)
+    STORAGE_PLAY_CATEGORIES = [
+        (r"(?<![a-z])(lat|lng|latitude|longitude|location)(?![a-z])",                          "location"),
+        (r"(?<![a-z])(imei|imsi|iccid|meid|android_?id|advertising_?id|device)(?![a-z])",       "device or other ids"),
+        (r"(?<![a-z])(card_?(number|no)|credit_card|cvv|iban|account_?(number|no))(?![a-z])",   "financial info"),
+        (r"(?<![a-z])(messages?|sms|mms|chats?|conversations?)(?![a-z])",                       "messages"),
+        (r"(?<![a-z])(contacts?|call_?logs?)(?![a-z])",                                         "contacts"),
+        (r"(?<![a-z])(calendars?|attendees?)(?![a-z])",                                         "calendar"),
+        (r"(?<![a-z])(phone(_?numbers?)?|mobile(_?number)?|msisdn|e_?mails?(_?address)?|birthday|birth_?date|"
+         r"id_?card|id_?number|national_id|ssn|user_?name|login_?(id|name)|real_?name|full_?name|account_?name)(?![a-z])",
+         "personal info"),
+    ]
+    # 自己套件的 class 少於這個數又找不到儲存 -> 程式碼看不到 (加殼), 無法判定
+    # 使用: lab_086, lab_087 (透過 storage_consent_result)
+    STORAGE_MIN_CLASSES = 10
+
+    def storage_key_sensitive(key):
+        """key / 欄位名稱是敏感資料 -> 回傳命中的字, 否則 None (時間、次數、開關、推播 token 等排除)
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        if not isinstance(key, str) or not key:
+            return None
+        words = split_words(key)
+        if STORAGE_KEY_EXCLUDE_RE.search(words):
+            return None
+        for m in STORAGE_KEYWORD_RE.finditer(words):
+            # 分頁 / 同步用的 token (next_page_token、syncToken) 不是使用者資料
+            if m.group(0).endswith("token") and re.search(r"(page|paging|pagination|sync|continuation|cursor)_?$",
+                                                         words[:m.start()]):
+                continue
+            return m.group(0)
+        return None
+
+    def resource_name(arsc, rid):
+        """資源編號 -> 名稱 (例 0x7f0a0012 -> 'et_password'), 查不到回傳 None
+        使用: lab_086, lab_087 (透過 find_sensitive_storage, store_switch_reads, password_view_names)"""
+        try:
+            name = arsc.get_resource_xml_name(rid) if arsc is not None else None
+        except Exception:
+            return None
+        return name.split("/", 1)[-1] if name else None
+
+    def password_view_names(a):
+        """layout 裡密碼輸入框的 id 名稱 (inputType 是密碼或 android:password="true")
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        try:
+            from androguard.core.axml import AXMLPrinter
+        except ImportError:
+            from androguard.core.bytecodes.axml import AXMLPrinter
+        import xml.etree.ElementTree as ET
+        names = set()
+        for f in a.get_files():
+            if not (f.startswith("res/layout") and f.endswith(".xml")):
+                continue
+            try:
+                root = ET.fromstring(AXMLPrinter(a.get_file(f)).get_buff())
+            except Exception:
+                continue
+            for el in root.iter():
+                vid = el.get(ANDROID_NS + "id") or ""
+                if not vid:
+                    continue
+                kind = (el.get(ANDROID_NS + "inputType") or "").lower()
+                try:
+                    num = int(kind, 0) if kind.startswith("0x") or kind.isdigit() else None
+                except ValueError:
+                    num = None
+                if "password" in kind or (num is not None and (num & 0xfff) in PASSWORD_INPUT_TYPES) \
+                        or el.get(ANDROID_NS + "password") == "true":
+                    names.add(vid.split("/", 1)[-1])
+        return names
+
+    def sql_sensitive_columns(sql):
+        """CREATE TABLE 字串裡的敏感資料 -> [(表名, 欄位或 None, 說明)]
+        1. 欄位名稱是敏感資料 (password、phone 等); 2. 表名是訊息、筆記、通訊錄、行事曆 (CONTENT_TABLE_RE) 且有文字欄位
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        m = re.match(r"\s*create\s+(?:virtual\s+)?table\s+(?:if\s+not\s+exists\s+)?[`\"\[]?([\w.]+)[`\"\]]?\s*\((.*)\)",
+                     sql or "", re.I | re.S)
+        if not m:
+            return []
+        cols, text_cols = [], 0
+        for part in m.group(2).split(","):
+            words = part.strip().split()
+            if not words or words[0].upper() in ("PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"):
+                continue
+            col = words[0].strip("`\"[]")
+            if storage_key_sensitive(col):
+                cols.append((m.group(1), col, "column '%s'" % col))
+            elif len(words) > 1 and words[1].strip("`\"[]").upper().startswith(("TEXT", "VARCHAR", "BLOB")) \
+                    and not STORAGE_KEY_EXCLUDE_RE.search(split_words(col)) \
+                    and not re.search(r"(?<![a-z])(id|uid|url|uri|path|key|hash|color|icon)$", split_words(col)):
+                text_cols += 1
+        table = re.sub(r"^_?new_|_?entity$", "", split_words(m.group(1)))
+        hit = CONTENT_TABLE_RE.search(table)
+        if hit and text_cols and not cols:
+            cols.append((m.group(1), None, "table '%s' (%s)" % (m.group(1), hit.group(0))))
+        return cols
+
+    def method_param_regs(ma):
+        """method 參數對應的暫存器: 第 i 個參數 (不含 this) -> 'vN'; wide (long / double) 佔兩個
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        try:
+            code = ma.get_method().get_code()
+            first = code.get_registers_size() - code.get_ins_size()
+        except Exception:
+            return []
+        params = re.findall(r'\[*(?:L[^;]+;|[ZBSCIJFD])', str(ma.descriptor).split(")")[0].replace(" ", ""))
+        reg = first + (0 if "static" in (ma.get_method().get_access_flags_string() or "") else 1)
+        regs = []
+        for p in params:
+            regs.append("v%d" % reg)
+            reg += 2 if p in ("J", "D") else 1
+        return regs
+
+    def find_sensitive_storage(a, dx, keep):
+        """找 App 把敏感資料寫進裝置 (SharedPreferences、DataStore、SQLite、檔案) 的地方
+        敏感資料: 1. key / 欄位名稱是敏感資料 (password、token、phone 等); 2. 值來自敏感資料 API (定位、通訊錄、裝置 ID)
+                  或密碼輸入框, 在 method 內追蹤暫存器, 傳給 App 自己的 method 再追 2 層
+        回傳 [{"store", "where", "key", "data", "confidence" (high / review), "reason", "method" (寫入的 method 或 None)}]
+          review = 名稱像敏感資料但存的是整數 (可能是 ID / 次數), 或存的是看不出內容的資料 (UNKNOWN_CONTENT_SOURCES)
+        使用: lab_086, lab_087 (透過 storage_consent_result)"""
+        api_names = sensitive_api_names()
+        try:
+            arsc = a.get_android_resources()
+        except Exception:
+            arsc = None
+        pw_ids = password_view_names(a)
+        found, seen, done = [], set(), {}
+        crypto = crypto_wrapper_methods(dx, keep)
+        generic_tables = set()
+
+        def add(store, where, key, data, ma, confidence="high", reason=""):
+            k = (store, where, key)
+            if k in seen:
+                return
+            if confidence == "high" and isinstance(data, str) and data.startswith(UNKNOWN_CONTENT_SOURCES):
+                # 使用者打的字 / 加密資料: key 是敏感名稱就確定, 否則看不出內容, 交給人工
+                word = storage_key_sensitive(key)
+                if word:
+                    data = "key '%s' (%s)" % (word, data)
+                else:
+                    confidence, reason = "review", "content cannot be identified statically; check whether it is sensitive"
+            seen.add(k)
+            found.append({"store": store, "where": where, "key": key, "data": data, "confidence": confidence,
+                          "reason": reason, "method": ma})
+
+        def where_of(ma):
+            return "%s.%s" % (ma.class_name[1:-1].replace("/", "."), ma.name)
+
+        def scan(ma, tainted, depth):
+            # tainted: {暫存器: 資料來源說明}
+            sig = (ma.class_name, ma.name, str(ma.descriptor), tuple(sorted(tainted)))
+            if sig in done or len(done) > 20000:
+                return
+            done[sig] = True
+            try:
+                instructions = list(ma.get_method().get_instructions())
+            except Exception:
+                return
+            outs = [ins.get_output() for ins in instructions]
+            # 有開檔才算寫檔; 寫到其他 App 的 provider 不算
+            opens_file = any(api in o for o in outs for api in FILE_OPEN_APIS)
+            resolver = any(api in o for o in outs for api in RESOLVER_WRITE_APIS)
+            taint, consts, pending, pending_const, pending_sb, sb_consts = dict(tainted), {}, None, None, None, {}
+            for ins, out in zip(instructions, outs):
+                name = ins.get_name()
+                regs = ins_registers(ins)
+                # 暫存器被改寫 -> 原本的常數 (key 名稱) 失效, 避免把舊的字串當成 key (move 會帶著常數)
+                if regs and not name.startswith(REG_KEEP_PREFIXES):
+                    if name.startswith("move") and not name.startswith("move-result") and len(regs) > 1 \
+                            and regs[1] in consts:
+                        consts[regs[0]] = consts[regs[1]]
+                    else:
+                        consts.pop(regs[0], None)
+                    sb_consts.pop(regs[0], None)
+                if name.startswith("const-string") and regs:
+                    consts[regs[0]] = ins.get_string()
+                    taint.pop(regs[0], None)
+                    for table, col, data in sql_sensitive_columns(ins.get_string()):
+                        add("SQLite", where_of(ma), "%s.%s" % (table, col) if col else table, data, None)
+                    generic = sql_text_table(ins.get_string())
+                    if generic and generic[0] not in generic_tables:   # onCreate / onUpgrade 同一張表只列一次
+                        generic_tables.add(generic[0])
+                        add("SQLite", where_of(ma), generic[0], generic[1], None, "review", UNIDENTIFIED_REASON)
+                elif name.startswith("const") and regs:
+                    try:
+                        consts[regs[0]] = ins.get_literals()[0]
+                    except Exception:
+                        consts.pop(regs[0], None)
+                    taint.pop(regs[0], None)
+                elif name.startswith("iget-object") and regs:
+                    # 密碼輸入框的欄位 (含 ViewBinding 的 binding.etPassword)
+                    field = re.split(r"[ :]", out.rsplit("->", 1)[-1].strip(), 1)
+                    fname, ftype = field[0], field[-1]
+                    taint.pop(regs[0], None)
+                    if ftype.endswith(TEXT_INPUT_TYPES) and PASSWORD_VIEW_RE.search(split_words(fname)):
+                        taint[regs[0]] = "password field %s" % fname
+                    elif len(regs) > 1 and regs[1] in taint:
+                        taint[regs[0]] = taint[regs[1]]
+                elif name.startswith("invoke"):
+                    pending = None
+                    args = [r for _, r in invoke_args(name, out, regs)]
+                    this = regs[0] if regs and "static" not in name else None
+                    # 字串串接的 key ("token_" + id): StringBuilder 記住開頭的常數, toString() 的結果當作 key
+                    pending_const = pending_sb = None
+                    # 只認開頭是常數的 (前面接變數的 prefix + ".key" 看不出 key)
+                    if "Ljava/lang/StringBuilder;" in out.split("->", 1)[0] and this:
+                        first = consts.get(args[0]) if args and isinstance(consts.get(args[0]), str) else False
+                        if "-><init>()V" in out:
+                            sb_consts[this] = ""
+                        elif "-><init>(Ljava/lang/String;)" in out:
+                            sb_consts[this] = first
+                        elif "->append(" in out and this in sb_consts:
+                            if sb_consts[this] == "":
+                                sb_consts[this] = first
+                            pending_sb = sb_consts[this]   # append 回傳同一個 StringBuilder
+                        elif "->toString()" in out and sb_consts.get(this):
+                            pending_const = sb_consts[this]
+                    elif "Ljava/lang/String;->concat(" in out and this and isinstance(consts.get(this), str):
+                        pending_const = consts[this]
+                    hit = [taint[r] for r in regs if r in taint]
+                    api_hit = next((n for api, n in api_names if api in out), None)
+                    if api_hit:
+                        pending = "reads %s" % api_hit
+                    elif "Landroid/provider/Settings$Secure;->getString(" in out and len(args) > 1 \
+                            and consts.get(args[1]) == "android_id":
+                        pending = "reads Android ID"
+                    elif "->findViewById(I)" in out and args and isinstance(consts.get(args[0]), int):
+                        vname = resource_name(arsc, consts[args[0]])
+                        if vname and (vname in pw_ids or PASSWORD_VIEW_RE.search(vname)):
+                            pending = "password field %s" % vname
+                    elif not hit and "->getText()Landroid/text/Editable;" in out:
+                        pending = UNKNOWN_CONTENT_SOURCES[0]
+                    elif not hit and "Ljavax/crypto/Cipher;->doFinal(" in out:
+                        pending = UNKNOWN_CONTENT_SOURCES[1]
+                    elif not hit and invoke_target(out) in crypto:
+                        # App 自己的加解密函式 (AESUtil.encrypt) 回傳的資料
+                        pending = "%s from %s" % (UNKNOWN_CONTENT_SOURCES[1], invoke_target(out).split("(", 1)[0])
+                    elif not hit and any(api in out for api in SERIALIZE_APIS):
+                        pending = UNKNOWN_CONTENT_SOURCES[2]
+                    elif any(api in out for api, _ in KEYED_STORE_APIS):
+                        store = next(s for api, s in KEYED_STORE_APIS if api in out)
+                        if store == "SQLite" and resolver:
+                            continue
+                        m = re.search(r'->(\w+)\(([^)]*)\)', out)
+                        api, params = (m.group(1), m.group(2)) if m else ("", "")
+                        if api == "putBoolean" or len(args) < 2:
+                            continue
+                        key = consts.get(args[0])
+                        value_type = re.findall(r'\[*(?:L[^;]+;|[ZBSCIJFD])', params.replace(" ", ""))
+                        value_type = value_type[1] if len(value_type) > 1 else ""
+                        if value_type in ("Z", "Ljava/lang/Boolean;"):
+                            continue
+                        if args[1] in taint:
+                            add(store, where_of(ma), key, taint[args[1]], ma)
+                        else:
+                            word = storage_key_sensitive(key)
+                            if word and value_type in ("I", "J", "Ljava/lang/Integer;", "Ljava/lang/Long;"):
+                                add(store, where_of(ma), key, "key '%s'" % word, ma, "review",
+                                    "key looks sensitive but the value is a number")
+                            elif word:
+                                add(store, where_of(ma), key, "key '%s'" % word, ma)
+                        continue
+                    elif any(f in out for f in DATASTORE_KEY_FUNCS) and args \
+                            and storage_key_sensitive(consts.get(args[0])):
+                        add("DataStore", where_of(ma), consts.get(args[0]),
+                            "key '%s'" % storage_key_sensitive(consts.get(args[0])), None)
+                    elif "Lorg/json/JSONObject;->put(" in out and this and len(args) > 1 \
+                            and storage_key_sensitive(consts.get(args[0])):
+                        # json.put("password", v): 之後整個 JSON 物件都帶敏感資料 (存進 SharedPreferences / 檔案時才算儲存)
+                        taint[this] = pending = "json field '%s'" % storage_key_sensitive(consts.get(args[0]))
+                        continue
+                    elif hit and (any(api in out for api, _ in VALUE_STORE_APIS)
+                                  or (opens_file and any(api in out for api in STREAM_WRITE_APIS))):
+                        store = next((s for api, s in VALUE_STORE_APIS if api in out), "File")
+                        add(store, where_of(ma), None, hit[0], ma)
+                        continue
+                    elif depth == 0 and args and not any(r in consts for r in args) \
+                            and (any(api in out for api in UNIDENTIFIED_WRITE_APIS)
+                                 or (opens_file and any(api in out for api in STREAM_WRITE_APIS))):
+                        # 寫檔 / SQL 的內容不是常數, 也追不到來源: 看不出存了什麼
+                        store = "SQLite" if "SQLiteDatabase" in out else "File"
+                        add(store, where_of(ma), None, "content not identified", ma, "review", UNIDENTIFIED_REASON)
+                        continue
+                    elif hit and depth < 2:
+                        # 敏感資料傳給 App 自己的 method -> 進去追 (例 saveToken(token))
+                        callee_cls = out.split("->", 1)[0].split()[-1] if "->" in out else ""
+                        if keep(callee_cls) and callee_cls in dx.classes:
+                            m = re.search(r'->([^(]+)(\([^)]*\)\S+)$', out)
+                            for callee in dx.classes[callee_cls].get_methods() if m else []:
+                                if callee.name != m.group(1) or str(callee.descriptor).replace(" ", "") \
+                                        != m.group(2).replace(" ", "") or callee.is_external():
+                                    continue
+                                preg = method_param_regs(callee)
+                                sub = {preg[i]: taint[r] for i, r in enumerate(args) if r in taint and i < len(preg)}
+                                if sub:
+                                    scan(callee, sub, depth + 1)
+                    if hit:
+                        pending = pending or hit[0]
+                        if this and not keep(out.split("->", 1)[0].split()[-1]):
+                            taint[this] = hit[0]   # 系統 / 函式庫物件: sb.append(pw)、json.put(k, pw) 之後物件本身也帶資料
+                elif name.startswith("move-result") and regs:
+                    if pending:
+                        taint[regs[0]] = pending
+                    else:
+                        taint.pop(regs[0], None)
+                    if pending_const:
+                        consts[regs[0]] = pending_const
+                    if pending_sb is not None:
+                        sb_consts[regs[0]] = pending_sb
+                    pending = pending_const = pending_sb = None
+                elif name.startswith(("if-", "goto", "return", "iput", "sput", "aput", "monitor", "throw",
+                                      "packed-switch", "sparse-switch", "fill-array", "nop")):
+                    continue
+                elif len(regs) >= 2:
+                    # move / 型別轉換 / 運算: 來源有資料 -> 結果也有 (check-cast 不改變暫存器)
+                    src = next((taint[r] for r in regs[1:] if r in taint), None)
+                    if src:
+                        taint[regs[0]] = src
+                    else:
+                        taint.pop(regs[0], None)
+                elif regs and not name.startswith("check-cast"):
+                    taint.pop(regs[0], None)
+
+        for cls, ca in dx.classes.items():
+            if not keep(cls):
+                continue
+            for ma in ca.get_methods():
+                if not ma.is_external():
+                    scan(ma, {}, 0)
+        # 資料表定義不分 App / 函式庫都算儲存在裝置上 (R8 會把 App 的 class 併進函式庫套件, 例 k9 的 messages 表在 okhttp3 下)
+        for s in dx.find_strings(r"(?i)^\s*create\s+(virtual\s+)?table"):
+            for ca, ma in s.get_xref_from():
+                if keep(ca.name) or ca.name.startswith(SDK_TABLE_PREFIXES):
+                    continue
+                for table, col, data in sql_sensitive_columns(s.get_value()):
+                    add("SQLite", where_of(ma), "%s.%s" % (table, col) if col else table, data, None)
+        return found
+
+    def find_storage_consent(a, dx, keep):
+        """找 App 的同意 / 聲明機制, 回傳 [{"type", "where", "evidence"}]
+        consent_check = 程式讀寫同意狀態 (key 含 consent / agree / privacy 等); consent_screen = 同意畫面;
+        notice_screen = 隱私權 / 條款畫面 (只算告知);
+        consent_sdk = App 有呼叫同意管理 SDK; privacy_text = 程式碼或字串資源有隱私權政策 (連結或文字)
+        使用: lab_086 (透過 storage_consent_result)"""
+        found = []
+        pref_apis = ("Landroid/content/SharedPreferences;->getBoolean(", "Landroid/content/SharedPreferences$Editor;->putBoolean(",
+                     "Landroid/content/SharedPreferences;->getInt(", "Landroid/content/SharedPreferences$Editor;->putInt(",
+                     "Landroid/content/SharedPreferences;->getString(", "Landroid/content/SharedPreferences$Editor;->putString(",
+                     "->booleanKey(")
+        checks, texts = {}, {}
+        for cls, ca in dx.classes.items():
+            if not keep(cls):
+                continue
+            for ma in ca.get_methods():
+                if ma.is_external():
+                    continue
+                try:
+                    instructions = list(ma.get_method().get_instructions())
+                except Exception:
+                    continue
+                consts = {}
+                where = "%s.%s" % (cls[1:-1].replace("/", "."), ma.name)
+                for ins in instructions:
+                    name = ins.get_name()
+                    regs = ins_registers(ins)
+                    if name.startswith("const-string") and regs:
+                        value = ins.get_string()
+                        consts[regs[0]] = value
+                        # 連結, 或像句子的文字 (有空白或中文); privacy_policy_agreed 這種 key 不算
+                        if PRIVACY_TEXT_RE.search(value or "") and len(value) < 300 \
+                                and ("http" in value or (re.search(r"\s|[^\x00-\x7f]", value)
+                                                         and re.search(r"polic|政策|聲明|notice", value, re.I))):
+                            texts.setdefault(value[:80], where)
+                    elif name.startswith("invoke") and any(api in ins.get_output() for api in pref_apis):
+                        args = [r for _, r in invoke_args(name, ins.get_output(), regs)]
+                        key = consts.get(args[0]) if args else None
+                        if isinstance(key, str) and CONSENT_KEY_RE.search(split_words(key)):
+                            checks.setdefault(key, where)
+        for key, where in sorted(checks.items())[:5]:
+            found.append({"type": "consent_check", "where": where, "evidence": "key '%s'" % key})
+
+        package = a.get_package() or ""
+        for activity in a.get_activities():
+            full = resolve_activity_name(package, activity)
+            if not keep("L" + full.replace(".", "/") + ";"):
+                continue
+            words = {w.lower() for w in re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?![a-z])', full.rsplit(".", 1)[-1])}
+            if words & CONSENT_SCREEN_WORDS:
+                found.append({"type": "consent_screen", "where": full, "evidence": "activity name"})
+            elif words & NOTICE_SCREEN_WORDS:
+                found.append({"type": "notice_screen", "where": full, "evidence": "activity name"})
+
+        for sdk in find_app_sdk_calls(dx, keep, CONSENT_SDK_PREFIXES):
+            found.append({"type": "consent_sdk", "where": sdk["caller"], "evidence": sdk["library"]})
+
+        for value, where in sorted(texts.items())[:3]:
+            found.append({"type": "privacy_text", "where": where, "evidence": value})
+        # 字串資源: 名稱或內容是隱私權政策 / 同意條款 (函式庫的資源排除)
+        try:
+            arsc = a.get_android_resources()
+            strings = arsc.get_resolved_strings().get(package, {}).get("DEFAULT", {})
+        except Exception:
+            arsc, strings = None, {}
+        hits = []
+        for rid, value in strings.items():
+            rname = resource_name(arsc, rid) or ""
+            if rname.startswith(LIB_RES_PREFIXES):
+                continue
+            if re.search(r"privacy_?(policy|statement|notice)|consent|terms_of|user_agreement|隱私", rname, re.I) \
+                    or re.search(r"privacy policy|隱私權政策|隱私權聲明|個資.{0,4}(告知|聲明)|同意.{0,10}(隱私|條款)", value or "", re.I):
+                hits.append((rname, (value or "")[:60]))
+        for rname, value in sorted(hits)[:3]:
+            found.append({"type": "privacy_text", "where": "string/%s" % rname, "evidence": value})
+        return found
+
+    def store_switch_reads(ma, dx, cache):
+        """lab_087 讀開關的函式 (給 path_evidence 用): switch_reads 之外, 再認畫面上的勾選框 isChecked()
+        勾選框的 key 用欄位名稱 (cbRemember、binding.switchSave) 或 findViewById 的 R.id 名稱
+        使用: lab_087 (透過 path_evidence)"""
+        reads = switch_reads(ma, dx, cache)
+        try:
+            instructions = [] if ma.is_external() else list(ma.get_method().get_instructions())
+        except Exception:
+            return reads
+        arsc = cache.get("_arsc")
+        consts, views, values, pending, checks = {}, {}, {}, None, []
+        for ins in instructions:
+            name, out = ins.get_name(), ins.get_output()
+            regs = ins_registers(ins)
+            if name.startswith("const") and name != "const-class" and not name.startswith("const-string") and regs:
+                try:
+                    consts[regs[0]] = ins.get_literals()[0]
+                except Exception:
+                    consts.pop(regs[0], None)
+                views.pop(regs[0], None)
+                values.pop(regs[0], None)
+            elif name.startswith("iget-object") and regs:
+                field = re.split(r"[ :]", out.rsplit("->", 1)[-1].strip(), 1)
+                views.pop(regs[0], None)
+                values.pop(regs[0], None)
+                if field[-1].endswith(CHECKABLE_TYPES):
+                    views[regs[0]] = field[0]
+            elif name.startswith("invoke"):
+                for r in regs:
+                    if r in values:
+                        checks[values[r]]["passed"] = True
+                pending = None
+                args = [r for _, r in invoke_args(name, out, regs)]
+                if "->findViewById(I)" in out and args and isinstance(consts.get(args[0]), int):
+                    pending = ("view", resource_name(arsc, consts[args[0]]))
+                elif "->isChecked()Z" in out and regs and regs[0] in views:
+                    checks.append({"key": views[regs[0]], "branch": False, "passed": False})
+                    pending = ("check", len(checks) - 1)
+            elif name.startswith("move-result") and regs:
+                views.pop(regs[0], None)
+                values.pop(regs[0], None)
+                if pending and pending[0] == "view" and pending[1]:
+                    views[regs[0]] = pending[1]
+                elif pending and pending[0] == "check":
+                    values[regs[0]] = pending[1]
+                pending = None
+            elif name.startswith("check-cast"):
+                continue
+            elif name.startswith("if-"):
+                for r in regs:
+                    if r in values:
+                        checks[values[r]]["branch"] = True
+            elif name.startswith(("return", "iput", "sput", "aput")):
+                if regs and regs[0] in values:
+                    checks[values[regs[0]]]["passed"] = True
+            elif len(regs) >= 2 and name.startswith("move") and (regs[1] in values or regs[1] in views):
+                if regs[1] in values:
+                    values[regs[0]] = values[regs[1]]
+                else:
+                    views[regs[0]] = views[regs[1]]
+            elif regs:
+                views.pop(regs[0], None)
+                values.pop(regs[0], None)
+        return reads + [{"key": c["key"], "default": None, "api": "CheckBox",
+                         "use": "branch" if c["branch"] else ("passed" if c["passed"] else "unused")} for c in checks]
+
+    # lab_086 / 087 分析同一個 APK 時共用結果; 只在 a、dx 是同一個物件時使用, 載入新 APK 時清掉
+    # 使用: lab_086, lab_087 (透過 storage_consent_result), load_apk
+    STORAGE_RESULT_CACHE = {}
+
+    def storage_consent_result(a, dx):
+        """lab_086 / 087 共用結果: 同一個 APK 只分析一次 (lab_087 不再重算), 回傳副本避免兩邊互相影響
+        使用: lab_086, lab_087"""
+        entry = STORAGE_RESULT_CACHE.get("entry")
+        if not entry or entry[0] is not a or entry[1] is not dx:
+            STORAGE_RESULT_CACHE["entry"] = entry = (a, dx, storage_consent_analyze(a, dx))
+        return container_copy(entry[2])
+
+    def container_copy(value):
+        """複製 dict / list / tuple 的結構, 裡面的 androguard 物件 (method 等, 無法 deepcopy) 維持共用
+        使用: lab_086, lab_087 (透過 storage_consent_result)"""
+        if isinstance(value, dict):
+            return {k: container_copy(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return type(value)(container_copy(v) for v in value)
+        if isinstance(value, set):
+            return set(value)
+        return value
+
+    def storage_consent_analyze(a, dx):
+        """lab_086 / 087 共用: 敏感資料儲存 + 同意機制 + 4.1.2.3.1 判定
+        回傳 {"storage": 確定的儲存, "review": 待確認的儲存, "consent": 同意機制, "own_classes",
+              "verdict_086": WARNING (有儲存沒同意) / NOT_EVALUATED / PASS, "reason"}
+        使用: lab_086, lab_087"""
+        keep = app_class_filter(a)
+        storage = find_sensitive_storage(a, dx, keep)
+        high = [s for s in storage if s["confidence"] == "high"]
+        review = [s for s in storage if s["confidence"] != "high"]
+        prefixes = app_own_prefixes(a)
+        own = sum(1 for c in dx.classes if c.startswith(prefixes)) if prefixes else 0
+        consent = find_storage_consent(a, dx, keep) if storage else []
+        if not storage:
+            verdict = "NOT_EVALUATED" if own < STORAGE_MIN_CLASSES else "PASS"
+            reason = "app code not visible (packed?)" if verdict == "NOT_EVALUATED" else "no sensitive data storage found"
+        elif any(c["type"] in CONSENT_TYPES for c in consent):
+            # 基準: 已發布的 App 還要在商店聲明; 資料安全性頁面列出每一類儲存的資料才算確認
+            # 靜態確認不了同意在儲存之前、涵蓋所有存的資料 -> 不判符合, 列出商店聲明的比對結果供人工確認
+            store = fetch_play_data_safety(a.get_package() or "")
+            unconfirmed = storage_store_unconfirmed(storage, store)
+            verdict = "NOT_EVALUATED"
+            reason = ("consent mechanism found, but whether consent comes before storing and covers all stored data "
+                      "cannot be confirmed statically; store declaration: %s"
+                      % ("; ".join(unconfirmed) if unconfirmed else "all stored data types listed on Google Play"))
+        elif consent:
+            # 只有隱私權政策文字或聲明畫面: 有告知, 但無法確認儲存前有取得同意
+            verdict, reason = "NOT_EVALUATED", "privacy notice found, but consent before storing could not be confirmed"
+        elif high:
+            verdict, reason = "WARNING", "sensitive data stored without any consent or notice mechanism"
+        else:
+            verdict, reason = "NOT_EVALUATED", "stored data may be sensitive, no consent or notice mechanism found"
+        return {"storage": high, "review": review, "consent": consent, "own_classes": own,
+                "verdict_086": verdict, "reason": reason}
+
+    def invoke_target(out):
+        """invoke 指令的目標 method, 去掉空白 (例 'Lcom/a/AESUtil;->encrypt(Ljava/lang/String;)Ljava/lang/String;')
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        m = re.search(r'(L[^;\s]+;->[^(\s]+\([^)]*\)\S+)$', out or "")
+        return m.group(1).replace(" ", "") if m else ""
+
+    def crypto_wrapper_methods(dx, keep):
+        """App 自己的加解密函式: 有呼叫 Cipher.doFinal 且回傳物件, 再加一層呼叫它並回傳物件的 method
+        回傳 {'Lcls;->name(desc)ret', ...}
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        found, callers = set(), {}
+        for cls, ca in dx.classes.items():
+            if not keep(cls):
+                continue
+            for ma in ca.get_methods():
+                if ma.is_external():
+                    continue
+                try:
+                    outs = [(ins.get_name(), ins.get_output()) for ins in ma.get_method().get_instructions()]
+                except Exception:
+                    continue
+                if not any(n == "return-object" for n, _ in outs):
+                    continue
+                full = ("%s->%s%s" % (ma.class_name, ma.name, ma.descriptor)).replace(" ", "")
+                if any("Ljavax/crypto/Cipher;->doFinal(" in o for _, o in outs):
+                    found.add(full)
+                else:
+                    callers[full] = {invoke_target(o) for n, o in outs if n.startswith("invoke")}
+        return found | {m for m, targets in callers.items() if targets & found}
+
+    def sql_text_table(sql):
+        """App 自己定義、名稱看不出用途的資料表, 有文字欄位 -> (表名, 說明), 否則 None
+        sql_sensitive_columns 已認出的 (敏感欄位、訊息 / 筆記等表) 與系統表不算
+        使用: lab_086, lab_087 (透過 find_sensitive_storage)"""
+        m = re.match(r"\s*create\s+(?:virtual\s+)?table\s+(?:if\s+not\s+exists\s+)?[`\"\[]?([\w.]+)[`\"\]]?\s*\((.*)\)",
+                     sql or "", re.I | re.S)
+        if not m or sql_sensitive_columns(sql) or m.group(1).lower().startswith(("_new_", "room_", "android_", "sqlite_")) \
+                or m.group(1) in LIB_TABLE_NAMES:
+            return None
+        cols = []
+        for part in m.group(2).split(","):
+            words = part.strip().split()
+            if len(words) > 1 and words[1].strip("`\"[]").upper().startswith(("TEXT", "VARCHAR", "BLOB")) \
+                    and words[0].upper() not in ("PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"):
+                cols.append(words[0].strip("`\"[]"))
+        return (m.group(1), "table '%s', text columns: %s" % (m.group(1), ", ".join(cols[:6]))) if cols else None
+
+    def storage_store_unconfirmed(items, store):
+        """儲存的資料有哪些無法確認已在 Google Play 資料安全性聲明 -> 原因列表 (空 = 全部已聲明)
+        頁面沒列出不算沒聲明 (on-device 資料 Google 不要求填, 商店說明也可能有寫), 只當作無法確認
+        使用: lab_086 (透過 storage_consent_analyze)"""
+        if not items:
+            return []
+        if store.get("status") != "ok":
+            return ["Google Play data safety page: %s" % store.get("status")]
+        declared = {c.lower() for c in store.get("declared", [])}
+        missing = []
+        for s in items:
+            text = split_words("%s %s" % (s.get("data") or "", s.get("key") or ""))
+            category = next((c for pattern, c in STORAGE_PLAY_CATEGORIES if re.search(pattern, text)), None)
+            if category is None:
+                note = "%s: no matching data safety category" % (s.get("data") or s.get("key"))
+            elif category not in declared:
+                note = "%s not listed" % category
+            else:
+                continue
+            if note not in missing:
+                missing.append(note)
+        return missing[:5]
+
+    def storage_items(items):
+        """拿掉儲存結果中的 method 物件 (無法轉 JSON)
+        使用: lab_086, lab_087"""
+        return [{k: v for k, v in s.items() if k != "method"} for s in items]
 
     # ---- 加殼判斷 ----
 
@@ -5906,6 +6985,1213 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "lab_id":        lab_id,
             "description":   description,
         }), 200
+
+    # ---- 引用函式庫已知漏洞 ----
+
+    # MAS 4.1.5.3.1 備註: 具 CVE 且 CVSS v3.0 >= 7 (High / Critical); v3.1 公式與等級門檻相同, 一起採用
+    # 使用: lab_016
+    LIB_CVSS_THRESHOLD = 7.0
+
+    # 對外查詢上限: OSV 批次查詢 1 次 + 漏洞明細; NVD 未帶 API key 時每 30 秒限 5 次 (超過會自動等待)
+    # 使用: lab_016
+    LIB_MAX_SECONDS = 150
+    LIB_MAX_OSV_DETAILS = 400
+    LIB_MAX_NVD_REQUESTS = 20
+
+    # NVD 查到的 CVSS 分數存在本機 7 天, 同一個 CVE 不重複查 (NVD 沒有 API key 時有次數限制)
+    # 使用: lab_016
+    LIB_NVD_CACHE = '/tmp/cmaa_lab016_nvd_cache.json'
+    LIB_NVD_CACHE_DAYS = 7
+
+    # 會判 Failed 的 CVE, 分數最高的前幾個再用 NVD (NIST 官方) 分數確認; 其餘或查不到的保留 OSV (GitHub 審核) 分數
+    # 使用: lab_016
+    LIB_MAX_NVD_CONFIRM = 5
+
+    # 原生函式庫版本字串 -> (名稱, regex, NVD CPE vendor:product, 只看這個檔名 (None = 所有 .so))
+    # 版本字串是各函式庫原始碼裡的固定格式 (例如 expat 的 XML_ExpatVersion() 回傳 expat_2.4.1); CPE 名稱已用 NVD 查證
+    # 使用: lab_016 (透過 library_inventory)
+    LIB_NATIVE_BANNERS = (
+        ('openssl', re.compile(rb'OpenSSL ([0-9]+\.[0-9]+\.[0-9]+[a-z]?)[ \x00]'), 'openssl:openssl', None),
+        ('sqlite', re.compile(rb'SQLite(?: version)?[ /:]+([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'sqlite:sqlite', None),
+        ('zlib', re.compile(rb'(?:de|in)flate ([0-9]+\.[0-9]+(?:\.[0-9]+){0,2}) Copyright'), 'zlib:zlib', None),
+        ('libpng', re.compile(rb'libpng version ([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'libpng:libpng', None),
+        ('libwebp', re.compile(rb'libwebp[ /:-]+([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'webmproject:libwebp', None),
+        ('libcurl', re.compile(rb'libcurl/([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'haxx:libcurl', None),
+        ('mbedtls', re.compile(rb'[Mm]bed TLS ([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'arm:mbed_tls', None),
+        ('expat', re.compile(rb'expat_([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'libexpat_project:libexpat', None),
+        ('libtiff', re.compile(rb'LIBTIFF, Version ([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'libtiff:libtiff', None),
+        ('libvpx', re.compile(rb'WebM Project VP[89] (?:En|De)coder v([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'webmproject:libvpx', None),
+        ('libarchive', re.compile(rb'libarchive ([0-9]+\.[0-9]+\.[0-9]+)(?![0-9A-Za-z.+-])'), 'libarchive:libarchive', None),
+        ('opus', re.compile(rb'libopus ([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?![0-9A-Za-z.+-])'), 'opus-codec:opus', None),
+        # Unity 引擎版本 (2021.3.16f1、6000.0.23f1), 只看 libunity.so
+        ('unity', re.compile(rb'((?:20[12][0-9]|6000)\.[0-9]+\.[0-9]+[abfp][0-9]+)(?![0-9A-Za-z.+-])'), 'unity:editor', 'libunity.so'))
+
+    # libwebp CVE-2023-4863 特徵: 內部符號 VP8LBuildHuffmanTable 在、修補後才有的 VP8LHuffmanTablesAllocate 不在 -> 未修補
+    # 只有 WebPCopyPlane 等對外 API 時 (內部符號被拿掉) 無法判斷
+    # 使用: lab_016 (透過 library_inventory)
+    LIB_WEBP_CVE = {'cve': 'CVE-2023-4863', 'vector': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H'}
+
+    # Google 函式庫根目錄 xxx.properties 的 client 前綴 -> Maven group
+    # 使用: lab_016 (透過 library_inventory)
+    LIB_PROPERTIES_GROUPS = (('firebase-', 'com.google.firebase'), ('play-services-', 'com.google.android.gms'),
+                             ('transport-', 'com.google.android.datatransport'))
+
+    LIB_VERSION_RE = re.compile(r'[0-9]+(?:\.[0-9]+){1,3}(?:-[A-Za-z0-9.]+)?')
+
+    # 沒有版本檔、但 OSV 上有 CVSS v3 >= 7 漏洞的常見函式庫: (Maven 套件, 代表類別, 版本來源, 最低版本特徵)
+    # 代表類別: 結尾 ';' 是完整類別, 結尾 '/' 是套件 (不算例外類別; R8 常只留下例外類別, 那不算有引用)
+    # 版本來源: ('class', 類別) 取該類別裡的版本字串; ('strings', regex) 搜尋 DEX 字串
+    # 最低版本特徵: (類別, 該類別從哪一版開始有), 有這個類別就表示版本至少是這一版
+    # 使用: lab_016 (透過 dex_libraries)
+    LIB_DEX_SIGNATURES = (
+        (('com.google.code.gson:gson',), ('Lcom/google/gson/Gson;', 'Lcom/google/gson/GsonBuilder;', 'Lcom/google/gson/JsonParser;'),
+         None, (('Lcom/google/gson/ToNumberPolicy;', '2.8.9'),)),
+        (('com.fasterxml.jackson.core:jackson-databind',), ('Lcom/fasterxml/jackson/databind/ObjectMapper;',),
+         ('class', 'Lcom/fasterxml/jackson/databind/cfg/PackageVersion;'), ()),
+        (('com.fasterxml.jackson.core:jackson-core',), ('Lcom/fasterxml/jackson/core/JsonFactory;',),
+         ('class', 'Lcom/fasterxml/jackson/core/json/PackageVersion;'), ()),
+        (('com.squareup.okhttp3:okhttp',), ('Lokhttp3/OkHttpClient;',),
+         ('strings', re.compile(r'okhttp/([3-9]\.[0-9]+\.[0-9]+)')), ()),
+        (('com.squareup.retrofit2:retrofit',), ('Lretrofit2/Retrofit;',), None, ()),
+        (('org.bouncycastle:bcprov-jdk15on', 'org.bouncycastle:bcprov-jdk18on'),
+         ('Lorg/bouncycastle/crypto/', 'Lorg/bouncycastle/asn1/', 'Lorg/bouncycastle/jce/provider/'),
+         ('strings', re.compile(r'BouncyCastle Security Provider v([0-9]+\.[0-9]+(?:\.[0-9]+)?)')), ()),
+        (('com.google.protobuf:protobuf-javalite', 'com.google.protobuf:protobuf-java'),
+         ('Lcom/google/protobuf/CodedInputStream;', 'Lcom/google/protobuf/GeneratedMessageLite;'), None, ()),
+        (('org.jsoup:jsoup',), ('Lorg/jsoup/Jsoup;', 'Lorg/jsoup/parser/Parser;', 'Lorg/jsoup/nodes/Document;'), None, ()),
+        (('commons-io:commons-io',), ('Lorg/apache/commons/io/IOUtils;', 'Lorg/apache/commons/io/FileUtils;'), None, ()),
+        (('org.apache.commons:commons-text',), ('Lorg/apache/commons/text/',), None, ()),
+        (('org.apache.commons:commons-compress',), ('Lorg/apache/commons/compress/',), None, ()),
+        (('org.yaml:snakeyaml',), ('Lorg/yaml/snakeyaml/',), None, ()),
+        (('org.apache.logging.log4j:log4j-core',), ('Lorg/apache/logging/log4j/core/',), None, ()),
+        (('com.nimbusds:nimbus-jose-jwt',), ('Lcom/nimbusds/jose/',), None, ()),
+        (('net.minidev:json-smart',), ('Lnet/minidev/json/',), None, ()),
+        (('org.apache.httpcomponents:httpclient',), ('Lorg/apache/http/impl/client/',), None, ()))
+
+    # 網頁 (JavaScript) 函式庫: (npm 套件, 檔案內容 regex, 檔名 regex), (?P<v>§) 是版本
+    # 規則取自 Retire.js 的 jsrepository (Apache-2.0, 只取有 npm 套件的函式庫), 另加 KaTeX 與壓縮後的 DOMPurify
+    # 使用: lab_016 (透過 js_libraries)
+    LIB_JS_SIGNATURES = (
+        ('@angular/core', ('/\\*\\*[\\s*]+@license Angular v(?P<v>§)', '\\[[\'"]ng-version[\'"],[\'"](?P<v>§)[\'"]\\]'), ()),
+        ('alasql', ('/\\*!?[ \n]*AlaSQL v(?P<v>§)',), ('alasql-(?P<v>§)(\\.min)?\\.js',)),
+        ('alpinejs', ('version:[\'"](?P<v>§)[\'"],flushAndStopDeferringMutations',), ('alpine(?:js)?[-.](?P<v>§)(.min)?.js',)),
+        ('angular', ('/\\*[\\*\\s]+(?:@license )?AngularJS(?: NES)? v(?P<v>§)', 'http://errors\\.angularjs\\.org/(?P<v>§)/'), ('angular(?:js)?-(?P<v>§)(.min)?\\.js',)),
+        ('axios', ('/\\*!? *[Aa]xios v(?P<v>§) ', '// Axios v(?P<v>§) C', 'return"\\[Axios v(?P<v>§)\\] Transitional', '\\"axios\\",\\"version\\":\\"(?P<v>§)\\"'), ('axios-(?P<v>§)(\\.min)?\\.js',)),
+        ('backbone', ('//[ ]+Backbone.js (?P<v>§)', 'a=t.Backbone=\\{\\}\\}a.VERSION="(?P<v>§)"', 'Backbone\\.VERSION *= *["\'](?P<v>§)["\']'), ('backbone(?:js)?-(?P<v>§)(.min)?\\.js',)),
+        ('blueimp-file-upload', ('/\\*[\\s*]+jQuery File Upload User Interface Plugin (?P<v>§)[\\s*]+https://github.com/blueimp',), ()),
+        ('bootstrap', ('/\\*!? Bootstrap v(?P<v>§)', '\\* Bootstrap v(?P<v>§)', '/\\*! Bootstrap v(?P<v>§)', 'this\\.close\\)\\};.\\.VERSION="(?P<v>§)"(?:,.\\.TRANSITION_DURATION=150)?,.\\.prototype\\.close'), ('bootstrap-(?P<v>§)(\\.min)?\\.js',)),
+        ('bootstrap-select', ('/\\*![\\s]+\\*[\\s]+Bootstrap-select[\\s]+v(?P<v>§)', '.\\.data\\("selectpicker",.=new .\\(this,.\\)\\)\\}"string"==typeof .&&\\(.=.\\[.\\]instanceof Function\\?.\\[.\\]\\.apply\\(.,.\\):.\\.options\\[.\\]\\)\\}\\}\\);return void 0!==.\\?.:.\\}.\\.VERSION="(?P<v>§)",'), ()),
+        ('c3', ('[\\s]+var c3 ?= ?\\{ ?version: ?[\'"](?P<v>§)[\'"] ?\\};[\\s]+var c3_chart_fn,',), ()),
+        ('chart.js', ('var version="(?P<v>§)";const KNOWN_POSITIONS=\\["top","bottom","left","right","chartArea"\\]', '/\\*![\\s]+\\* Chart.js v(?P<v>§)', '/\\*![\\s]+\\* Chart.js[\\s]+\\* http://chartjs.org/[\\s]+\\* Version: (?P<v>§)'), ()),
+        ('ckeditor4', ('ckeditor..js.{4,30}=\\{timestamp:"[^"]+",version:"(?P<v>§)', 'window\\.CKEDITOR=function\\(\\)\\{var [a-z]=\\{timestamp:"[^"]+",version:"(?P<v>§)'), ('ckeditor-(?P<v>§)(\\.min)?\\.js',)),
+        ('ckeditor5', ('const .="(?P<v>§)"[,;].{0,140}?\\.CKEDITOR_VERSION=.;', 'CKEDITOR_VERSION="(?P<v>§)"'), ('ckeditor5-(?P<v>§)(\\.min)?\\.js',)),
+        ('d3', ('\\/\\/ https:\\/\\/d3js\\.org (?:v|Version )(?P<v>§) ',), ('d3[-.](?P<v>§)(.min)?.js',)),
+        ('datatables.net', ('http://www.datatables.net\n +DataTables (?P<v>§)', '/\\*! DataTables (?P<v>§)', '.\\.version="(?P<v>§)";[\\s]*.\\.settings=\\[\\];[\\s]*.\\.models=\\{[\\s]*\\};[\\s]*.\\.models.oSearch'), ('jquery.dataTables-(?P<v>§)(\\.min)?\\.js',)),
+        ('dojo', (), ('dojo-(?P<v>§)(\\.min)?\\.js',)),
+        ('dompurify', ("DOMPurify.version = '(?P<v>§)';", 'DOMPurify.version="(?P<v>§)"', 'DOMPurify=.[^\\r\\n]{10,850}?\\.version="(?P<v>§)"', '/\\*! @license DOMPurify (?P<v>§)', 'var .="dompurify"+.{10,550}?\\.version="(?P<v>§)"', '\\.version="(?P<v>§)",\\w+\\.removed=\\[\\]'), ()),
+        ('echarts', ("'(?P<v>§)';[\\s]+var dependencies = \\{[\\s]+zrender: '[0-9.]+'[\\s]+\\};[\\s]+var TEST_FRAME_REMAIN_TIME = 1;", 'setPlatformAPI=[a-zA-Z_]+,.\\.throttle=[a-zA-Z_]+,.\\.time=[a-zA-Z_]+,.\\.use=[a-zA-Z_]+,.\\.util=[a-zA-Z_]+,.\\.vector=[a-zA-Z_]+,.\\.version=[\'"](?P<v>§)[\'"],.\\.zrUtil', '.\\.throttle=[a-zA-Z_]+,.\\.time=[a-zA-Z_]+,.\\.util=[a-zA-Z_]+,.\\.vector=[a-zA-Z_]+,.\\.version=[\'"](?P<v>§)[\'"],.\\.zrender'), ('echarts[-.](?P<v>§)(.min)?.js',)),
+        ('ember-source', ('Project:   Ember -(?:.*\n){9,11}// Version: v(?P<v>§)', '// Version: v(?P<v>§)(.*\n){10,15}(Ember Debug|@module ember|@class ember)', 'Ember.VERSION[ ]?=[ ]?(?:\'|")(?P<v>§)(?:\'|")', 'meta\\.revision="Ember@(?P<v>§)"', 'e\\("ember/version",\\["exports"\\],function\\(e\\)\\{"use strict";?[\\s]*e(?:\\.|\\[")default(?:"\\])?="(?P<v>§)"', '\\("ember/version",\\["exports"\\],function\\(e\\)\\{"use strict";.{1,70}\\.default="(?P<v>§)"', '/\\*![\\s]+\\* @overview  Ember - JavaScript Application Framework[\\s\\S]{0,400}\\* @version   (?P<v>§)', '// Version: (?P<v>§)[\\s]+\\(function\\(\\) *\\{[\\s]*/\\*\\*[\\s]+@module ember[\\s]', 'Object\\.defineProperty\\(\\{__proto__:null,CI:!1,DEBUG:!1\\},Symbol\\.toStringTag,\\{value:"Module"\\}\\),\\w+="(?P<v>§)"', 'isLowLevelRegister:function\\(e\\)\\{return e<=3\\}\\},Symbol\\.toStringTag,\\{value:"Module"\\}\\),\\w+="(?P<v>§)"'), ('ember-(?P<v>§)(\\.min)?\\.js',)),
+        ('froala-editor', ('/\\*![\\s]+\\* froala_editor v(?P<v>§)', 'VERSION:"(?P<v>§)",INSTANCES:\\[\\],OPTS_MAPPING:\\{\\}'), ()),
+        ('handlebars', ('Handlebars.VERSION = "(?P<v>§)";', 'Handlebars=\\{VERSION:(?:\'|")(?P<v>§)(?:\'|")', 'this.Handlebars=\\{\\};[\n\r \t]+\\(function\\([a-z]\\)\\{[a-z].VERSION=(?:\'|")(?P<v>§)(?:\'|")', 'exports.HandlebarsEnvironment=[\\s\\S]{70,120}exports.VERSION=(?:\'|")(?P<v>§)(?:\'|")', '/\\*+![\\s]+(?:@license)?[\\s]+handlebars v+(?P<v>§)', 'window\\.Handlebars=.,.\\.VERSION="(?P<v>§)"', '.\\.HandlebarsEnvironment=.;var .=.\\(.\\),.=.\\(.\\),.="(?P<v>§)";.\\.VERSION='), ('handlebars(?:js)?-(?P<v>§)(.min)?\\.js',)),
+        ('highcharts', ('product:"Highcharts",version:"(?P<v>§)"', 'product="Highcharts"[,;].\\.version="(?P<v>§)"'), ()),
+        ('highlight.js', ('/\\*!\\s*[Hh]ighlight.js v(?P<v>§)', '"after:highlightBlock"[\\s\\S]{0,170}versionString=[\'"](?P<v>§)[\'"]'), ('highlight[-.](?P<v>§)(.min)?.js',)),
+        ('jquery', ('/\\*!? jQuery v(?P<v>§)', '\\* jQuery JavaScript Library v(?P<v>§)', '\\* jQuery (?P<v>§) - New Wave Javascript', '/\\*![\\s]+\\* jQuery JavaScript Library v(?P<v>§)', '// \\$Id: jquery.js,v (?P<v>§)', '/\\*! jQuery v(?P<v>§)', '[^a-z]f="(?P<v>§)",.*[^a-z]jquery:f,', '[^a-z]m="(?P<v>§)",.*[^a-z]jquery:m,', '[^a-z.]jquery:[ ]?"(?P<v>§)"', '\\$\\.documentElement,Q=e.jQuery,Z=e\\.\\$,ee=\\{\\},te=\\[\\],ne="(?P<v>§)"', '="(?P<v>§)",.{50,300}(.)\\.fn=(\\2)\\.prototype=\\{jquery:'), ('jquery-(?P<v>§)(\\.min)?\\.js',)),
+        ('jquery-migrate', ('/\\*!?(?:\n \\*)? jQuery Migrate(?: -)? v(?P<v>§)', '\\.migrateVersion ?= ?"(?P<v>§)"[\\s\\S]{10,150}(migrateDisablePatches|migrateWarnings|JQMIGRATE)', 'jQuery\\.migrateVersion ?= ?"(?P<v>§)"'), ('jquery-migrate-(?P<v>§)(.min)?\\.js',)),
+        ('jquery-mobile', ('/\\*!?[\\s*]*jQuery Mobile(?: -)? v?(?P<v>§)', '// Version of the jQuery Mobile Framework[\\s]+version: *["\'](?P<v>§)["\'],'), ('jquery.mobile-(?P<v>§)(.min)?\\.js',)),
+        ('jquery-ui', ('/\\*!? jQuery UI - v(?P<v>§)', '/\\*!?[\n *]+jQuery UI (?P<v>§)', '/\\*!? jQuery UI - v(?P<v>§)(.*\n){1,3}.*jquery\\.ui\\.autocomplete\\.js', '/\\*!?[\n *]+jQuery UI (?P<v>§)(.*\n)*.*\\.ui\\.autocomplete', '/\\*!?[\n *]+jQuery UI Autocomplete (?P<v>§)', '/\\*!? jQuery UI - v(?P<v>§)(.*\n){1,3}\\* Includes: .* autocomplete\\.js', '/\\*!? jQuery UI - v(?P<v>§)(.*\n){1,3}.*jquery\\.ui\\.dialog\\.js', '/\\*!?[\n *]+jQuery UI (?P<v>§)(.*\n)*.*\\.ui\\.dialog', '/\\*!?[\n *]+jQuery UI Dialog (?P<v>§)', '/\\*!? jQuery UI - v(?P<v>§)(.*\n){1,3}\\* Includes: .* dialog\\.js', '/\\*!? jQuery UI - v(?P<v>§)(.*\n){1,3}.*jquery\\.ui\\.tooltip\\.js', '/\\*!?[\n *]+jQuery UI (?P<v>§)(.*\n)*.*\\.ui\\.tooltip', '/\\*!?[\n *]+jQuery UI Tooltip (?P<v>§)'), ()),
+        ('jquery-validation', ('/\\*!?(?:\n \\*)?[\\s]*jQuery Validation Plugin -? ?v(?P<v>§)', 'Original file: /npm/jquery-validation@(?P<v>§)/dist/jquery.validate.js'), ('jquery.validat(?:ion|e)-(?P<v>§)(.min)?\\.js',)),
+        ('jquery.terminal', ('version (?P<v>§)[\\s]+\\*[\\s]+\\* This file is part of jQuery Terminal.', '\\$\\.terminal=\\{version:"(?P<v>§)"'), ()),
+        ('jszip', ('/\\*![\\s]+JSZip v(?P<v>§) ',), ('jszip-(?P<v>§)(\\.min)?\\.js',)),
+        ('katex', ('version:"(?P<v>§)",render:',), ()),
+        ('knockout', ('(?:\\*|//) Knockout JavaScript library v(?P<v>§)', '.version="(?P<v>§)",_.b\\(.version.,_.version\\),_.options=\\{deferUpdates:!1,useOnlyNativeEvents:!1,foreachHidesDestroyed:!1\\}'), ('knockout-(?P<v>§)(.min)?\\.js',)),
+        ('lodash', ('/\\*[\\s*!]+(?:@license)?[\\s*]+(?:Lo-Dash|lodash|Lodash) v?(?P<v>§)[\\s\\S]{1,200}Build: `lodash modern -o', '/\\*[\\s*!]+(?:@license)?[\\s*]+(?:Lo-Dash|lodash|Lodash) v?(?P<v>§) <', '/\\*[\\s*!]+(?:@license)?[\\s*]+(?:Lo-Dash|lodash|Lodash) v?(?P<v>§) lodash.com/license', '/\\*[\\s*]+@license[\\s*]+(?:Lo-Dash|lodhash|Lodash)[\\s\\S]{1,500}var VERSION *= *[\'"](?P<v>§)[\'"]', 'var VERSION="(?P<v>§)";var BIND_FLAG=1,BIND_KEY_FLAG=2,CURRY_BOUND_FLAG=4,CURRY_FLAG=8'), ()),
+        ('markdown-it', ('/\\*! markdown-it(?:-ins)? (?P<v>§)',), ('markdown-it-(?P<v>§)(\\.min)?\\.js',)),
+        ('marked', ('/[!*\\s/]+[\\s]marked v(?P<v>§)',), ('marked[-.](?P<v>§)(.min)?.js',)),
+        ('mathjax', ('\\.MathJax\\.config\\.startup;{10,100}.\\.VERSION="(?P<v>§)"', '\\.MathJax=\\{version:"(?P<v>§)"', 'MathJax.{0,100}.\\.VERSION=void 0,.\\.VERSION="(?P<v>§)"', 'MathJax\\.version="(?P<v>§)";', '\\.mathjaxVersion="(?P<v>§)"'), ()),
+        ('moment', ('//!? moment.js(?:[\n\r]+)//!? version : (?P<v>§)', '/\\* Moment.js +\\| +version : (?P<v>§) \\|', '\\.version="(?P<v>§)".{20,60}"isBefore".{20,60}"isAfter".{200,500}\\.isMoment=', '\\.version="(?P<v>§)".{20,300}duration.{2,100}\\.isMoment=', '\\.isMoment\\(.{50,400}_isUTC.{50,400}="(?P<v>§)"', '="(?P<v>§)".{300,1000}Years:31536e6.{60,80}\\.isMoment', '// Moment.js is freely distributable under the terms of the MIT license.[\\s]+//[\\s]+// Version (?P<v>§)'), ('moment(?:-|\\.)(?P<v>§)(?:-min)?\\.js',)),
+        ('mustache', ('name:\\s*[\'"]mustache.js[\'"],\\s*version:\\s*[\'"](?P<v>§)[\'"]', 'name="mustache.js"[;,].\\.version="(?P<v>§)"', '[^a-z]mustache.version[ ]?=[ ]?(?:\'|")(?P<v>§)(?:\'|")', 'exports.name[ ]?=[ ]?"mustache.js";[\n ]*exports.version[ ]?=[ ]?(?:\'|")(?P<v>§)(?:\'|");'), ('mustache(?:js)?-(?P<v>§)(.min)?\\.js',)),
+        ('next', ('version="(?P<v>§)".{1,1500}document\\.getElementById\\("__NEXT_DATA__"\\)\\.textContent', 'document\\.getElementById\\("__NEXT_DATA__"\\)\\.textContent\\);window\\.__NEXT_DATA__=.;.\\.version="(?P<v>§)"', '="(?P<v>§)"[\\s\\S]{10,100}Component[\\s\\S]{1,10}componentDidCatch[\\s\\S]{10,30}componentDidMount'), ()),
+        ('pdfjs-dist', ('(?:const|var) pdfjsVersion = [\'"](?P<v>§)[\'"];', 'PDFJS.version ?= ?[\'"](?P<v>§)[\'"]', 'apiVersion: ?[\'"](?P<v>§)[\'"][\\s\\S]*,data(:[a-zA-Z.]{1,6})?,[\\s\\S]*password(:[a-zA-Z.]{1,10})?,[\\s\\S]*disableAutoFetch(:[a-zA-Z.]{1,22})?,[\\s\\S]*rangeChunkSize', 'messageHandler\\.sendWithPromise\\("GetDocRequest",\\{docId:[a-zA-Z],apiVersion:"(?P<v>§)"', 'const version = [\'"](?P<v>§)[\'"];\\s*const build ='), ()),
+        ('pdfobject', ('\\* +PDFObject v(?P<v>§)', '/*[\\s]+PDFObject v(?P<v>§)', 'let pdfobjectversion = "(?P<v>§)";', 'pdfobjectversion:"(?P<v>§)"'), ()),
+        ('plupload', ('\\* Plupload - multi-runtime File Uploader(?:\r|\n)+ \\* v(?P<v>§)', 'var g=\\{VERSION:"(?P<v>§)",.*;window.plupload=g\\}'), ('plupload-(?P<v>§)(.min)?\\.js',)),
+        ('protobufjs', ('protobuf\\.js v(?P<v>§)',), ('protobuf-(?P<v>§)(?:\\.min)?\\.js',)),
+        ('quill', ('Quill Editor v(?P<v>§)', 'static version="(?P<v>§)";static imports=\\{delta:[^,]{1,20},parchment:'), ('quill-(?P<v>§)(?:\\.min)?\\.js',)),
+        ('react', ('/\\*\\*\n +\\* React \\(with addons\\) ?v(?P<v>§)', '/\\*\\*\n +\\* React v(?P<v>§)', '/\\*\\* @license React v(?P<v>§)[\\s]*\\* react(-jsx-runtime)?\\.', '"\\./ReactReconciler":[0-9]+,"\\./Transaction":[0-9]+,"fbjs/lib/invariant":[0-9]+\\}\\],[0-9]+:\\[function\\(require,module,exports\\)\\{"use strict";module\\.exports="(?P<v>§)"\\}', 'ReactVersion\\.js[\\*! \\\\/\n\r]{0,100}function\\(e,t\\)\\{"use strict";e\\.exports="(?P<v>§)"', 'expected a ReactNode.[\\s\\S]{0,1800}?function\\(e,t\\)\\{"use strict";e\\.exports="(?P<v>§)"'), ()),
+        ('react-dom', ('version:"(?P<v>§)[a-z0-9\\-]*"[\\s,]*rendererPackageName:"react-dom"', '/\\*\\* @license React v(?P<v>§)[\\s]*\\* react-dom\\.', 'return[\\s]+ReactSharedInternals.[a-zA-Z].useHostTransitionStatus\\(\\)[;]?[\\s]*\\}[;,][\\s]*exports.version[\\s]*=[\\s]*"(?P<v>§)"'), ()),
+        ('select2', ('/\\*!(?:[\\s]+\\*)? Select2 (?P<v>§)', '/\\*[\\s]+Copyright 20[0-9]{2} [I]gor V[a]ynberg[\\s]+Version: (?P<v>§)[\\s\\S]{1,5000}(\\.attr\\("class","select2-sizer"|\\.data\\(document, *"select2-lastpos"|document\\)\\.data\\("select2-lastpos"|SingleSelect2, *MultiSelect2|window.Select2 *!== *undefined)'), ()),
+        ('svelte', ('generated by Svelte v\\$\\{[\'"](?P<v>§)[\'"]\\}', 'generated by Svelte v(?P<v>§) \\*/', "version: '(?P<v>§)' [\\s\\S]{80,200}'SvelteDOMInsert'", "VERSION = '(?P<v>§)'[\\s\\S]{21,200}parse\\$[0-9][\\s\\S]{10,80}preprocess", 'var version\\$[0-9] = "(?P<v>§)";[\\s\\S]{10,30}normalizeOptions\\(options\\)[\\s\\S]{80,200}\'SvelteComponent.html\''), ('svelte[@\\-](?P<v>§)(.min)?\\.m?js',)),
+        ('swiper', ('\\* Swiper (?P<v>§)',), ('swiper[-.](?P<v>§)(.min)?.js',)),
+        ('tableexport.jquery.plugin', ('/\\*[\\s]+tableExport.jquery.plugin[\\s]+Version (?P<v>§)', '/\\*![\\s]+\\* TableExport.js v(?P<v>§)'), ()),
+        ('tinymce', ('// (?P<v>§) \\([0-9\\-]+\\)[\n\r]+.{0,1200}l=.tinymce/geom/Rect.', '/\\*\\*[\\s]*\\* TinyMCE version (?P<v>§)'), ()),
+        ('ua-parser-js', ('/\\* UAParser.js v(?P<v>§)', '/\\*[*!](?:@license)?[\\s]+\\* UAParser.js v(?P<v>§)', '// UAParser.js v(?P<v>§)', '.\\.VERSION="(?P<v>§)",.\\.BROWSER=\\{NAME:.,MAJOR:"major",VERSION:.\\},.\\.CPU=\\{ARCHITECTURE:', '.\\.VERSION="(?P<v>§)",.\\.BROWSER=.\\(\\[[^\\]]{1,20}\\]\\),.\\.CPU=', 'LIBVERSION="(?P<v>§)",EMPTY="",UNKNOWN="\\?",FUNC_TYPE="function",UNDEF_TYPE="undefined"', '.="(?P<v>§)",.="",.="\\?",.="function",.="undefined",.="object",(.="string",)?.="major",.="model",.="name",.="type",.="vendor"'), ()),
+        ('underscore', ('//[\\s]*Underscore.js (?P<v>§)', '// *Underscore\\.js[\\s\\S]{1,2500}_\\.VERSION *= *[\'"](?P<v>§)[\'"]'), ()),
+        ('video.js', ('\\* Video\\.js (?P<v>§)', '\\.videojs=[a-zA-Z]\\(\\)\\}\\(this,function\\(\\)\\{var [a-zA-Z]=["\'](?P<v>§)["\']', '["\']The element or ID supplied is not valid. \\(videojs\\)["\']\\)[\\s\\S]{100,400}var (?:[a-zA-Z]{1,2},)?[a-zA-Z]{1,2}=["\'](?P<v>§)["\']'), ('video\\.js[-.](?P<v>§)(\\.min)?\\.js',)),
+        ('vue', ('/\\*!\\n \\* Vue.js v(?P<v>§)', '/\\*\\*?!?\\n ?\\* vue v(?P<v>§)', "Vue.version = '(?P<v>§)';", "'(?P<v>§)'[^\\n]{0,8000}Vue compiler", '\\* Original file: /npm/vue@(?P<v>§)/dist/vue.(global|common).js', 'const version[ ]*=[ ]*"(?P<v>§)";[\\s]*/\\*\\*[\\s]*\\* SSR utils for \\\\@vue/server-renderer', '\\.__vue_app__=.{0,8000}?const [a-z]+="(?P<v>§)",', 'let [A-Za-z]+="(?P<v>§)",..="undefined"!=typeof window&&window.trustedTypes;if\\(..\\)try\\{.=..\\.createPolicy\\("vue",', 'isCustomElement.{1,5}?compilerOptions.{0,500}exposeProxy.{0,700}"(?P<v>§)"', '"(?P<v>§)"[\\s\\S]{0,150}\\.createPolicy\\("vue"', 'devtoolsFormatters[\\s\\S]{50,180}"(?P<v>§)"[\\s\\S]{50,180}\\.createElement\\("template"\\)'), ('vue-(?P<v>§)(\\.min)?\\.js',)),
+        ('zrender', ("ssrDataGetter = getter;[\\s]+\\}[\\s]+var version = '(?P<v>§)';[\\s]+", "painterCtors\\[name\\] = Ctor;[\\s]+\\}[\\s]+var version = '(?P<v>§)';[\\s]+", '.\\.util=[a-zA-Z_]+,.\\.vector=[a-zA-Z_]+,.\\.version=[\'"](?P<v>§)[\'"],Object'), ('zrender[-.](?P<v>§)(.min)?.js',)),
+        ('cordova-android', ("PLATFORM_VERSION_BUILD_LABEL\\s*=\\s*'(?P<v>§)'",), ()),  # Cordova 框架本身 (cordova.js)
+    )
+
+    # 打包工具內嵌的 package.json (name、version、description 連在一起) -> 通用的 npm 套件辨識
+    # 使用: lab_016 (透過 js_libraries)
+    LIB_JS_PACKAGE_RE = re.compile(r'"?name"?:"(?P<n>@?[a-z0-9][a-z0-9._-]*(?:/[a-z0-9._-]+)?)","?version"?:"(?P<v>[0-9][0-9.a-z_\-]+)","?description"?:')
+
+    # 掃描的網頁檔 (Hybrid App 的 assets、React Native 的 bundle); 單檔與總量上限避免掃太久
+    # 使用: lab_016 (透過 js_libraries)
+    LIB_JS_SUFFIXES = ('.js', '.mjs', '.html', '.htm', '.bundle')
+    LIB_JS_MAX_FILE = 8 * 1024 * 1024
+    LIB_JS_MAX_TOTAL = 80 * 1024 * 1024
+
+    # 網頁檔有一半以上是二進位 (加密) 且至少這麼多個 -> 網頁程式碼被加密, 函式庫無法辨識
+    # 16 個對照 APK 實測 (2026-10-18): 元大 assets/www 的 920 個 .js 都是加密內容
+    # 使用: lab_016
+    LIB_JS_ENCRYPTED_MIN = 5
+
+    # OSV 查得到的套件生態系 (Java、網頁、Flutter、.NET)
+    # 使用: lab_016
+    LIB_OSV_ECOSYSTEMS = ('Maven', 'npm', 'Pub', 'NuGet')
+
+    # class 被搬到短套件 (o.a、a.b.c) 達 OBF_REPACKAGED_MIN 個且佔全部 class 這個比例以上 -> 函式庫的套件名被混淆掉, 無法辨識
+    # 16 個對照 APK 實測 (2026-10-16): tusky 87%、notes 84%、gallery 62%、兆豐 7% (函式庫被搬走); 台銀 0.9% (預先混淆的廠商 SDK)
+    # 使用: lab_016 (透過 lib_code_hidden)
+    LIB_REPACKAGED_RATIO = 0.03
+
+    # 沒有版本字串的 .so: 自己定義 (export) 這些函式 -> 內含該函式庫; (名稱, 函式名稱, NVD CPE vendor:product)
+    # 只算 .so 自己定義的函式 (呼叫系統函式庫的不算); CPE 名稱已用 NVD 查證
+    # 使用: lab_016 (透過 native_products)
+    LIB_NATIVE_SYMBOLS = (
+        ('openssl', (b'SSL_CTX_new', b'OPENSSL_init_ssl'), 'openssl:openssl'),
+        ('sqlcipher', (b'sqlcipher_export',), 'zetetic:sqlcipher'),
+        ('sqlite', (b'sqlite3_open_v2',), 'sqlite:sqlite'),
+        ('libjpeg-turbo', (b'tjDecompress2', b'jpeg_read_header'), 'libjpeg-turbo:libjpeg-turbo'),
+        ('giflib', (b'DGifOpen',), 'giflib_project:giflib'),
+        ('freetype', (b'FT_Init_FreeType',), 'freetype:freetype'),
+        ('harfbuzz', (b'hb_buffer_create',), 'harfbuzz_project:harfbuzz'),
+        ('libxml2', (b'xmlReadMemory', b'xmlParseMemory'), 'xmlsoft:libxml2'),
+        ('expat', (b'XML_ParserCreate',), 'libexpat_project:libexpat'),
+        ('libcurl', (b'curl_easy_perform',), 'haxx:libcurl'),
+        ('ffmpeg', (b'avcodec_open2', b'avformat_open_input'), 'ffmpeg:ffmpeg'),
+        ('libvpx', (b'vpx_codec_decode',), 'webmproject:libvpx'),
+        ('opus', (b'opus_decode',), 'opus-codec:opus'),
+        ('libtiff', (b'TIFFOpen',), 'libtiff:libtiff'),
+        ('mbedtls', (b'mbedtls_ssl_init',), 'arm:mbed_tls'),
+        ('wolfssl', (b'wolfSSL_Init',), 'wolfssl:wolfssl'),
+        ('zstd', (b'ZSTD_decompress',), 'facebook:zstandard'),
+        ('brotli', (b'BrotliDecoderDecompress',), 'google:brotli'),
+        ('libarchive', (b'archive_read_new',), 'libarchive:libarchive'),
+        ('tensorflow-lite', (b'TfLiteInterpreterCreate',), 'google:tensorflow'),
+        ('libpng', (b'png_create_read_struct',), 'libpng:libpng'),
+        ('zlib', (b'inflateInit2_',), 'zlib:zlib'))
+
+    # .so 檔名對不到上面的函式庫時, 用檔名到 NVD 產品清單 (CPE) 找同名產品; 這些是 Android / Jetpack / 框架自己的 .so, 不查
+    # 使用: lab_016 (透過 native_products)
+    LIB_NATIVE_SKIP_RE = re.compile(r'^lib(?:androidx\.|datastore|surface_util|image_processing_util|conscrypt|c\+\+_shared|'
+                                    r'flutter|app$|reactnative|hermes|jsc|fbjni|unity|il2cpp|main$|monodroid|mono|xamarin|'
+                                    r'sentry|crashlytics|tensorflowlite_jni|realm|mmkv|bugly|.*_jni$)')
+    LIB_MAX_NVD_NAME_LOOKUPS = 6
+
+    # 沒有版本記錄、也不在 LIB_DEX_SIGNATURES 的 Java 函式庫: 用類別名稱到 Maven Central 反查; 這些不查
+    # 使用: lab_016 (透過 maven_lookup_classes)
+    LIB_MAVEN_SKIP_PREFIXES = ('Landroid/', 'Landroidx/', 'Lcom/google/', 'Lkotlin/', 'Lkotlinx/', 'Ljava/', 'Ljavax/', 'Lj$/',
+                               'Ldalvik/', 'Lorg/w3c/', 'Lorg/xml/', 'Lorg/json/', 'Lsun/', 'Lcom/android/', 'Lorg/intellij/',
+                               'Lorg/jetbrains/annotations/', 'Lorg/apache/http/')
+    LIB_MAX_MAVEN_LOOKUPS = 60
+
+    # Maven Central 搜尋服務回應不穩 (同一查詢 0.7 秒到逾時都有): 整段最多 30 秒、每次 6 秒, 不影響後面的 OSV 查詢;
+    # 查不到的套件當作認不出 (結果記在 maven_unresolved), 成功的結果有快取, 之後掃描會補齊
+    # 使用: lab_016
+    LIB_MAVEN_SECONDS = 30
+    LIB_MAVEN_TIMEOUT = 6
+
+    # Maven Central 反查: 很多組織共用的第 2 層套件名, groupId 要再比對第 3 層
+    # 使用: lab_016 (透過 maven_pick)
+    LIB_MAVEN_GENERIC = {'apache', 'github', 'google', 'eclipse', 'jetbrains', 'android', 'microsoft', 'amazon', 'amazonaws',
+                         'facebook', 'alibaba', 'tencent', 'baidu', 'huawei', 'sun', 'oracle', 'ibm', 'springframework',
+                         'mozilla', 'yahoo', 'twitter', 'netflix', 'linkedin', 'uber', 'square', 'squareup'}
+
+    # Maven Central 反查結果存 30 天
+    # 使用: lab_016
+    LIB_MAVEN_CACHE = '/tmp/cmaa_lab016_maven_cache.json'
+    LIB_MAVEN_CACHE_DAYS = 30
+
+    # BouncyCastle 1.71 起改名為 bcprov-jdk18on
+    # 使用: lab_016 (透過 dex_libraries)
+    LIB_BC_JDK18_FROM = (1, 71)
+
+    def library_inventory(apk):
+        """從 APK 檔案辨識函式庫名稱與版本: META-INF/*.version、根目錄 *.properties、pom.properties、.so 版本字串;
+        另回傳 libwebp CVE-2023-4863 特徵比對結果
+        回傳 (components {(ecosystem, name, version): [檔案]}, webp [{file, status}], unidentified [{file, reason}])
+        使用: lab_016"""
+        components, webp, unidentified = {}, [], []
+        def add(ecosystem, name, version, path):
+            components.setdefault((ecosystem, name, version), []).append(path)
+        try:
+            files = [f for f in apk.get_files() if isinstance(f, str)]
+        except Exception:
+            return components, webp, [{'file': '', 'reason': 'APK file list unavailable'}]
+        for path in files:
+            is_meta = re.fullmatch(r'META-INF/[^/]+\.version', path) or re.fullmatch(r'[^/]+\.properties', path) \
+                or re.fullmatch(r'META-INF/maven/[^/]+/[^/]+/pom\.properties', path)
+            if not is_meta and not path.endswith('.so'):
+                continue
+            try:
+                raw = apk.get_file(path)
+            except Exception:
+                raw = None
+            if not isinstance(raw, bytes):
+                unidentified.append({'file': path, 'reason': 'unreadable'})
+                continue
+            if path.endswith('.so'):
+                found = False
+                for name, pattern, _, only in LIB_NATIVE_BANNERS:
+                    if only and not path.endswith('/' + only):
+                        continue
+                    versions = set(v.decode('ascii') for v in pattern.findall(raw))
+                    if len(versions) == 1:
+                        add('native', name, versions.pop(), path)
+                        found = True
+                    elif versions:
+                        unidentified.append({'file': path, 'reason': name + ' has several version strings'})
+                if b'WebPCopyPlane' in raw or b'VP8LBuildHuffmanTable' in raw:
+                    if b'VP8LHuffmanTablesAllocate' in raw:
+                        webp.append({'file': path, 'status': 'patched'})
+                    elif b'VP8LBuildHuffmanTable' in raw:
+                        webp.append({'file': path, 'status': 'vulnerable'})
+                    elif not found:
+                        unidentified.append({'file': path, 'reason': 'libwebp found, version and patch state unknown'})
+                    found = True
+                if not found:
+                    unidentified.append({'file': path, 'reason': 'native library version not found'})
+                continue
+            if len(raw) > 65536:
+                continue
+            text = raw.decode('utf-8', 'replace')
+            if path.endswith('pom.properties'):
+                props = dict(re.findall(r'(?m)^\s*(groupId|artifactId|version)\s*[=:]\s*(\S+)', text))
+                if props.get('groupId') and props.get('artifactId') and LIB_VERSION_RE.fullmatch(props.get('version', '')):
+                    add('Maven', props['groupId'] + ':' + props['artifactId'], props['version'], path)
+                else:
+                    unidentified.append({'file': path, 'reason': 'version not written'})
+            elif path.endswith('.version'):
+                stem, version = path[9:-8], text.strip()
+                coord = re.fullmatch(r'([a-z][\w-]*(?:\.[\w-]+)+)_([\w.-]+)', stem)
+                if stem.startswith('kotlinx_'):
+                    name = 'org.jetbrains.kotlinx:' + stem.replace('_', '-')
+                elif coord:
+                    name = coord.group(1) + ':' + coord.group(2)
+                else:
+                    unidentified.append({'file': path, 'reason': 'unknown library name'})
+                    continue
+                if LIB_VERSION_RE.fullmatch(version):
+                    add('Maven', name, version, path)
+                else:
+                    unidentified.append({'file': path, 'reason': 'version not written'})
+            else:
+                props = dict(re.findall(r'(?m)^\s*(version|client)\s*=\s*(\S+)', text))
+                if 'version' not in props:
+                    continue  # 不是函式庫版本檔
+                client = props.get('client', path[:-11])
+                group = next((g for prefix, g in LIB_PROPERTIES_GROUPS if client.startswith(prefix)), None)
+                if group and LIB_VERSION_RE.fullmatch(props['version']):
+                    add('Maven', group + ':' + client, props['version'], path)
+                else:
+                    unidentified.append({'file': path, 'reason': 'unknown library name'})
+        return components, webp, unidentified
+
+    def lib_is_binary(raw):
+        """檔案開頭 2 KB 有超過 5% 的控制字元 -> 不是文字 (加密或壓縮)
+        使用: lab_016 (透過 js_libraries)"""
+        head = raw[:2048]
+        return bool(head) and sum(1 for b in head if b < 9 or 13 < b < 32) > len(head) * 0.05
+
+    def js_libraries(apk, files):
+        """assets 裡的網頁檔、React Native bundle -> 用 LIB_JS_SIGNATURES 與內嵌 package.json 辨識 npm 套件與版本
+        回傳 (found {(npm 套件, 版本): [檔案]}, 加密檔數, 網頁檔總數)
+        使用: lab_016"""
+        version_re = r'[0-9][0-9.a-z_\-]+'
+        rules = [(name, [re.compile(p.replace('§', version_re)) for p in content],
+                  [re.compile(p.replace('§', version_re)) for p in names]) for name, content, names in LIB_JS_SIGNATURES]
+        found, encrypted, total, budget = {}, 0, 0, LIB_JS_MAX_TOTAL
+        def add(name, version, path):
+            version = version.rstrip('.-_')
+            if re.fullmatch(r'[0-9]+(?:\.[0-9]+){1,3}(?:[-.][0-9A-Za-z.]+)?', version):
+                found.setdefault((name, version), []).append(path)
+        for path in files:
+            if not path.startswith('assets/') or not path.endswith(LIB_JS_SUFFIXES):
+                continue
+            total += 1
+            try:
+                raw = apk.get_file(path)
+            except Exception:
+                continue
+            if not isinstance(raw, bytes) or len(raw) > LIB_JS_MAX_FILE or budget <= 0:
+                continue
+            if lib_is_binary(raw):
+                encrypted += 1
+                continue
+            budget -= len(raw)
+            text, base = raw.decode('utf-8', 'replace'), path.rsplit('/', 1)[-1]
+            for name, content, names in rules:
+                m = next((m for m in (r.search(base) for r in names) if m), None) or \
+                    next((m for m in (r.search(text) for r in content) if m), None)
+                if m:
+                    add(name, m.group('v'), path)
+            for m in LIB_JS_PACKAGE_RE.finditer(text):
+                add(m.group('n'), m.group('v'), path)
+        return found, encrypted, total
+
+    def flutter_packages(apk, files):
+        """Flutter 的 libapp.so 裡 package:名稱/ 字串 -> Dart (Pub) 套件名稱 (編譯後沒有版本)
+        使用: lab_016"""
+        names = set()
+        for path in files:
+            if path.startswith('lib/') and path.endswith('/libapp.so'):
+                try:
+                    raw = apk.get_file(path)
+                except Exception:
+                    continue
+                if isinstance(raw, bytes):
+                    names.update(n.decode('ascii') for n in re.findall(rb'package:([a-z][a-z0-9_]*)/', raw))
+        return sorted(names - {'flutter', 'flutter_test', 'dart'})[:200]
+
+    def dotnet_product_version(raw):
+        """.NET 組件 (PE) 版本資源裡的 ProductVersion (去掉 +commit); 讀不到回傳 ''
+        使用: lab_016 (透過 dotnet_libraries)"""
+        key = 'ProductVersion'.encode('utf-16-le') + b'\x00\x00'
+        start = raw.find(key)
+        if start < 0:
+            return ''
+        start += len(key)
+        start += (-start) % 4
+        end = start
+        while end + 1 < len(raw) and raw[end:end + 2] != b'\x00\x00' and end - start < 200:
+            end += 2
+        text = raw[start:end].decode('utf-16-le', 'replace').split('+')[0].strip()
+        return text if re.fullmatch(r'[0-9]+(?:\.[0-9]+){1,3}(?:-[A-Za-z0-9.]+)?', text) else ''
+
+    def dotnet_libraries(apk, files):
+        """Xamarin / .NET App 的組件 (assemblies/*.dll) -> NuGet 套件名稱 (= 組件名稱) 與 ProductVersion
+        壓縮 (XALZ) 或打包成 assembly store (.blob) 的讀不到, 回傳原因
+        回傳 (found {(套件, 版本): [檔案]}, 讀不到的原因或 '')
+        使用: lab_016"""
+        found, unreadable = {}, 0
+        stores = [p for p in files if p.endswith('.blob') or re.search(r'/libassemblies\.[^/]*\.blob\.so$', p)]
+        for path in files:
+            if not (path.startswith('assemblies/') and path.endswith('.dll')):
+                continue
+            try:
+                raw = apk.get_file(path)
+            except Exception:
+                raw = None
+            if not isinstance(raw, bytes) or raw[:4] == b'XALZ':
+                unreadable += 1
+                continue
+            version = dotnet_product_version(raw)
+            if version:
+                found.setdefault((path.rsplit('/', 1)[-1][:-4], version), []).append(path)
+        reason = ''
+        if stores or unreadable:
+            reason = ('.NET assemblies are compressed or packed into an assembly store (%d files), so their libraries '
+                      'cannot be identified; needs manual review' % (len(stores) + unreadable))
+        return found, reason
+
+    def elf_defined_symbols(raw):
+        """.so (ELF) 動態符號表裡自己定義的函式名稱 (st_shndx != 0); 不是 ELF 或讀不到回傳空集合
+        使用: lab_016 (透過 native_products)"""
+        import struct
+        names = set()
+        try:
+            if raw[:4] != b'\x7fELF':
+                return names
+            is64, endian = raw[4] == 2, '<' if raw[5] == 1 else '>'
+            if is64:
+                shoff, = struct.unpack_from(endian + 'Q', raw, 0x28)
+                shentsize, shnum = struct.unpack_from(endian + 'HH', raw, 0x3A)
+            else:
+                shoff, = struct.unpack_from(endian + 'I', raw, 0x20)
+                shentsize, shnum = struct.unpack_from(endian + 'HH', raw, 0x2E)
+            sections = []
+            for i in range(shnum):
+                off = shoff + i * shentsize
+                if is64:
+                    _, stype, _, _, offset, size, link, _, _, entsize = struct.unpack_from(endian + 'IIQQQQIIQQ', raw, off)
+                else:
+                    _, stype, _, _, offset, size, link, _, _, entsize = struct.unpack_from(endian + 'IIIIIIIIII', raw, off)
+                sections.append((stype, offset, size, link, entsize))
+            for stype, offset, size, link, entsize in sections:
+                if stype != 11 or not entsize:          # SHT_DYNSYM
+                    continue
+                _, str_off, str_size, _, _ = sections[link]
+                for j in range(size // entsize):
+                    base = offset + j * entsize
+                    if is64:
+                        name, _, _, shndx = struct.unpack_from(endian + 'IBBH', raw, base)
+                    else:
+                        name, = struct.unpack_from(endian + 'I', raw, base)
+                        shndx, = struct.unpack_from(endian + 'H', raw, base + 14)
+                    if shndx and name < str_size:
+                        end = raw.find(b'\x00', str_off + name)
+                        names.add(raw[str_off + name:end])
+        except Exception:
+            return names
+        return names
+
+    def native_products(apk, unidentified, known):
+        """沒有版本字串的 .so -> 認得出的函式庫 {名稱: (CPE vendor:product 或 None, [檔案])};
+        先用自己定義的函式名稱 (LIB_NATIVE_SYMBOLS), 對不到的留檔名 (CPE 為 None, 之後用 NVD 產品清單查)
+        known: 已讀到版本的原生函式庫名稱 (略過)
+        使用: lab_016"""
+        found = {}
+        for item in unidentified:
+            path = item.get('file', '')
+            if item.get('reason') != 'native library version not found' or not path.endswith('.so'):
+                continue
+            try:
+                raw = apk.get_file(path)
+            except Exception:
+                continue
+            if not isinstance(raw, bytes):
+                continue
+            symbols = elf_defined_symbols(raw)
+            boring = b'BoringSSL' in raw                 # Conscrypt 等內含 BoringSSL, OpenSSL 的 CVE 不適用
+            hits = [(n, c) for n, syms, c in LIB_NATIVE_SYMBOLS if any(x in symbols for x in syms)
+                    and not (n == 'openssl' and boring)]
+            for name, cpe in hits:
+                if name not in known:
+                    found.setdefault(name, (cpe, []))[1].append(path)
+            if hits:
+                continue
+            stem = path.rsplit('/', 1)[-1][:-3]
+            if not LIB_NATIVE_SKIP_RE.match(stem):
+                name = re.sub(r'([-_](android|jni|shared|static))+$', '', stem)
+                found.setdefault('?' + name, (None, []))[1].append(path)
+        return found
+
+    def buildconfig_versions(dexes, own_prefixes):
+        """函式庫自己的 BuildConfig.VERSION_NAME -> {套件: 版本}; 只收 X.Y.Z 形式 (排除空值、預設的 1.0 / 1.0.0)
+        Google / AndroidX 已有版本檔, App 自己的不算
+        使用: lab_016"""
+        found = {}
+        for dex in dexes:
+            try:
+                classes = dex.get_classes()
+            except Exception:
+                continue
+            for cls in classes:
+                name = cls.get_name()
+                if not name.endswith('/BuildConfig;') or name.startswith(('Lcom/google/', 'Landroidx/')) \
+                        or (own_prefixes and name.startswith(own_prefixes)):
+                    continue
+                for field in cls.get_fields():
+                    if field.get_name() != 'VERSION_NAME':
+                        continue
+                    try:
+                        value = field.get_init_value()
+                        value = value.get_value() if value is not None else None
+                    except Exception:
+                        value = None
+                    if isinstance(value, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?', value) \
+                            and value not in ('1.0.0', '0.0.0', '0.0.1'):
+                        found.setdefault(name[1:-len('/BuildConfig;')], set()).add(value)
+        return {pkg: versions.pop() for pkg, versions in found.items() if len(versions) == 1}
+
+    def react_native_version(dexes):
+        """React Native 的 ReactNativeVersion 類別 (<clinit> 依序放 "major", 數字, "minor", 數字, "patch", 數字) -> 版本; 找不到回傳 ''
+        使用: lab_016"""
+        for dex in dexes:
+            try:
+                cls = dex.get_class('Lcom/facebook/react/modules/systeminfo/ReactNativeVersion;')
+            except Exception:
+                cls = None
+            for method in (cls.get_methods() if cls is not None else []):
+                if method.get_name() != '<clinit>':
+                    continue
+                parts, key = {}, None
+                for ins in method.get_instructions():
+                    op = ins.get_name()
+                    if op.startswith('const-string') and hasattr(ins, 'get_string'):
+                        key = ins.get_string() if ins.get_string() in ('major', 'minor', 'patch') else None
+                    elif key and op.startswith('const') and not op.startswith('const-string'):
+                        try:
+                            parts[key] = int(ins.get_output().split(',')[-1].strip(), 0)
+                        except ValueError:
+                            pass
+                        key = None
+                if all(k in parts for k in ('major', 'minor', 'patch')):
+                    return '%d.%d.%d' % (parts['major'], parts['minor'], parts['patch'])
+        return ''
+
+    def maven_lookup_classes(classes, own_prefixes, covered):
+        """還沒辨識的 Java 函式庫套件 -> 每個套件挑一個代表類別 (之後到 Maven Central 反查) [(套件, 類別)]
+        套件取前 3 層, 至少 3 個 class; 排除 App 自己、平台、已辨識 (covered)、混淆後的短套件
+        使用: lab_016"""
+        groups = {}
+        for c in classes:
+            if c.startswith(LIB_MAVEN_SKIP_PREFIXES) or (own_prefixes and c.startswith(own_prefixes)) \
+                    or c.startswith(covered) or is_repackaged_class(c):
+                continue
+            parts = c[1:-1].split('/')
+            if len(parts) < 2 or any(len(p) <= 1 for p in parts[:-1]):
+                continue
+            groups.setdefault('/'.join(parts[:min(3, len(parts) - 1)]), []).append(c)
+        out = []
+        for pkg, members in sorted(groups.items()):
+            names = sorted(m for m in members if '$' not in m and len(m.rsplit('/', 1)[-1]) > 5
+                           and not re.search(r'(Exception|Error);$', m))
+            if len(members) >= 3 and names:
+                out.append((pkg, names[0][1:-1].replace('/', '.')))
+        return out[:LIB_MAX_MAVEN_LOOKUPS]
+
+    def maven_pick(package, candidates):
+        """Maven Central 查到的候選 [(groupId, artifactId, 次數)] 裡, 挑 groupId 跟 Java 套件名稱一致的 (排除別人重新打包發佈的)
+        一致: 套件第 2 層出現在 groupId; 第 2 層是共用名稱 (apache 等) 時第 3 層也要出現在 groupId 或 artifactId;
+        只有 1 層的套件 (okio、okhttp3) 要出現在 groupId 或 artifactId; 沒有一致的回傳 ''
+        使用: lab_016"""
+        parts = package.split('/')
+        def ok(g, a):
+            g, a = g.lower(), a.lower()
+            if len(parts) == 1:
+                return parts[0] in g or parts[0] in a
+            if parts[1] not in g:
+                return False
+            if parts[1] in LIB_MAVEN_GENERIC and len(parts) >= 3:
+                return parts[2] in g or parts[2] in a
+            return True
+        good = [(g, a, n) for g, a, n in candidates if ok(g, a)]
+        if not good:
+            return ''
+        g, a, _ = max(good, key=lambda x: (x[2], -len(x[1])))
+        return g + ':' + a
+
+    def lib_json_cache_load(path, days):
+        """讀快取 (超過 days 天的丟掉); 讀不到回傳空 dict
+        使用: lab_016"""
+        try:
+            with open(path, encoding='utf-8') as fh:
+                data = json.load(fh)
+        except Exception:
+            return {}
+        limit = time.time() - days * 86400
+        return {k: v for k, v in data.items() if isinstance(v, dict) and v.get('time', 0) > limit} if isinstance(data, dict) else {}
+
+    def lib_json_cache_save(path, cache):
+        """寫回快取 (先寫暫存檔再改名, 失敗不影響檢測)
+        使用: lab_016"""
+        try:
+            with open(path + '.tmp', 'w', encoding='utf-8') as fh:
+                json.dump(cache, fh)
+            os.replace(path + '.tmp', path)
+        except Exception:
+            pass
+
+    def lib_nvd_cache_load():
+        """讀 NVD 分數快取, 丟掉超過 LIB_NVD_CACHE_DAYS 的; 讀不到回傳空 dict
+        使用: lab_016"""
+        try:
+            with open(LIB_NVD_CACHE, encoding='utf-8') as fh:
+                data = json.load(fh)
+        except Exception:
+            return {}
+        limit = time.time() - LIB_NVD_CACHE_DAYS * 86400
+        return {k: v for k, v in data.items() if isinstance(v, dict) and v.get('time', 0) > limit} if isinstance(data, dict) else {}
+
+    def lib_nvd_cache_save(cache):
+        """寫回 NVD 分數快取 (先寫暫存檔再改名, 寫入失敗不影響檢測)
+        使用: lab_016"""
+        try:
+            tmp = LIB_NVD_CACHE + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as fh:
+                json.dump(cache, fh)
+            os.replace(tmp, LIB_NVD_CACHE)
+        except Exception:
+            pass
+
+    def lib_short_name(name):
+        """報告顯示用的函式庫名稱: Maven 只留 artifact (com.google.code.gson:gson -> gson)
+        使用: lab_016"""
+        return ' / '.join(n.split(':')[-1] for n in name.split(' / '))
+
+    def lib_version_key(version):
+        """版本字串 -> 可比較的數字 tuple (只取開頭的數字段)
+        使用: lab_016"""
+        return tuple(int(x) for x in re.findall(r'[0-9]+', re.split(r'[-+]', version or '0')[0])[:4]) or (0,)
+
+    def dex_class_names(dexes):
+        """所有 DEX 的 class 名稱
+        使用: lab_016"""
+        classes = set()
+        for dex in dexes:
+            try:
+                classes.update(c.get_name() for c in dex.get_classes())
+            except Exception:
+                continue
+        return classes
+
+    def lib_code_hidden(apk, classes):
+        """程式碼看不到 (加殼) 或 class 被搬到短套件 (混淆) 時回傳原因, 此時程式碼裡的函式庫無法辨識; 看得到回傳 ''
+        使用: lab_016"""
+        prefixes = app_own_prefixes(apk)
+        own = sum(1 for c in classes if c.startswith(prefixes)) if prefixes else 0
+        moved = sum(1 for c in classes if is_repackaged_class(c))
+        if own < OBF_MIN_CLASSES and moved < OBF_REPACKAGED_MIN:
+            return 'app code not visible (packed?), so libraries inside the code cannot be identified; an unpacked APK is needed'
+        if moved >= OBF_REPACKAGED_MIN and moved >= LIB_REPACKAGED_RATIO * len(classes):
+            return ('obfuscation moved %d of %d classes into short packages (such as o.a), so libraries inside them cannot be '
+                    'identified; an APK without obfuscation is needed' % (moved, len(classes)))
+        return ''
+
+    def dex_libraries(dexes, known, classes):
+        """從 DEX 類別辨識 LIB_DEX_SIGNATURES 的函式庫, 盡量從字串取得版本; known 是版本檔已辨識到的 Maven 名稱 (略過)
+        回傳 [{names, version, floor, evidence}] (version 讀不到為 '')
+        使用: lab_016"""
+        pool = None
+        def class_strings(name):
+            out = set()
+            for dex in dexes:
+                cls = dex.get_class(name)
+                for m in (cls.get_methods() if cls is not None else []):
+                    for ins in m.get_instructions():
+                        if ins.get_name().startswith('const-string') and hasattr(ins, 'get_string'):
+                            out.add(ins.get_string())
+            return out
+        found = []
+        for names, markers, source, floors in LIB_DEX_SIGNATURES:
+            if any(n in known for n in names):
+                continue
+            hit = next((c for m in markers for c in ([m] if m.endswith(';') and m in classes else
+                        sorted(c for c in classes if m.endswith('/') and c.startswith(m)
+                               and not re.search(r'(Exception|Error)[;$]', c)))), None)
+            if not hit:
+                continue
+            versions = set()
+            if source and source[0] == 'class':
+                versions = set(v for v in class_strings(source[1]) if LIB_VERSION_RE.fullmatch(v))
+            elif source:
+                if pool is None:
+                    pool = []
+                    for dex in dexes:
+                        try:
+                            pool.extend(dex.get_strings())
+                        except Exception:
+                            continue
+                versions = set(m for s in pool if isinstance(s, str) and len(s) < 200 for m in source[1].findall(s))
+            version = versions.pop() if len(versions) == 1 else ''
+            if version and names[0].startswith('org.bouncycastle:'):
+                names = (names[1] if lib_version_key(version) >= LIB_BC_JDK18_FROM else names[0],)
+            floor = max((v for c, v in floors if c in classes), key=lib_version_key, default='')
+            found.append({'names': names, 'version': version, 'floor': floor, 'evidence': hit})
+        return found
+
+    def osv_ranges(vuln, name):
+        """OSV 記錄裡某套件的受影響版本範圍 -> (顯示文字清單, 上限清單 [(版本, 是否包含)]; 上限 None 表示沒有修補版)
+        使用: lab_016"""
+        texts, uppers = [], []
+        for aff in vuln.get('affected', []):
+            if not isinstance(aff, dict) or aff.get('package', {}).get('name') != name:
+                continue
+            for rng in aff.get('ranges', []):
+                start = None
+                for ev in rng.get('events', []) if isinstance(rng, dict) else []:
+                    if 'introduced' in ev:
+                        start = ev['introduced']
+                    elif ('fixed' in ev or 'last_affected' in ev) and start is not None:
+                        end, incl = (ev['fixed'], False) if 'fixed' in ev else (ev['last_affected'], True)
+                        low = '' if start in ('0', '') else start + ' to '
+                        texts.append('%s%s%s' % (low, '' if incl else '< ', end))
+                        uppers.append((end, incl))
+                        start = None
+                if start is not None:
+                    texts.append('%s and later' % start)
+                    uppers.append((None, True))
+            if not aff.get('ranges') and aff.get('versions'):
+                texts.append(', '.join(aff['versions'][:3]))
+                uppers.extend((v, True) for v in aff['versions'])
+        return texts, uppers
+
+    def cvss3_base_score(vector):
+        """依 CVSS v3.0 / v3.1 向量計算 base score, 回傳 (版本, 分數); 不是 v3 向量回傳 (None, None)
+        使用: lab_016"""
+        m = re.fullmatch(r'CVSS:(3\.[01])/(.+)', vector or '')
+        if not m:
+            return None, None
+        metrics = dict(part.split(':', 1) for part in m.group(2).split('/') if ':' in part)
+        try:
+            scope = metrics['S']
+            av = {'N': 0.85, 'A': 0.62, 'L': 0.55, 'P': 0.2}[metrics['AV']]
+            ac = {'L': 0.77, 'H': 0.44}[metrics['AC']]
+            pr = ({'N': 0.85, 'L': 0.62, 'H': 0.27} if scope == 'U' else {'N': 0.85, 'L': 0.68, 'H': 0.5})[metrics['PR']]
+            ui = {'N': 0.85, 'R': 0.62}[metrics['UI']]
+            cia = [{'H': 0.56, 'L': 0.22, 'N': 0}[metrics[k]] for k in ('C', 'I', 'A')]
+        except KeyError:
+            return None, None
+        iss = 1 - (1 - cia[0]) * (1 - cia[1]) * (1 - cia[2])
+        impact = 6.42 * iss if scope == 'U' else 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
+        if impact <= 0:
+            return m.group(1), 0.0
+        total = impact + 8.22 * av * ac * pr * ui
+        total = min(total if scope == 'U' else 1.08 * total, 10)
+        if m.group(1) == '3.0':
+            return '3.0', math.ceil(total * 10) / 10
+        n = int(round(total * 100000))
+        return '3.1', n / 100000.0 if n % 10000 == 0 else (n // 10000 + 1) / 10.0
+
+    def osv_fixed_version(vuln, name, version):
+        """OSV 記錄裡, 涵蓋這個版本的範圍的修補版本; 找不到 (沒有修補版或範圍不明) 回傳 ''
+        使用: lab_016"""
+        key = lib_version_key(version)
+        for aff in vuln.get('affected', []):
+            if not isinstance(aff, dict) or aff.get('package', {}).get('name') != name:
+                continue
+            for rng in aff.get('ranges', []):
+                start = None
+                for ev in rng.get('events', []) if isinstance(rng, dict) else []:
+                    if 'introduced' in ev:
+                        start = ev['introduced']
+                    elif 'fixed' in ev and start is not None:
+                        if lib_version_key(start) <= key < lib_version_key(ev['fixed']):
+                            return ev['fixed']
+                        start = None
+        return ''
+
+    def cvss30_score(vector):
+        """MAS 備註用 CVSS v3.0 分數: v3.1 向量的評分項目與 v3.0 相同, 改用 v3.0 公式重算; 回傳 ('3.0', 分數) 或 (None, None)
+        (2019 年後的 CVE 多半只有 v3.1 分數)
+        使用: lab_016"""
+        m = re.fullmatch(r'CVSS:3\.[01]/(.+)', vector or '')
+        return cvss3_base_score('CVSS:3.0/' + m.group(1)) if m else (None, None)
+
+    def nvd_cvss3(record):
+        """從 NVD CVE 記錄取 CVSS v3.0 分數: 先 v3.0 再 v3.1 (以 v3.0 公式重算), 同版本優先 NVD (Primary);
+        回傳 (版本, 分數, 向量) 或 None
+        使用: lab_016"""
+        for key in ('cvssMetricV30', 'cvssMetricV31'):
+            rows = [r for r in record.get('metrics', {}).get(key, []) if isinstance(r, dict)]
+            rows.sort(key=lambda r: r.get('type') != 'Primary')
+            for row in rows:
+                data = row.get('cvssData', {})
+                version, score = cvss30_score(data.get('vectorString', ''))
+                if version:
+                    return version, score, data.get('vectorString', '')
+        return None
+
+    def lib_http_json(url, payload=None, timeout=10):
+        """查 OSV / NVD (只允許這兩個 API, 不跟隨轉址, 回應上限 4 MB), 回傳 JSON dict
+        使用: lab_016"""
+        if not url.startswith(('https://api.osv.dev/v1/', 'https://services.nvd.nist.gov/rest/json/cves/2.0?',
+                               'https://services.nvd.nist.gov/rest/json/cpes/2.0?', 'https://search.maven.org/solrsearch/select?')):
+            raise ValueError('unapproved lookup URL')
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args):
+                raise ValueError('redirect refused')
+        headers = {'Content-Type': 'application/json', 'User-Agent': 'CMAA-lab016/2'}
+        if url.startswith('https://services.nvd.nist.gov/') and os.environ.get('NVD_API_KEY'):
+            headers['apiKey'] = os.environ['NVD_API_KEY']
+        data = None if payload is None else json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with urllib.request.build_opener(NoRedirect).open(req, timeout=timeout) as resp:
+            raw = resp.read(4 * 1024 * 1024 + 1)
+        if len(raw) > 4 * 1024 * 1024:
+            raise ValueError('response too large')
+        result = json.loads(raw.decode('utf-8'))
+        if not isinstance(result, dict):
+            raise ValueError('invalid response')
+        return result
+
+    def library_vuln_result(apk, dexes=None, http=None):
+        """lab_016 主流程: 辨識函式庫 (版本檔 + DEX 類別) -> OSV 批次查 Maven 套件 / NVD CPE 查原生函式庫 -> 留下有 CVE 且 CVSS v3 >= 7 的;
+        讀不到版本的函式庫查所有版本, 有 CVSS >= 7 的漏洞版本就列入 review
+        回傳 dict (verdict WARNING / NOT_EVALUATED / PASS、findings、components、unidentified、review)
+        使用: lab_016"""
+        http = http or lib_http_json
+        deadline = time.monotonic() + LIB_MAX_SECONDS
+        def timeout():
+            left = deadline - time.monotonic()
+            if left <= 1:
+                raise ValueError('time limit reached')
+            return min(15, left)
+        inventory, webp, unidentified = library_inventory(apk)
+        components = [{'ecosystem': e, 'name': n, 'version': v, 'files': sorted(set(f))[:3],
+                       'cves': [], 'status': 'ok', 'note': ''} for (e, n, v), f in sorted(inventory.items())]
+        known = set(c['name'] for c in components if c['ecosystem'] == 'Maven')
+        maven_unresolved = []
+        dexes = [x for x in (dexes or []) if x is not None]
+        classes = dex_class_names(dexes)
+        hidden = lib_code_hidden(apk, classes) if dexes else ''
+        for lib in dex_libraries(dexes, known, classes):
+            components.append({'ecosystem': 'Maven', 'name': ' / '.join(lib['names']), 'query_names': list(lib['names']),
+                               'version': lib['version'], 'files': ['classes.dex: ' + lib['evidence']], 'cves': [],
+                               'status': 'ok', 'note': 'identified from code', 'floor': lib['floor'], 'possible': []})
+        findings, review = [], [hidden] if hidden else []
+
+        # 函式庫自己的 BuildConfig.VERSION_NAME: 補上讀不到版本的函式庫 (同一套件或其子套件只有一個版本才用)
+        bc_versions = buildconfig_versions(dexes, app_own_prefixes(apk)) if dexes else {}
+        def buildconfig_version_for(pkg):
+            versions = {v for p, v in bc_versions.items() if p == pkg or p.startswith(pkg + '/')}
+            return versions.pop() if len(versions) == 1 else ''
+        for comp in components:
+            if comp.get('note') == 'identified from code' and not comp['version'] and len(comp.get('query_names', [])) == 1:
+                vendor_pkg = comp['files'][0].split(': ', 1)[-1][1:].rsplit('/', 1)[0]
+                version = buildconfig_version_for(vendor_pkg)
+                if version:
+                    comp['version'], comp['note'] = version, 'identified from code; version from BuildConfig.VERSION_NAME'
+
+        # React Native 框架本身 (ReactNativeVersion)
+        rn = react_native_version(dexes) if dexes else ''
+        if rn:
+            components.append({'ecosystem': 'npm', 'name': 'react-native', 'version': rn,
+                               'files': ['classes.dex: com.facebook.react.modules.systeminfo.ReactNativeVersion'],
+                               'cves': [], 'status': 'ok', 'note': 'React Native framework'})
+
+        # 清單外、沒有版本記錄的 Java 函式庫: 用類別名稱到 Maven Central 反查函式庫名稱 (之後查所有版本的漏洞)
+        if dexes and not hidden:
+            def vendor(m):
+                parts = m[1:].split('/')
+                keep = 3 if len(parts) > 2 and parts[1] in LIB_MAVEN_GENERIC else 2
+                return 'L' + '/'.join(parts[:min(keep, len(parts) - 1)]) + '/'
+            covered = tuple(vendor(m) for _, markers, _, _ in LIB_DEX_SIGNATURES for m in markers)
+            lookups = maven_lookup_classes(classes, app_own_prefixes(apk), covered)
+            maven_cache = lib_json_cache_load(LIB_MAVEN_CACHE, LIB_MAVEN_CACHE_DAYS)
+            maven_deadline = time.monotonic() + LIB_MAVEN_SECONDS
+            def maven_find(pkg, cls):
+                # 快取存原始候選 (groupId, artifactId, 次數), 挑選規則改了不必重查
+                if cls not in maven_cache:
+                    left = maven_deadline - time.monotonic()
+                    if left <= 1:
+                        raise ValueError('Maven Central time budget used')
+                    data = http('https://search.maven.org/solrsearch/select?' + urllib.parse.urlencode(
+                        {'q': 'fc:' + cls, 'rows': 50, 'wt': 'json'}), None, min(LIB_MAVEN_TIMEOUT, left))
+                    counts = {}
+                    for doc in (data.get('response') or {}).get('docs') or []:
+                        if doc.get('g') and doc.get('a'):
+                            counts[(doc['g'], doc['a'])] = counts.get((doc['g'], doc['a']), 0) + 1
+                    maven_cache[cls] = {'time': time.time(), 'cands': [[g, a, n] for (g, a), n in counts.items()]}
+                return maven_pick(pkg, maven_cache[cls].get('cands', []))
+            def maven_safe(item):
+                try:
+                    return maven_find(*item)
+                except Exception:
+                    return None
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                answers = list(pool.map(maven_safe, lookups))
+            lib_json_cache_save(LIB_MAVEN_CACHE, maven_cache)
+            maven_unresolved = [pkg.replace('/', '.') for (pkg, _), x in zip(lookups, answers) if x is None]
+            added = set(known)
+            for (pkg, cls), ga in zip(lookups, answers):
+                if ga and ga not in added:
+                    added.add(ga)
+                    version = buildconfig_version_for(pkg)
+                    components.append({'ecosystem': 'Maven', 'name': ga, 'query_names': [ga], 'version': version,
+                                       'files': ['classes.dex: ' + pkg.replace('/', '.')], 'cves': [], 'status': 'ok',
+                                       'note': 'identified from code (Maven Central)' +
+                                               ('; version from BuildConfig.VERSION_NAME' if version else ''),
+                                       'floor': '', 'possible': []})
+
+        # 網頁 (assets 的 JavaScript、React Native bundle)、.NET 組件、Flutter 套件
+        try:
+            files = [f for f in apk.get_files() if isinstance(f, str)]
+        except Exception:
+            files = []
+        js_found, js_encrypted, js_total = js_libraries(apk, files)
+        dotnet_found, dotnet_reason = dotnet_libraries(apk, files)
+        for (ecosystem, note), found in ((('npm', 'identified from web code'), js_found),
+                                         (('NuGet', 'identified from .NET assemblies'), dotnet_found)):
+            for (name, version), paths in sorted(found.items()):
+                components.append({'ecosystem': ecosystem, 'name': name, 'version': version, 'files': sorted(set(paths))[:3],
+                                   'cves': [], 'status': 'ok', 'note': note})
+        for name in flutter_packages(apk, files):
+            components.append({'ecosystem': 'Pub', 'name': name, 'query_names': [name], 'version': '', 'files': ['libapp.so'],
+                               'cves': [], 'status': 'ok', 'note': 'identified from Flutter code', 'floor': '', 'possible': []})
+        if js_encrypted >= LIB_JS_ENCRYPTED_MIN and js_encrypted * 2 >= js_total:
+            review.append('web code in assets is encrypted (%d of %d files), so web libraries cannot be identified; '
+                          'an unencrypted APK is needed' % (js_encrypted, js_total))
+        if dotnet_reason:
+            review.append(dotnet_reason)
+        def unresolved(comp, note):
+            comp['status'], comp['note'] = 'unresolved', note
+            review.append('%s %s: %s' % (lib_short_name(comp['name']), comp['version'], note))
+        def add_cve(comp, cve, version, score, vector, source, fixed=''):
+            if any(c['id'] == cve for c in comp['cves']):
+                return
+            comp['cves'].append({'id': cve, 'cvss_version': version, 'score': score})
+            if score >= LIB_CVSS_THRESHOLD:
+                comp['status'] = 'vulnerable'
+                findings.append({'library': comp['name'], 'version': comp['version'], 'ecosystem': comp['ecosystem'], 'cve': cve,
+                                 'cvss_version': version, 'score': score, 'vector': vector, 'source': source,
+                                 'fixed': fixed, 'files': comp['files']})
+
+        # libwebp 特徵: 未修補 -> 直接列 CVE-2023-4863
+        for item in webp:
+            comp = {'ecosystem': 'native', 'name': 'libwebp (symbols)', 'version': item['status'],
+                    'files': [item['file']], 'cves': [], 'status': 'ok', 'note': 'CVE-2023-4863 symbol check'}
+            components.append(comp)
+            if item['status'] == 'vulnerable':
+                version, score = cvss30_score(LIB_WEBP_CVE['vector'])
+                add_cve(comp, LIB_WEBP_CVE['cve'], version, score, LIB_WEBP_CVE['vector'],
+                        'VP8LHuffmanTablesAllocate (added in fixed libwebp 1.3.2) missing', '1.3.2')
+        # libwebp 在、但內部函式名稱被拿掉 (沒有版本字串): 看不出有沒有修補 -> 人工排查
+        for item in unidentified:
+            if item['reason'].startswith('libwebp found'):
+                review.append('libwebp: version and patch state unknown; %s (CVSS v3.0 %s) affects versions < 1.3.2; '
+                              'needs manual review' % (LIB_WEBP_CVE['cve'], cvss30_score(LIB_WEBP_CVE['vector'])[1]))
+
+        # OSV 查得到的套件 (Maven、npm、Pub、NuGet): 批次查詢 (OSV 依版本比對), 再取漏洞明細的 CVE 編號與 CVSS v3 向量
+        maven = [c for c in components if c['ecosystem'] in LIB_OSV_ECOSYSTEMS]
+        nvd_left, nvd_times = [LIB_MAX_NVD_REQUESTS], []
+        nvd_cache = {}
+        def nvd_get(url):
+            # NVD 沒有 API key 時 30 秒內最多 5 次: 第 6 次起等到最早那次滿 30 秒
+            if nvd_left[0] <= 0:
+                raise ValueError('NVD request limit reached')
+            nvd_left[0] -= 1
+            if len(nvd_times) >= 5:
+                wait = 31 - (time.monotonic() - nvd_times[-5])
+                if wait > 0:
+                    if time.monotonic() + wait > deadline - 5:
+                        raise ValueError('time limit reached')
+                    time.sleep(wait)
+            nvd_times.append(time.monotonic())
+            return http(url, None, timeout())
+        disk = lib_nvd_cache_load()
+        def nvd_score(cve):
+            if cve not in nvd_cache and cve in disk:
+                nvd_cache[cve] = tuple(disk[cve]['score']) if disk[cve]['score'] else None
+            if cve not in nvd_cache:
+                data = nvd_get('https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=' + cve)
+                rows = data.get('vulnerabilities', [])
+                nvd_cache[cve] = nvd_cvss3(rows[0].get('cve', {})) if len(rows) == 1 else None
+                disk[cve] = {'time': time.time(), 'score': nvd_cache[cve]}
+            return nvd_cache[cve]
+        # 讀不到版本的函式庫: OSV 不帶版本查全部漏洞, 有 CVSS >= 7、且可能涵蓋最低版本以上的, 記成 possible
+        def add_possible(comp, name, vuln, cves, scored, severity=''):
+            # 只有 v4 分數時, 以 GitHub 評為 HIGH / CRITICAL 當作可能 >= 7 (分數顯示 high)
+            score = max(s[1] for s in scored) if scored else (None if severity in ('HIGH', 'CRITICAL') else 0)
+            if score is not None and score < LIB_CVSS_THRESHOLD:
+                return
+            texts, uppers = osv_ranges(vuln, name)
+            floor = lib_version_key(comp.get('floor'))
+            if comp.get('floor') and uppers and not any(
+                    end is None or lib_version_key(end) > floor or (incl and lib_version_key(end) == floor)
+                    for end, incl in uppers):
+                return  # 最低版本特徵已排除
+            for cve in cves:
+                if not any(p['cve'] == cve for p in comp['possible']):
+                    comp['possible'].append({'cve': cve, 'score': score if score is not None else 'high', 'ranges': texts[:3]})
+        pending = []
+        if maven:
+            queries = [(c, n) for c in maven for n in c.get('query_names', [c['name']])]
+            try:
+                batch = http('https://api.osv.dev/v1/querybatch', {'queries': [
+                    dict({'package': {'ecosystem': c['ecosystem'], 'name': n}}, **({'version': c['version']} if c['version'] else {}))
+                    for c, n in queries]}, timeout())
+                results = batch.get('results')
+                if not isinstance(results, list) or len(results) != len(queries):
+                    raise ValueError('invalid OSV batch response')
+            except Exception as exc:
+                results = None
+                for comp in maven:
+                    unresolved(comp, 'OSV lookup failed (%s)' % str(exc)[:80])
+            # 漏洞明細平行抓 (同一漏洞只抓一次), 失敗的存成例外
+            wanted = []
+            for res in results or []:
+                for v in (res or {}).get('vulns', []):
+                    if isinstance(v, dict) and isinstance(v.get('id'), str) and v['id'] not in wanted:
+                        wanted.append(v['id'])
+            def fetch(vid):
+                try:
+                    return http('https://api.osv.dev/v1/vulns/' + urllib.parse.quote(vid, safe=''), None, timeout())
+                except Exception as exc:
+                    return exc
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                details = dict(zip(wanted[:LIB_MAX_OSV_DETAILS], pool.map(fetch, wanted[:LIB_MAX_OSV_DETAILS])))
+            for (comp, qname), res in zip(queries, results or []):
+                ids = [v.get('id') for v in (res or {}).get('vulns', []) if isinstance(v, dict)]
+                if (res or {}).get('next_page_token'):
+                    unresolved(comp, 'OSV result incomplete')
+                    continue
+                for vid in ids:
+                    try:
+                        vuln = details.get(vid, ValueError('OSV detail limit reached'))
+                        if isinstance(vuln, Exception) or not isinstance(vuln, dict):
+                            raise vuln if isinstance(vuln, Exception) else ValueError('invalid OSV record')
+                        if vuln.get('withdrawn'):
+                            continue
+                        cves = sorted(set(x for x in [vuln.get('id')] + vuln.get('aliases', [])
+                                          if isinstance(x, str) and re.fullmatch(r'CVE-\d{4}-\d{4,}', x)))
+                        if not cves:
+                            continue  # 沒有 CVE 編號, 不在 MAS 判定範圍
+                        scored = [cvss30_score(s.get('score')) + (s.get('score'),) for s in vuln.get('severity', [])
+                                  if isinstance(s, dict) and s.get('type') == 'CVSS_V3']
+                        scored = [s for s in scored if s[0]]
+                        severity = (vuln.get('database_specific') or {}).get('severity', '')
+                        if not comp['version']:
+                            add_possible(comp, qname, vuln, cves, scored, severity)  # 版本不明: 不判 Failed, 也不查 NVD
+                            continue
+                        for cve in cves:
+                            if scored:
+                                version, score, vector = max(scored, key=lambda s: s[1])
+                                source = 'OSV ' + vid
+                            else:
+                                pending.append((comp, qname, vuln, cve, severity))  # 沒有 v3 分數: 之後用 NVD 補
+                                continue
+                            add_cve(comp, cve, version, score, vector, source, osv_fixed_version(vuln, qname, comp['version']))
+                    except Exception as exc:
+                        unresolved(comp, '%s lookup failed (%s)' % (vid, str(exc)[:80]))
+            # 沒有 v3 分數的 CVE 用 NVD 補分數; GitHub 評等高的先查, 次數用完時最可能 >= 7 的已查過 (查不到 -> NOT_EVALUATED)
+            rank = {'CRITICAL': 0, 'HIGH': 1, 'MODERATE': 2, 'LOW': 3}
+            for comp, qname, vuln, cve, severity in sorted(pending, key=lambda p: rank.get(p[4], 1)):
+                try:
+                    nvd = nvd_score(cve)
+                except Exception as exc:
+                    unresolved(comp, '%s lookup failed (%s)' % (cve, str(exc)[:80]))
+                    continue
+                if not nvd:
+                    unresolved(comp, cve + ' has no CVSS v3 score')
+                    continue
+                add_cve(comp, cve, nvd[0], nvd[1], nvd[2], 'NVD', osv_fixed_version(vuln, qname, comp['version']))
+
+        for comp in maven:
+            if comp['version'] or not comp.get('possible'):
+                continue
+            items = sorted(comp['possible'], key=lambda p: -(p['score'] if isinstance(p['score'], float) else LIB_CVSS_THRESHOLD))
+            if comp['status'] == 'ok':
+                comp['status'] = 'version_unknown'
+            review.append('%s: version unknown; high-severity CVEs in versions: %s%s; needs manual review' % (
+                lib_short_name(comp['name']), '; '.join('%s (%s) %s' % (p['cve'], p['score'], ', '.join(p['ranges'][:2]))
+                                                         for p in items[:3]),
+                '; and %d more CVE%s' % (len(items) - 3, 's' if len(items) > 4 else '') if len(items) > 3 else ''))
+
+        # 原生函式庫: NVD 依 CPE 名稱與版本查 (NVD 自己比對受影響版本)
+        for comp in [c for c in components if c['ecosystem'] == 'native' and c['name'] != 'libwebp (symbols)']:
+            cpe = next(p for n, _, p, _ in LIB_NATIVE_BANNERS if n == comp['name'])
+            cpe = 'cpe:2.3:a:%s:%s:*:*:*:*:*:*:*' % (cpe, comp['version'])
+            try:
+                data = nvd_get('https://services.nvd.nist.gov/rest/json/cves/2.0?' + urllib.parse.urlencode(
+                    {'cpeName': cpe, 'isVulnerable': '', 'resultsPerPage': 2000}))
+                rows = data.get('vulnerabilities')
+                if not isinstance(rows, list) or data.get('totalResults', 0) > len(rows):
+                    raise ValueError('NVD result incomplete')
+                for row in rows:
+                    record = row.get('cve', {}) if isinstance(row, dict) else {}
+                    cve = record.get('id', '')
+                    if not re.fullmatch(r'CVE-\d{4}-\d{4,}', cve) or record.get('vulnStatus', '').lower() == 'rejected':
+                        continue
+                    score = nvd_cvss3(record)
+                    if score:
+                        add_cve(comp, cve, score[0], score[1], score[2], 'NVD ' + cpe)
+                    else:
+                        unresolved(comp, cve + ' has no CVSS v3 score')
+            except Exception as exc:
+                unresolved(comp, 'NVD lookup failed (%s)' % str(exc)[:80])
+
+        # 會判 Failed 的 CVE: 分數最高的前 LIB_MAX_NVD_CONFIRM 個改用 NVD 分數 (低於門檻就移除); 查不到或次數用完保留 OSV 分數
+        top = {}
+        for f in findings:
+            if not f['source'].startswith('NVD'):
+                top[f['cve']] = max(top.get(f['cve'], 0), f['score'])
+        for cve in sorted(top, key=lambda c: -top[c])[:LIB_MAX_NVD_CONFIRM]:
+            try:
+                nvd = nvd_score(cve)
+            except Exception:
+                continue
+            for f in findings:
+                if nvd and f['cve'] == cve:
+                    f.update(cvss_version=nvd[0], score=nvd[1], vector=nvd[2], source='NVD')
+        findings = [f for f in findings if f['score'] >= LIB_CVSS_THRESHOLD]
+        # 建議版本: 同一函式庫所有 Failed CVE 的修補版本取最大, 照著更新就全部修掉;
+        # 有 CVE 查不到修補版本、建議版本本身在 OSV 還有漏洞、或查詢失敗 -> 留空 (報告改建議更新到最新版)
+        targets = {}
+        for f in findings:
+            key, cur = (f['library'], f['version']), targets.get((f['library'], f['version']))
+            if cur == '' or not f.get('fixed'):
+                targets[key] = ''
+            elif cur is None or lib_version_key(f['fixed']) > lib_version_key(cur):
+                targets[key] = f['fixed']
+        ecosystems = {(f['library'], f['version']): f.get('ecosystem') for f in findings}
+        check = [(k, v) for k, v in targets.items() if v and ecosystems.get(k) in LIB_OSV_ECOSYSTEMS]
+        if check:
+            try:
+                rows = http('https://api.osv.dev/v1/querybatch', {'queries': [
+                    {'package': {'ecosystem': ecosystems[k], 'name': k[0]}, 'version': v} for k, v in check]}, timeout()).get('results')
+                if not isinstance(rows, list) or len(rows) != len(check):
+                    raise ValueError('invalid OSV batch response')
+                for (k, v), row in zip(check, rows):
+                    if (row or {}).get('vulns'):
+                        targets[k] = ''
+            except Exception:
+                for k, v in check:
+                    targets[k] = ''
+        for f in findings:
+            f['fix_all'] = targets.get((f['library'], f['version']), '')
+
+        for comp in components:
+            if comp['status'] == 'vulnerable' and not any(f['library'] == comp['name'] and f['version'] == comp['version']
+                                                          for f in findings):
+                comp['status'] = 'ok'
+
+        # 原生函式庫 (沒有版本字串): 認得出的查 NVD 這個產品的高風險 CVE (critical 優先); 有就 NOT_EVALUATED 並列出一個
+        def nvd_product_by_name(stem):
+            key = 'name:' + stem
+            if key not in disk:
+                base = stem[3:] if stem.startswith('lib') else stem
+                data = nvd_get('https://services.nvd.nist.gov/rest/json/cpes/2.0?' + urllib.parse.urlencode(
+                    {'keywordSearch': base, 'resultsPerPage': 100}))
+                cpe = ''
+                for row in data.get('products', []):
+                    parts = (row.get('cpe') or {}).get('cpeName', '').split(':')
+                    if len(parts) > 4 and parts[2] == 'a' and parts[4] in (stem, base):
+                        cpe = parts[3] + ':' + parts[4]
+                        break
+                disk[key] = {'time': time.time(), 'score': cpe}
+            return disk[key]['score'] or None
+        def nvd_product_high_cve(cpe):
+            key = 'product:' + cpe
+            if key not in disk:
+                example = None
+                for level in ('CRITICAL', 'HIGH'):
+                    data = nvd_get('https://services.nvd.nist.gov/rest/json/cves/2.0?' + urllib.parse.urlencode(
+                        {'virtualMatchString': 'cpe:2.3:a:' + cpe, 'cvssV3Severity': level, 'resultsPerPage': 20}))
+                    for row in data.get('vulnerabilities', []):
+                        record = row.get('cve', {})
+                        score = nvd_cvss3(record)
+                        if score and score[1] >= LIB_CVSS_THRESHOLD and (not example or score[1] > example[1]):
+                            example = (record.get('id', ''), score[1])
+                    if example:
+                        break
+                disk[key] = {'time': time.time(), 'score': list(example) if example else None}
+            return disk[key]['score']
+        known_native = {c['name'] for c in components if c['ecosystem'] == 'native'}
+        name_lookups = 0
+        for name, (cpe, paths) in sorted(native_products(apk, unidentified, known_native).items()):
+            try:
+                if cpe is None:
+                    if name_lookups >= LIB_MAX_NVD_NAME_LOOKUPS:
+                        continue
+                    name_lookups += 1
+                    name = name[1:]
+                    cpe = nvd_product_by_name(name)
+                    if not cpe:
+                        continue  # 對不到 NVD 產品 (多半是 App 自己的 .so)
+                example = nvd_product_high_cve(cpe)
+            except Exception as exc:
+                review.append('%s (%s): NVD lookup failed (%s); needs manual review' % (name, paths[0], str(exc)[:60]))
+                continue
+            if example:
+                review.append('%s (%s): version unknown; high-severity CVEs in some versions, e.g. %s (%s); '
+                              'needs manual review' % (name, paths[0].rsplit('/', 1)[-1], example[0], example[1]))
+
+        lib_nvd_cache_save(disk)
+        if findings:
+            verdict = 'WARNING'
+        elif review or not components:
+            verdict = 'NOT_EVALUATED'
+            if not components:
+                review.append('no library name and version found in the APK')
+        else:
+            verdict = 'PASS'
+        findings.sort(key=lambda f: -f['score'])
+        return {'verdict': verdict, 'has_finding': bool(findings), 'findings': findings, 'review': review,
+                'components': components, 'unidentified': unidentified, 'maven_unresolved': maven_unresolved,
+                'threshold': LIB_CVSS_THRESHOLD}
 
     app.run(host='0.0.0.0', port=port)
 if __name__ == "__main__":
