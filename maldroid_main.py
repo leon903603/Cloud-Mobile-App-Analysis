@@ -791,7 +791,7 @@ class Writer:
                     # zhtw
                     # report_dict_zhtw["mast_report"][lab_tag]["data"] = [
                     #     {
-                    #         "description": v["title"].split("||")[1],
+                    #         "description": v["title"].split("|")[1],
                     #         "details": v["vector_details"] if "vector_details" in v else ''
                     #     }
                     # ]
@@ -799,14 +799,14 @@ class Writer:
                         for dataitem in v["vector_details"].split('=>'):
                             report_dict_zhtw["mast_report"][lab_tag]["data"].append(
                                 {
-                                    "description": v["title"].split("||")[0],
+                                    "description": v["title"].split("|")[0],
                                     "details": dataitem
                                 }
                                 )
                     else:
                         report_dict_zhtw["mast_report"][lab_tag]["data"].append(
                             {
-                                "description": v["title"].split("||")[0],
+                                "description": v["title"].split("|")[0],
                                 "details": ''
                             }
                         )
@@ -816,7 +816,7 @@ class Writer:
                     print(v["title"])
                     # report_dict_en["mast_report"][lab_tag]["data"] = [
                     #     {
-                    #         "description": v["title"].split("||")[1],
+                    #         "description": v["title"].split("|")[1],
                     #         "details": v["vector_details"] if "vector_details" in v else ''
                     #     }
                     # ]
@@ -824,14 +824,14 @@ class Writer:
                         for dataitem in v["vector_details"].split('=>'):
                             report_dict_en["mast_report"][lab_tag]["data"].append(
                                 {
-                                    "description": v["title"].split("||")[1],
+                                    "description": v["title"].split("|")[1],
                                     "details": dataitem
                                 }
                                 )
                     else:
                         report_dict_en["mast_report"][lab_tag]["data"].append(
                             {
-                                "description": v["title"].split("||")[1],
+                                "description": v["title"].split("|")[1],
                                 "details": ''
                             }
                         )
@@ -843,14 +843,14 @@ class Writer:
                     # zhtw
                     report_dict_zhtw["mast_report"][lab_tag]["data"].append(
                         {
-                            "description": v["title"].split("||")[0],
+                            "description": v["title"].split("|")[0],
                             "details": v["vector_details"] if "vector_details" in v else '',
                         }
                     )
                     # en
                     report_dict_en["mast_report"][lab_tag]["data"].append(
                         {
-                            "description": v["title"].split("||")[1],
+                            "description": v["title"].split("|")[1],
                             "details": v["vector_details"] if "vector_details" in v else '',
                         }
                     )
@@ -864,12 +864,33 @@ class Writer:
                     "isDetected": None, "status": "NOT_EVALUATED", "type": ["ManualReview"],
                     "data": [{"description": "", "details": review_details}]}
 
+        def _clean_whitelabel_text(s):
+            if not s:
+                return s
+            import re
+            s = re.sub(r'\s*\|\s*https?://mas\.owasp\.org/[^\s"]*', '', s)
+            s = re.sub(r'\s*Ref:\s*https?://mas\.owasp\.org/[^\s"]*', '', s)
+            s = re.sub(r'\s*參考:\s*https?://mas\.owasp\.org/[^\s"]*', '', s)
+            s = re.sub(r'https?://mas\.owasp\.org/[^\s"]*', '', s)
+            s = re.sub(r'\s*\|\s*$', '', s)
+            s = re.sub(r'\s*Ref:\s*$', '', s)
+            return s.rstrip()
+
         for k,v in report_dict_zhtw["mast_report"].items():
-            if v["isDetected"] == True:
-                android_static_dict_zhtw[k]["desc"] = v["data"][0]["description"]
+            if v.get("data"):
+                for d in v["data"]:
+                    if "description" in d:
+                        d["description"] = _clean_whitelabel_text(d["description"])
+            if v.get("isDetected") == True and v.get("data"):
+                android_static_dict_zhtw[k]["desc"] = _clean_whitelabel_text(v["data"][0]["description"])
+
         for k,v in report_dict_en["mast_report"].items():
-            if v["isDetected"] == True:
-                android_static_dict_en[k]["desc"] = v["data"][0]["description"]
+            if v.get("data"):
+                for d in v["data"]:
+                    if "description" in d:
+                        d["description"] = _clean_whitelabel_text(d["description"])
+            if v.get("isDetected") == True and v.get("data"):
+                android_static_dict_en[k]["desc"] = _clean_whitelabel_text(v["data"][0]["description"])
 
         # Ensure required fields exist with default values
         required_fields = {
@@ -1359,7 +1380,7 @@ def isBase64(base64_string):
 
 
 def isSuccessBase64DecodedString(base64_string):
-    # Punct: \:;/-.,?=<>+_()[]{}|"'~`*
+    # Punct: \:;/-.,?=<>+_()[]{}"'~`*
     return re.match(
         '^[A-Za-z0-9\\\:\;\/\-\.\,\?\=\<\>\+\_\(\)\[\]\{\}\|\"\'\~\`\*]+$',
         base64_string)
@@ -2024,7 +2045,7 @@ def __analyze(writer, args):
             u"CRITICAL: http URL 確實流入網路 sink; WARNING: 找到 http URL 但同 method 無 sink; "
             u"INFO: manifest 已禁止 cleartext 但 code 仍含 http URL。"
             u" Ref: https://developer.android.com/training/articles/security-config"
-            + "||" +
+            + "|" +
             u"App may transmit data over cleartext HTTP, violating MAS-4.1.2.4.1. Three layers checked: "
             u"(1) AndroidManifest android:usesCleartextTraffic, (2) res/xml network_security_config "
             u"(base-config / domain-config), (3) smali source->sink pairing of http URL strings with "
@@ -2106,7 +2127,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "Security_Methods", LEVEL_NOTICE,
             u"[AS-lab002][OWASP-V1.9,V1.10,V3.4][MAST-4.2.3][工-9.9.9] 安全相關 Methods 檢查",
-            u"找到安全相關 method 名稱" + "||" + u"Find the security-related method name")
+            u"找到安全相關 method 名稱" + "|" + u"Find the security-related method name")
         
         for method in list_security_related_methods:
             class_name = method.get('class_name', '')
@@ -2135,7 +2156,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "Security_Classes", LEVEL_NOTICE,
             u"[AS-lab003][OWASP-V1.9,V1.10,V3.4][MAST-4.2.3][工-9.9.9] 安全相關 Classes 檢查",
-            u"找到安全相關 class 的名稱:" + "||" + u"Find the security-related class name")
+            u"找到安全相關 class 的名稱:" + "|" + u"Find the security-related class name")
 
         for class_info in list_security_related_classes:
             # API response dictionary
@@ -2150,7 +2171,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "com.android.vending.BILLING", LEVEL_INFO,
             u"[AS-lab004][OWASP-V6.1][MAST-4.2.1][工-4.1.3.1] 存取權限 'com.android.vending.BILLING' ",
-            u"只在付費app中出現。" + "||" + u"Only appears in paid apps.")
+            u"只在付費app中出現。" + "|" + u"Only appears in paid apps.")
 
     pkg_billing = vmx.get_tainted_packages().search_packages(
         "Lcom/android/vending/billing/IInAppBillingService")
@@ -2163,7 +2184,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "method getPurchases()", LEVEL_INFO,
             u"[AS-lab004][OWASP-V6.1][MAST-4.2.1][工-4.1.3.1] 發現 package 'Lcom/android/vending/billing/IInAppBillingService' ",
-            u"此 app 有 google play 的內部付費購買功能。" + "||" + u"This app has google play's internal paid purchase feature.")
+            u"此 app 有 google play 的內部付費購買功能。" + "|" + u"This app has google play's internal paid purchase feature.")
         writer.show_Paths(d, path_purchases)
 
     #----------------------------------------------------------------------------------------------------
@@ -2175,7 +2196,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "READ_CONTACTS", LEVEL_NOTICE,
             "[AS-lab005][Bank-001][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_CONTACTS",
-            u"存取權限 'android.permission.READ_CONTACTS'，需要存取通訊錄之 app 才會出現" + "||" + u"Access permission 'android.permission.READ_CONTACTS', which will only appear for apps that need to access the address book")
+            u"存取權限 'android.permission.READ_CONTACTS'，需要存取通訊錄之 app 才會出現" + "|" + u"Access permission 'android.permission.READ_CONTACTS', which will only appear for apps that need to access the address book")
         writer.write("Permission detected: " + contact)
 
     #----------------------------------------------------------------------------------------------------
@@ -2186,7 +2207,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "READ_CALL_LOG", LEVEL_NOTICE,
             "[AS-lab006][Bank-002][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_CALL_LOG",
-            u"存取權限 'android.permission.READ_CALL_LOG'，需要存取通聯紀錄之 app 才會出現" + "||" + u"Access permission 'android.permission.READ_CALL_LOG', which will only appear if the app needs to access the contact log")
+            u"存取權限 'android.permission.READ_CALL_LOG'，需要存取通聯紀錄之 app 才會出現" + "|" + u"Access permission 'android.permission.READ_CALL_LOG', which will only appear if the app needs to access the contact log")
         writer.write("Permission detected: " + calllog)
     
     #----------------------------------------------------------------------------------------------------
@@ -2197,7 +2218,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "ACCESS_FINE_LOCATION", LEVEL_NOTICE,
             "[AS-lab007][Bank-003][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.ACCESS_FINE_LOCATION",
-            u"存取權限 'android.permission.ACCESS_FINE_LOCATION'，需要存取 GPS 之 app 才會出現" + "||" + u"Access permission 'android.permission.ACCESS_FINE_LOCATION', which will only appear if the app needs to access the GPS")
+            u"存取權限 'android.permission.ACCESS_FINE_LOCATION'，需要存取 GPS 之 app 才會出現" + "|" + u"Access permission 'android.permission.ACCESS_FINE_LOCATION', which will only appear if the app needs to access the GPS")
         writer.write("Permission detected: " + gpslocation)
     
     #----------------------------------------------------------------------------------------------------
@@ -2220,7 +2241,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "SENSITIVE_gps", LEVEL_NOTICE,
             u"[AS-lab008][OWASP-V2.2][MAST-4.2.2][工-9.9.9] 傳送 GPS 訊息的 code",
-            u"此 app 有傳送 GPS 訊息的程式碼 (LocationManager.requestLocationUpdates):" + "||" + u"This app has code for sending GPS messages (LocationManager.requestLocationUpdates):"
+            u"此 app 有傳送 GPS 訊息的程式碼 (LocationManager.requestLocationUpdates):" + "|" + u"This app has code for sending GPS messages (LocationManager.requestLocationUpdates):"
         )
         writer.write("GPS method detected: LocationManager.requestLocationUpdates")
 
@@ -2232,7 +2253,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "READ_SMS", LEVEL_NOTICE,
             u"[AS-lab009][Bank-004][OWASP-V6.1][MAST-4.2.1][工-9.9.9] android.permission.READ_SMS",
-            u"存取權限 'android.permission.READ_SMS'，需要存取 SMS 之 app 才會出現" + "||" + u"Access permission 'android.permission.READ_SMS', which will appear only for apps that need to access SMS")
+            u"存取權限 'android.permission.READ_SMS'，需要存取 SMS 之 app 才會出現" + "|" + u"Access permission 'android.permission.READ_SMS', which will appear only for apps that need to access SMS")
         writer.write("Permission detected: " + sms)
 
     #----------------------------------------------------------------------------------------------------
@@ -2243,7 +2264,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "RECORD_AUDIO", LEVEL_NOTICE,
             u"[AS-lab010][OWASP-V6.1][MAST-4.2.1][Bank-005][工-9.9.9] android.permission.RECORD_AUDIO",
-            u"存取權限 'android.permission.RECORD_AUDIO'，需要 Record 之 app 才會出現" + "||" + u"Access permission 'android.permission.RECORD_AUDIO', need Record's app to appear")
+            u"存取權限 'android.permission.RECORD_AUDIO'，需要 Record 之 app 才會出現" + "|" + u"Access permission 'android.permission.RECORD_AUDIO', need Record's app to appear")
         writer.write("Permission detected: " + record)
 
     #----------------------------------------------------------------------------------------------------
@@ -2259,7 +2280,7 @@ def __analyze(writer, args):
         print("LAB_011: Found {} media URI strings".format(len(allmuri)))
         writer.startWriter("URi", LEVEL_NOTICE,
                            u"[AS-lab011][Bank-006] 具有 media 的 URI 字串",
-                           u"此 app 有 media 的 URI 字串" + "||" + u"This app has the URI string for media")
+                           u"此 app 有 media 的 URI 字串" + "|" + u"This app has the URI string for media")
     for oneuri in allmuri:
         writer.write(oneuri + "\t")
 
@@ -2273,7 +2294,7 @@ def __analyze(writer, args):
     if alluri:
         writer.startWriter("URi", LEVEL_NOTICE, 
                            u"[AS-lab012][Bank-007] 具有 URI 字串",
-                           u"此 app 有 URI 字串" + "||" + u"This app has the URI string")
+                           u"此 app 有 URI 字串" + "|" + u"This app has the URI string")
         for oneuri in alluri:
             writer.write(oneuri + "\t")
 
@@ -2290,7 +2311,7 @@ def __analyze(writer, args):
     if allurl:
         writer.startWriter("URL", LEVEL_NOTICE, 
                            u"[AS-lab013][Bank-008] 具有 URL 字串",
-                           u"此 app 有 URL 字串" + "||" + u"This app has the URL string")
+                           u"此 app 有 URL 字串" + "|" + u"This app has the URL string")
     for oneurl in allurl:
         writer.write(oneurl + "\t")
     
@@ -2305,7 +2326,7 @@ def __analyze(writer, args):
     if allip:
         writer.startWriter("IP found", LEVEL_NOTICE,
                            u"[AS-lab014][Bank-009] 具有 IP 字串",
-                           u"此 app 有 IP 字串" + "||" + u"This app has the IP string")
+                           u"此 app 有 IP 字串" + "|" + u"This app has the IP string")
     for oneip in allip:
         writer.write(oneip + "\t")
         
@@ -2320,7 +2341,7 @@ def __analyze(writer, args):
     if allemail:
         writer.startWriter("E-mail found", LEVEL_NOTICE,
                            u"[AS-lab015] 具有 E-mail 字串",
-                           u"此 app 有 E-mail 字串" + "||" + u"This app has the E-mail string")
+                           u"此 app 有 E-mail 字串" + "|" + u"This app has the E-mail string")
     # Avoid PDf crash
     # for oneemail in allemail:
     #     writer.write(oneemail + "\t")
@@ -2333,7 +2354,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "DEBUGGABLE", LEVEL_CRITICAL,
             u"[AS-lab017][OWASP-V7.3,V7.4][MAST-4.2.5][M4] Android Debug Mode 檢查",
-            u"DEBUG 模式在 AndroidManifest.xml 中是打開的 (android:debuggable=\"true\")。這是非常危險的，攻擊者可以藉由 LOGCAT 偵測 Debug 訊息。如果它是已釋出 app 請將 Debug 模式關閉。" + "||" + u"DEBUG mode turned on in AndroidManifest.xml (android:debuggable=\"true\"). This is very dangerous, as attackers can use LOGCAT to detect debug messages. If it is a released app, please turn off Debug mode.",
+            u"DEBUG 模式在 AndroidManifest.xml 中是打開的 (android:debuggable=\"true\")。這是非常危險的，攻擊者可以藉由 LOGCAT 偵測 Debug 訊息。如果它是已釋出 app 請將 Debug 模式關閉。" + "|" + u"DEBUG mode turned on in AndroidManifest.xml (android:debuggable=\"true\"). This is very dangerous, as attackers can use LOGCAT to detect debug messages. If it is a released app, please turn off Debug mode.",
             ["Debug"])
 
     # else:
@@ -2436,7 +2457,7 @@ def __analyze(writer, args):
             u"偵測到 FileProvider 不當設定，可能導致檔案或目錄意外曝露。包含:\n" +
             u"\n".join(issues_summary) +
             u"\n\n建議:\n1. 不使用 <root-path>\n2. 避免分享廣泛路徑 (. 或 /)\n3. 謹慎使用 <external-path>" +
-            "||" +
+            "|" +
             u"Improper FileProvider configuration detected, may expose files/directories. Issues found:\n" +
             u"\n".join(issues_summary) +
             u"\n\nRecommendations:\n1. Don't use <root-path>\n2. Avoid broad path sharing (. or /)\n3. Use <external-path> carefully",
@@ -2460,7 +2481,7 @@ def __analyze(writer, args):
         writer.startWriter(
             u"PERMISSION_GROUP_EMPTY_VALUE", LEVEL_CRITICAL,
             u"[AS-lab019][OWASP-V6.1][MAST-4.2.1] AndroidManifest PermissionGroup Checking",
-            u"設定 'permissionGroup' 屬性為空白值將會讓權限的定義變得無效而且其它 app 都不能使用。" + "||" + u"Setting the 'permissionGroup' attribute to a blank value will make the permission definition invalid and unavailable to other apps.")
+            u"設定 'permissionGroup' 屬性為空白值將會讓權限的定義變得無效而且其它 app 都不能使用。" + "|" + u"Setting the 'permissionGroup' attribute to a blank value will make the permission definition invalid and unavailable to other apps.")
 
         for name in permissionNameOfWrongPermissionGroup:
             writer.write("permission name: '%s' is empty in the `permissionGroup`" % (name))
@@ -2498,7 +2519,7 @@ def __analyze(writer, args):
             writer.startWriter(
                 u"USE_PERMISSION_SYSTEM_APP", LEVEL_CRITICAL,
                 u"[AS-lab020][OWASP-V6.1][MAST-4.2.1] AndroidManifest 使用權限確認 ",
-                u"此 app 只能被手機製造商或 Google 簽名放在 '/system/app' 下並且釋出。如果不是，這可能是支惡意的 app" + "||" + u"This app can only be signed by the phone manufacturer or Google under '/system/app' and released. If not, this may be a malicious app"
+                u"此 app 只能被手機製造商或 Google 簽名放在 '/system/app' 下並且釋出。如果不是，這可能是支惡意的 app" + "|" + u"This app can only be signed by the phone manufacturer or Google under '/system/app' and released. If not, this may be a malicious app"
             )
 
             for permission in list_user_permission_critical_manufacturer:
@@ -2509,7 +2530,7 @@ def __analyze(writer, args):
             writer.startWriter(
                 u"USE_PERMISSION_CRITICAL", LEVEL_CRITICAL,
                 u"[AS-lab020][OWASP-V6.1][MAST-4.2.1] AndroidManifest 使用權限確認",
-                u"這 app 要求很高的權限，請小心使用" + "||" + "This app requires very high privileges, so please use it carefully")
+                u"這 app 要求很高的權限，請小心使用" + "|" + "This app requires very high privileges, so please use it carefully")
 
             for permission in list_user_permission_critical:
                 writer.write(
@@ -2619,7 +2640,7 @@ def __analyze(writer, args):
             writer.startWriter(
                 u"USE_PERMISSION_INTERNET", LEVEL_CRITICAL,
                 u"[AS-lab021][OWASP-V5.2][MAST-4.2.3] 網路存取檢查",
-                u"此 app 有存取網路的程式碼，但在 AndroidManifest 中卻沒有 'android.permission.INTERNET' 的使用權限" + "||" + u"This app has code to access the network, but there is no 'android.permission.INTERNET' permission in AndroidManifest"
+                u"此 app 有存取網路的程式碼，但在 AndroidManifest 中卻沒有 'android.permission.INTERNET' 的使用權限" + "|" + u"This app has code to access the network, but there is no 'android.permission.INTERNET' permission in AndroidManifest"
             )
 
         # if pkg_URLConnection:
@@ -2672,14 +2693,14 @@ def __analyze(writer, args):
             u"CRITICAL (解碼後是 cleartext http:// URL 或 AWS/Google API/JWT secret pattern); "
             u"WARNING (解碼後含 password/api_key/token 等敏感關鍵字)。"
             u"概念上是 lab_074 (明文 secret 偵測) 的 Base64 編碼版本。"
-            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
-            + "||" +
+            u" "
+            + "|" +
             u"Detects sensitive data hidden inside Base64-encoded strings. Base64 itself is "
             u"not a vulnerability (icons, JWT, binary resources all use it); only reports Base64 "
             u"whose DECODED content matches real risk patterns: CRITICAL (decoded cleartext http:// "
             u"URL or known secret patterns - AWS/Google API/JWT); WARNING (decoded contains sensitive "
             u"keywords - password/api_key/token). Conceptually the Base64 counterpart of lab_074."
-            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/",
+            u" ",
             ["Base64", "Hardcoded"])
 
         # Only output CRITICAL findings — keep report compact
@@ -2733,7 +2754,7 @@ Please modify the following code:"""
         writer.startWriter(
             u"WEBVIEW_RCE", LEVEL_CRITICAL,
             u"[AS-lab023][OWASP-V6.5,V6.8][MAST-4.2.3][工-4.1.5.1.2][CVE-2013-4710] WebView addJavascriptInterface RCE 漏洞檢查",
-            output_string + "||" + output_string_en, [u"WebView", u"遠端程式碼執行"], u"CVE-2013-4710")
+            output_string + "|" + output_string_en, [u"WebView", u"遠端程式碼執行"], u"CVE-2013-4710")
         # writer.show_Paths(d, path_WebView_addJavascriptInterface)
 
     # else:
@@ -2789,7 +2810,7 @@ Please modify the following code:"""
             writer.startWriter(
                 "HACKER_KEYSTORE_SSL_PINNING", LEVEL_CRITICAL,
                 u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
-                u"以下的金鑰檔案似乎是使用 \"byte array\" 或 \"hard-coded cert info\" 來時做 SSL 的憑證綁定 (總共: "+ str(len(list_no_pwd_probably_ssl_pinning_keystore)) +u")，請手動檢查:" + "||" + \
+                u"以下的金鑰檔案似乎是使用 \"byte array\" 或 \"hard-coded cert info\" 來時做 SSL 的憑證綁定 (總共: "+ str(len(list_no_pwd_probably_ssl_pinning_keystore)) +u")，請手動檢查:" + "|" + \
                 u"The following key files seem to use \"byte array\" or \"hard-coded cert info\" when doing SSL certificate binding (total: "+ str(len(list_no_pwd_probably_ssl_pinning_keystore)) +u"), Please check manually:", 
                 ["KeyStore", "Hacker"])
 
@@ -2801,7 +2822,7 @@ Please modify the following code:"""
             writer.startWriter(
                 "HACKER_KEYSTORE_NO_PWD", LEVEL_CRITICAL,
                 u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護檢查",
-                u"以下的金鑰檔案似乎沒有被密碼保護住 (總共: " + str(len(list_no_pwd_keystore)) + u")，請手動檢查:" + "||" + \
+                u"以下的金鑰檔案似乎沒有被密碼保護住 (總共: " + str(len(list_no_pwd_keystore)) + u")，請手動檢查:" + "|" + \
                 u"The following key files do not seem to be password protected (total: " + str(len(list_no_pwd_keystore)) + u"), Please check manually:",
                 ["KeyStore", "Hacker"])
 
@@ -2813,7 +2834,7 @@ Please modify the following code:"""
             writer.startWriter(
                 "HACKER_KEYSTORE_SSL_PINNING2", LEVEL_NOTICE,
                 u"[AS-lab024][OWASP-V1.11,V3.1,V3.2,V3.3,V4.4][MAST-4.2.7][工-4.1.2.3.7,4.1.2.3.8] 金鑰保護資訊",
-                u"以下的金鑰檔案似乎被密碼保護並且有使用 SSL 的憑證綁定(總共: " + str(len(list_protected_keystore)) + u")，你可以使用 \"Portecle\" 的工具來管理金鑰檔案的憑證:" + "||" + \
+                u"以下的金鑰檔案似乎被密碼保護並且有使用 SSL 的憑證綁定(總共: " + str(len(list_protected_keystore)) + u")，你可以使用 \"Portecle\" 的工具來管理金鑰檔案的憑證:" + "|" + \
                 u"The following key files appear to be password protected and have certificates bound using SSL (total: " + str(len(list_protected_keystore)) + u"), you can use the tool \"Portecle\" to manage the credentials of the key files:",
                 ["KeyStore", "Hacker"])
 
@@ -2846,7 +2867,7 @@ Please modify the following code:"""
         if list_keystore_file_name:
             writer.startWriter("HACKER_KEYSTORE_LOCATION1", LEVEL_NOTICE,
                                u"[AS-lab025] 存取網路檢查金鑰檔案位置", 
-                               u"BKS 金鑰檔案:" + "||" + "BKS Key File:",
+                               u"BKS 金鑰檔案:" + "|" + "BKS Key File:",
                                ["KeyStore", "Hacker"])
             for i in list_keystore_file_name:
                 writer.write(i)
@@ -2854,7 +2875,7 @@ Please modify the following code:"""
         if list_possible_keystore_file_name:
             writer.startWriter("HACKER_KEYSTORE_LOCATION2", LEVEL_NOTICE,
                                u"[AS-lab025] 可能金鑰檔案位置", 
-                               u"BKS 可能的金鑰檔案:" + "||" + "BKS possible key file:",
+                               u"BKS 可能的金鑰檔案:" + "|" + "BKS possible key file:",
                                ["KeyStore", "Hacker"])
             for i in list_possible_keystore_file_name:
                 writer.write(i)
@@ -2909,12 +2930,12 @@ Please modify the following code:"""
             u"App 未驗證自身簽章時，攻擊者可將 App 反編譯、植入惡意程式碼或移除防護後重新簽章散布，被竄改的 App 仍可正常執行。" u"\n\n"
             u"本檢查判斷 App 是否讀取自身簽章進行比對（PackageInfo.signatures / signingInfo、SigningInfo、PackageManager.hasSigningCertificate），或改用具同等防護能力的 Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少簽章完整性檢查。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo"
-            + "||" +
+            u" | https://developer.android.com/reference/android/content/pm/SigningInfo"
+            + "|" +
             u"When the app does not verify its own signature, attackers can decompile it, inject malicious code or strip protections, then re-sign and redistribute it, and the tampered app still runs normally." u"\n\n"
             u"This check determines whether the app reads its own signing certificate for comparison (PackageInfo.signatures / signingInfo, SigningInfo, PackageManager.hasSigningCertificate), or relies on Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, the signature integrity check is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-2/ | https://developer.android.com/reference/android/content/pm/SigningInfo",
+            u" | https://developer.android.com/reference/android/content/pm/SigningInfo",
             [u"Signature", u"Hacker"])
         _write_detail(u"No signature integrity check found in app code")
 
@@ -2929,12 +2950,12 @@ Please modify the following code:"""
             u"App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。" u"\n\n"
             u"本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。" u"\n\n"
             u"限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
-            + "||" +
+            u" | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+            + "|" +
             u"When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data." u"\n\n"
             u"This check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing." u"\n\n"
             u"Limitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE",
+            u" | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE",
             [u"Hacker"])
         _write_detail(u"No FLAG_SECURE / SurfaceView.setSecure usage found in app code")
 
@@ -2974,7 +2995,7 @@ Please modify the following code:"""
             u"WARNING (硬編碼命令但非 root detection -> 需人工 review), "
             u"INFO (硬編碼命令屬於 root detection 範圍如 su / which su / busybox 等 -> 屬合法防護機制)。"
             u" Ref: https://cwe.mitre.org/data/definitions/78.html"
-            + "||" +
+            + "|" +
             u"App uses Runtime.getRuntime().exec() or new ProcessBuilder() to run external commands. "
             u"Findings are classified into: CRITICAL (dynamic command argument -> command injection risk), "
             u"WARNING (hardcoded command, not root-detection -> manual review needed), "
@@ -3102,7 +3123,7 @@ Use google chrome to navigate:
         writer.startWriter(
             "SSL_CN1", LEVEL_CRITICAL,
             u"[AS-lab029][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL 實作檢查 (在自定義的classes檢驗 Host Name)",
-            output_string + "||" + output_string_en, ["SSL_Security"])
+            output_string + "|" + output_string_en, ["SSL_Security"])
 
         for method in list_HOSTNAME_INNER_VERIFIER:
             writer.write(method.easy_print())
@@ -3171,7 +3192,7 @@ Use google chrome to navigate:
         writer.startWriter(
             "SSL_CN2", LEVEL_CRITICAL,
             u"[AS-lab030][OWASP-V6.3][MAST-4.2.6][工-4.1.4.2.3, 4.1.4.2.4, 4.1.5.1.2][M5] SSL實作檢查(辨識Host Name)",
-            output_string + "||" + output_string_en, ["SSL_Security"])
+            output_string + "|" + output_string_en, ["SSL_Security"])
 
         if filtered_ALLOW_ALL_HOSTNAME_VERIFIER_paths:
             """
@@ -3218,7 +3239,7 @@ Use google chrome to navigate:
         writer.startWriter(
             "SSL_CN3", LEVEL_CRITICAL,
             u"[AS-lab031][OWASP-V1.3,V1.4,V5.1,V5.2][MAST-4.2.6][工4.1.5.1.1][M5] SSL實作檢查 (不安全的 component)",
-            output_string + "||" + output_string_en, ["SSL_Security"])
+            output_string + "|" + output_string_en, ["SSL_Security"])
         writer.write("Found!:")
         for i in path_getInsecure:
             writer.write( i['class_name'] + " " + i['method_name'])
@@ -3264,7 +3285,7 @@ Use google chrome to navigate:
         writer.startWriter(
             u"SSL_預設_SCHEME_NAME", LEVEL_CRITICAL,
             u"[AS-lab032][MAST-4.2.6][工-4.1.2.4.1][M5] SSL實作檢查(HttpHost)",
-            u"這個app使用\"HTTPHost\",但預設的scheme是\"http\" 或者 \"HttpHost.DEFAULT_SCHEME_NAME(http)\.請改成\"https\":" + "||" + \
+            u"這個app使用\"HTTPHost\",但預設的scheme是\"http\" 或者 \"HttpHost.DEFAULT_SCHEME_NAME(http)\.請改成\"https\":" + "|" + \
             u"This app uses \"HTTPHost\", but the default scheme is \"http\" or \"HttpHost.DEFAULT_SCHEME_NAME(http)\. Please change it to \"https\":", 
             ["SSL_Security"])
 
@@ -3310,7 +3331,7 @@ Use google chrome to navigate:
 (1)OWASP Mobile Top 10 doc: https://www.owasp.org/index.php/Mobile_Top_10_2014-M3
 (2)https://jira.appcelerator.org/browse/TIMOB-4488
 易受攻擊的codes:
-""" + "||" + u"""Do not use "handler.proceed();" in methods that inherit from "WebViewClient", even if the SSL certificate is invalid it may still allow the connection to be established (man-in-the-middle attack vulnerability).
+""" + "|" + u"""Do not use "handler.proceed();" in methods that inherit from "WebViewClient", even if the SSL certificate is invalid it may still allow the connection to be established (man-in-the-middle attack vulnerability).
 Related Documents: 
 (1)OWASP Mobile Top 10 doc: https://www.owasp.org/index.php/Mobile_Top_10_2014-M3
 (2)https://jira.appcelerator.org/browse/TIMOB-4488
@@ -3356,7 +3377,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"WARNING (setJavaScriptEnabled(true) + loadUrl(變數) 同 method -> 可能載入不可信內容 XSS)。"
             u"單獨 setJavaScriptEnabled(true) 或 loadUrl(常數) 不報以避免噪音。"
             u" Ref: https://developer.android.com/reference/android/webkit/WebSettings"
-            + "||" +
+            + "|" +
             u"Audits WebView security configuration. Focuses on three real WebView risks: "
             u"CRITICAL (setAllowFileAccessFromFileURLs(true) -> JS reads local files); "
             u"CRITICAL (setAllowUniversalAccessFromFileURLs(true) -> JS bypasses Same-Origin Policy); "
@@ -3402,7 +3423,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"[參考資料]\n" + \
             u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
             u"- https://developer.android.com/training/articles/security-config\n" + \
-            u" || " + \
+            u" |" + \
             u"[Static Analysis Limitations]\n" + \
             u"This analysis is based on static code detection and cannot detect:\n" + \
             u"- Implementations hidden by code obfuscation\n" + \
@@ -3456,7 +3477,7 @@ Vulnerable Codes:""", ["SSL_Security"])
                 u"- 改用明確的參數傳遞，由應用程式自行決定跳轉目標\n\n"
                 u"參考資料:\n"
                 u"https://developer.android.com/privacy-and-security/risks/intent-redirection?hl=zh-tw \n"
-                + "||" +
+                + "|" +
                 u"[Static Analysis Limitations]\n"
                 u"This result is from static analysis and may contain false positives. Manual review is recommended.\n"
                 u"Static analysis cannot determine:\n"
@@ -3575,7 +3596,7 @@ Vulnerable Codes:""", ["SSL_Security"])
         writer.startWriter(
             "MODE_WORLD_READABLE_OR_MODE_WORLD_WRITEABLE", LEVEL_CRITICAL,
             u"[AS-lab037][OWASP-V2.2,V2.8][MAST-4.2.7][工-4.1.2.5.3][M4] APP sandbox權限檢查",
-            u"發現\"MODE_WORLD_READABLE\" or \"MODE_WORLD_WRITEABLE\" 安全問題 (請檢視: https://www.owasp.org/index.php/Mobile_Top_10_2014-M2):" + "||" + \
+            u"發現\"MODE_WORLD_READABLE\" or \"MODE_WORLD_WRITEABLE\" 安全問題 (請檢視: https://www.owasp.org/index.php/Mobile_Top_10_2014-M2):" + "|" + \
             u"\"MODE_WORLD_READABLE\" or \"MODE_WORLD_WRITEABLE\" security problem found (please check: https://www.owasp.org/index.php/Mobile_Top_10_2014-M2):"   
         )
 
@@ -3655,7 +3676,7 @@ Vulnerable Codes:""", ["SSL_Security"])
     if list_NDK_library_classname_to_ndkso_mapping2:
         writer.startWriter("NATIVE_LIBS_LOADING", LEVEL_NOTICE,
                            u"[AS-lab038][MAST-4.2.5] 原生函式庫載入程式碼檢查",
-                           u"發現有載入原生的函式庫程式碼(System.loadLibrary(...)):" + "||" + u"Found native library code loaded (System.loadLibrary(...)) :")
+                           u"發現有載入原生的函式庫程式碼(System.loadLibrary(...)):" + "|" + u"Found native library code loaded (System.loadLibrary(...)) :")
         writer.write("Found!:")
         for i in list_NDK_library_classname_to_ndkso_mapping2:
             writer.write(i['class_name'] + " loadLibrary")
@@ -3690,7 +3711,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             writer.startWriter(
                 "NATIVE_METHODS", LEVEL_NOTICE,
                 u"[AS-lab038][OWASP-V1.1][MAST-4.2.5] Native Methods 檢查",
-                u"發現原生的methods:" + "||" + u"Discover the native methods:")
+                u"發現原生的methods:" + "|" + u"Discover the native methods:")
 
             for class_name, method_names in dic_native_methods_sorted.items():
                 if class_name in dic_NDK_library_classname_to_ndkso_mapping:
@@ -3757,13 +3778,13 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"判定：找到自動分享管道（其他 App 拿得到的 ContentProvider、沒指定接收者又帶資料的廣播、grantUriPermission），且確定是敏感資料（extra 或欄位名稱含密碼、帳號、電話、定位、通訊錄等，或讀取了定位、通訊錄、裝置 ID 等 API），往上追呼叫路徑也沒經過同意對話框或分享開關，即不符合。開啟畫面、分享選單、拍照等使用者看得到的操作，送給系統的固定廣播（媒體掃描等），以及程式內比對呼叫者簽章的 provider 都不算。看不出是否為敏感資料、接收者不明、程式碼看不到或開關名稱看不出來的管道列為 Not evaluated，細節會列出原因。" u"\n\n"
             u"修正：不需要分享就設 android:exported=\"false\"、用 setPackage() 指定接收的 App，或改用 signature 等級的權限；需要分享就在分享前先取得使用者同意。" u"\n\n"
             u"限制：敏感資料只看名稱與 API，不追蹤資料流；分享開關只認名稱含 share、consent、privacy 等字的設定；只追 4 層呼叫；Compose 對話框、在其他 method 組成的 intent、原生函式庫內的管道看不到；商店與 App 內的聲明內容需人工確認。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send"
-            + "||" +
+            u" | https://developer.android.com/training/sharing/send"
+            + "|" +
             u"The app automatically hands sensitive data to other apps on the device without notice or consent, so users don't know who gets their data." u"\n\n"
             u"Fails when: an automatic sharing channel (ContentProvider reachable by other apps, broadcast with data and no receiver, grantUriPermission) carries sensitive data (extra or field names such as password, account, phone, location, contacts, or location / contacts / device ID APIs are read) and its call path has no consent dialog or sharing switch. Actions the user sees (opening a screen, the share sheet, taking a photo), fixed system broadcasts (e.g. media scanner) and providers that verify the caller's signature in code are not counted. Channels whose data sensitivity, receiver, code or switch key cannot be determined are reported as Not evaluated, with the reason in the details." u"\n\n"
             u"Fix: if sharing is not needed, set android:exported=\"false\", target the receiver with setPackage(), or use a signature-level permission; if it is needed, get user consent before sharing." u"\n\n"
             u"Limitation: sensitive data is judged only by names and APIs, data flow is not traced; only settings whose key contains share, consent, privacy, etc. count as sharing switches; only 4 levels of callers are traced; Compose dialogs, intents built in other methods and native code are not seen; the wording of store and in-app notices needs manual review." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-3/ | https://developer.android.com/training/sharing/send",
+            u" | https://developer.android.com/training/sharing/send",
             [u"Privacy", u"Share"])
         _write_lines([_share_line(c) for c in result_lab039.get('findings', [])])
     elif isinstance(result_lab039, dict) and result_lab039.get('verdict') == 'NOT_EVALUATED':
@@ -3781,13 +3802,13 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"判定：AS-lab039 找到的自動分享管道（確定是敏感資料）中，呼叫路徑上沒有讀取分享開關（SharedPreferences、DataStore），或讀了開關卻沒有用來決定要不要分享，即不符合；只有同意對話框、沒有可事後關閉的開關，使用者同意後無法撤回，也不符合。開關的值傳到其他地方才判斷、開關名稱看不出來，或看不出是否為敏感資料的，列為 Not evaluated。分享選單可取消，不算。" u"\n\n"
             u"修正：在設定頁提供「允許分享資料」開關，分享前先讀取開關，關閉時不分享。" u"\n\n"
             u"限制：分享開關只認名稱含 share、consent、privacy 等字的設定；不確認判斷的位置真的擋住了分享；DataStore 開關只能確認有讀取。細節會列出開關名稱、預設值及設定頁是否有這個開關。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send"
-            + "||" +
+            u" | https://developer.android.com/training/sharing/send"
+            + "|" +
             u"The app automatically shares sensitive data with other apps but users cannot refuse it." u"\n\n"
             u"Fails when: an automatic sharing channel from AS-lab039 that carries sensitive data has no read of a sharing switch (SharedPreferences, DataStore) on its call path, or the switch is read but not used to decide whether to share; a consent dialog without a switch that can be turned off later also fails, because users cannot withdraw consent. Switches whose value is checked elsewhere, switches whose key cannot be identified, and data whose sensitivity cannot be determined are reported as Not evaluated. The share sheet can be cancelled and is not counted." u"\n\n"
             u"Fix: add an \"allow data sharing\" switch in settings and check it before sharing; do not share when it is off." u"\n\n"
             u"Limitation: only settings whose key contains share, consent, privacy, etc. count as sharing switches; does not confirm that the check actually blocks the sharing; DataStore switches can only be confirmed as read. Details list the switch key, its default value and whether it appears in the settings screen." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/sharing/send",
+            u" | https://developer.android.com/training/sharing/send",
             [u"Privacy", u"Share"])
         _write_lines([_share_line(c) for c in result_lab040.get('findings', [])])
     elif isinstance(result_lab040, dict) and result_lab040.get('verdict') == 'NOT_EVALUATED':
@@ -3805,13 +3826,13 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"判定：App 自己讀取敏感資料（有權限且真的讀取，例如定位、通訊錄、錄音、裝置 ID）並有發網路請求，或內含會收集資料的 SDK（如 Firebase Analytics、AdMob），而資料安全性頁面沒列出該類別，即不符合。未上架、抓不到頁面、相機可能只用來掃碼、SDK 已在 Manifest 關閉收集，或有 INTERNET 權限但 App 程式碼看不到網路請求的，列為 Not evaluated。" u"\n\n"
             u"修正：資料會傳出就在 Google Play Console「資料安全性」補聲明該類別；不再使用就移除權限、相關程式碼或 SDK。" u"\n\n"
             u"限制：只比對資料安全性的資料類別，權限用途說明及未上架 App 的調查表需人工確認；引用到相關 API 就算讀取；沒有追蹤資料流，App 有發網路請求就推定資料會傳出；SDK 只認內建清單。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469"
-            + "||" +
+            u" | https://support.google.com/googleplay/android-developer/answer/10787469"
+            + "|" +
             u"The app or an SDK it uses obtains sensitive data that is not declared in Google Play Data safety, so users don't know about it before installing." u"\n\n"
             u"Fails when: the app itself reads sensitive data (holds the permission and actually reads it, e.g. location, contacts, audio, device IDs) and makes network requests, or it bundles a data-collecting SDK (e.g. Firebase Analytics, AdMob), and the Data safety page does not list that category. Apps not on Google Play, pages that cannot be fetched, a camera that may only scan codes, an SDK whose collection is disabled in the manifest, or an app with INTERNET permission whose own code shows no network request are reported as Not evaluated." u"\n\n"
             u"Fix: if the data leaves the device, declare the category in the Google Play Console Data safety form; if it is no longer used, remove the permission, related code or SDK." u"\n\n"
             u"Limitation: only Data safety categories are compared; permission purposes and the questionnaire of unpublished apps need manual review; referencing a related API counts as reading it; data flow is not traced, network requests are taken to mean the data may leave the device; only SDKs on the built-in list are recognized." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-1/ | https://support.google.com/googleplay/android-developer/answer/10787469",
+            u" | https://support.google.com/googleplay/android-developer/answer/10787469",
             [u"Privacy", u"DataSafety"])
         _write_lines([_usage_line(u) for u in result_lab041.get('undeclared', [])])
     elif isinstance(result_lab041, dict) and result_lab041.get('verdict') == 'NOT_EVALUATED':
@@ -3846,7 +3867,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"判定方式（任一成立）：(1) AndroidManifest 的 application / appComponentFactory 為已知加殼方案的入口 class；"
             u"(2) AndroidManifest 宣告的 App 元件過半不在 dex 中（程式碼被加密、執行時才載入，可偵測未知的加殼方案）。"
             u"僅出現已知加殼方案的函式庫或 class 名稱、但程式碼仍可讀取者，不判定為加殼。"
-            + "||" +
+            + "|" +
             u"Packing detected. Most of the app's code cannot be read by static analysis, so the results may be incomplete. Please provide the unpacked APK for full analysis." u"\n\n"
             u"Detection (either condition): (1) the application / appComponentFactory in AndroidManifest is the entry class of a known packer; "
             u"(2) more than half of the app components declared in AndroidManifest are missing from the dex (code is encrypted and loaded at runtime; this also catches unknown packers). "
@@ -3871,7 +3892,7 @@ Vulnerable Codes:""", ["SSL_Security"])
         writer.startWriter(
             u"外部空間儲存", LEVEL_WARNING,
             u"[AS-lab043][OWASP-V2.1,V2.5,V2.6,V2.10][MAST-4.2.7][工-4.1.2.3.7] 外部空間儲存",
-            u"發現在外部空間儲存檔案 (記得不要將重要檔案存在外部空間):" + "||" + u"You will find files stored in external space (remember not to store important files in external space):")
+            u"發現在外部空間儲存檔案 (記得不要將重要檔案存在外部空間):" + "|" + u"You will find files stored in external space (remember not to store important files in external space):")
         writer.show_Paths(d, paths_ExternalStorageAccess)
     # else:
     #     writer.startWriter(
@@ -3905,7 +3926,7 @@ Vulnerable Codes:""", ["SSL_Security"])
                 u"參考資料:\n"
                 u"- https://i.blackhat.com/Asia-23/AS-23-Valsamaras-Dirty-Stream-Attack-Turning-Android.pdf\n"
                 u"- https://cwe.mitre.org/data/definitions/73.html"
-                + "||" +
+                + "|" +
                 u"Dirty Steam attack vulnerability detected! The application receives external files without validating filenames. Attackers can use path traversal (../) to write files to arbitrary locations.\n\n"
                 u"Vulnerability Details:\n"
                 u"1. Application receives files from other apps via ACTION_SEND/SEND_MULTIPLE\n"
@@ -3949,7 +3970,7 @@ Vulnerable Codes:""", ["SSL_Security"])
                 u"[AS-lab044][OWASP-M7][CWE-73] Dirty Steam 潛在風險檢測",
                 u"應用程式接收外部檔案 (ACTION_SEND/SEND_MULTIPLE)，但未檢測到使用 ContentResolver 查詢檔案名稱。\n"
                 u"建議檢查: 如果處理外部檔案，請確保驗證檔案名稱。"
-                + "||" +
+                + "|" +
                 u"Application receives external files (ACTION_SEND/SEND_MULTIPLE), but no ContentResolver usage detected.\n"
                 u"Recommendation: If handling external files, ensure filename validation.",
                 ["Hacker", "SSL_Security"])
@@ -3982,7 +4003,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"""上述的class的保護等級(ProtectionLevel)是Dangerous, 讓其他app可以存取此權限 (AndroidManifest.xml). 
 這個app應該宣告權限為 "android:protectionLevel" of "signature" 或者"signatureOrSystem" 讓其他app不能從此app註冊及接收訊息. 
 宣告android:protectionLevel="signature" 讓其他app需要有相通的證書簽名才能夠存取此app. 
-請改變下列權限:"""+ "||" + \
+請改變下列權限:"""+ "|" + \
 u"""The ProtectionLevel of the above class is Dangerous, so that other apps can access this permission (AndroidManifest.xml). 
 This app should declare the permission as "android:protectionLevel" of "signature" or "signatureOrSystem" so that other apps cannot register and receive messages from this app. 
 Declare android:protectionLevel="signature" so that other apps need to have the same certificate signature to access this app. 
@@ -4022,7 +4043,7 @@ Please change the following permissions:
             u"""上述的class的保護等級(ProtectionLevel)是Dangerous, 讓其他app可以存取此權限 (AndroidManifest.xml). 
 這個app應該宣告權限為 "android:protectionLevel" of "signature" 或者"signatureOrSystem" 讓其他app不能從此app註冊及接收訊息. 
 宣告android:protectionLevel="signature" 讓其他app需要有相通的證書簽名才能夠存取此app. 
-請改變下列權限:""" + "||" + \
+請改變下列權限:""" + "|" + \
 u"""The ProtectionLevel of the above class is Dangerous, so that other apps can access this permission (AndroidManifest.xml). 
 This app should declare the permission as "android:protectionLevel" of "signature" or "signatureOrSystem" so that other apps cannot register and receive messages from this app. 
 Declare android:protectionLevel="signature" so that other apps need to have the same certificate signature to access this app. 
@@ -4068,7 +4089,7 @@ Please change the following permissions:
             u"[AS-lab047][OWASP-V1.5,V6.4][工-4.1.2.5.3, 4.1.5.1.1][CVE-2013-6272][M4] AndroidManifest Exported Lost Prefix 檢查",
             u"""找到exported components 忘記在最前面加"android:" (AndroidManifest.xml). 
   相關的資料 : (1)http://blog.curesec.com/article/blog/35.html               
-               (2)http://blogs.360.cn/360mobile/2014/07/08/cve-2013-6272/""" + "||" + \
+               (2)http://blogs.360.cn/360mobile/2014/07/08/cve-2013-6272/""" + "|" + \
             u"""Find the exported components Forget to add "android:" (AndroidManifest.xml) at first. 
   Related information : (1)http://blog.curesec.com/article/blog/35.html               
                (2)http://blogs.360.cn/360mobile/2014/07/08/cve-2013-6272/""",
@@ -4273,7 +4294,7 @@ Please change the following permissions:
                 u"[AS-lab048][OWASP-V2.3,V4.9,V6.4][MAST-4.2.2][工-4.1.2.5.3][M4] AndroidManifest Exported Components 檢查",
                 u"""找到"exported"的組件(components)(除了 Launcher之外)用來接收外面應用程式的action(AndroidManifest.xml). 
 這些組件可以被其他app使用，你應該增加[exported="false"]的屬性以防被其他人使用. 
-你也可以在 "android:permission" 這個屬性之中使用 "signature" 或者 更高的保護權限去保護他.""" + "||" + \
+你也可以在 "android:permission" 這個屬性之中使用 "signature" 或者 更高的保護權限去保護他.""" + "|" + \
 u"""Find "exported" components (except Launcher) to receive actions from outside applications (AndroidManifest.xml). 
 These components can be used by other apps and you should add the attribute [exported="false"] to prevent them from being used by others. 
 You can also protect it with "signature" or higher protection privilege in the "android:permission" attribute.
@@ -4382,7 +4403,7 @@ You can also protect it with "signature" or higher protection privilege in the "
 有漏洞的 ContentProvider範例:
   (1)https://www.nowsecure.com/mobile-security/ebay-android-content-provider-injection-vulnerability.html
   (2)http://blog.trustlook.com/2013/10/23/ebay-android-content-provider-information-disclosure-vulnerability/
-  """ + "||" + u"""We strongly recommend you to specify the attribute "exported" in detail (AndroidManifest.xml).
+  """ + "|" + u"""We strongly recommend you to specify the attribute "exported" in detail (AndroidManifest.xml).
   For Android "android:targetSdkVersion" < 17, the value of exported is "true" by default for ContentProvider.
   For Android "android:targetSdkVersion" >= 17, the value of exported is "false" by default for ContentProvider.
 It means that if you don't set "android:exported" in detail, you will expose your ContentProvider for Android <4.2 phones.
@@ -4408,7 +4429,7 @@ Example of a vulnerable ContentProvider:
 有漏洞的 ContentProvider範例: 
   (1)https://www.nowsecure.com/mobile-security/ebay-android-content-provider-injection-vulnerability.html
   (2)http://blog.trustlook.com/2013/10/23/ebay-android-content-provider-information-disclosure-vulnerability/
-  """ + "||" + """Find the "exported" content provider for other apps to access it (AndroidManifest.xml). You should change the attribute to [exported="false"] or set the protection permission to "signature".
+  """ + "|" + """Find the "exported" content provider for other apps to access it (AndroidManifest.xml). You should change the attribute to [exported="false"] or set the protection permission to "signature".
 Example of a vulnerable ContentProvider: 
   (1)https://www.nowsecure.com/mobile-security/ebay-android-content-provider-injection-vulnerability.html
   (2)http://blog.trustlook.com/2013/10/23/ebay-android-content-provider-information-disclosure-vulnerability/
@@ -4462,7 +4483,7 @@ Example of a vulnerable ContentProvider:
                 u"""在"intent-filter" 裡的這些components配置錯誤 (AndroidManifest.xml). 
  配置 "intent-filter" 不應該有 "android:exported" 或 "android:enabled" 屬性. 
  參考: http://developer.android.com/guide/topics/manifest/intent-filter-element.html
- """+ "||" + u"""These components in "intent-filter" are configured incorrectly (AndroidManifest.xml). 
+ """+ "|" + u"""These components in "intent-filter" are configured incorrectly (AndroidManifest.xml). 
  The configuration "intent-filter" should not have "android:exported" or "android:enabled" attributes. 
  Reference: http://developer.android.com/guide/topics/manifest/intent-filter-element.html""")
             for tag, name in list_wrong_intent_filter_settings:
@@ -4475,7 +4496,7 @@ Example of a vulnerable ContentProvider:
                 u"""在"intent-filter" 裡的這些components配置錯誤 (AndroidManifest.xml).
  配置 "intent-filter" 應該至少要有一個 "action".
  參考: http://developer.android.com/guide/topics/manifest/intent-filter-element.html
- """+ "||" + u"""These components in "intent-filter" are configured incorrectly (AndroidManifest.xml).
+ """+ "|" + u"""These components in "intent-filter" are configured incorrectly (AndroidManifest.xml).
  There should be at least one "action" in the "intent-filter" configuration.
  Reference: http://developer.android.com/guide/topics/manifest/intent-filter-element.html""")
             for tag, name in list_no_actions_in_intent_filter:
@@ -4489,7 +4510,7 @@ Example of a vulnerable ContentProvider:
             "PERMISSION_IMPLICIT_SERVICE", LEVEL_CRITICAL,
             u"[AS-lab051][OWASP-V2.1][MAST-4.2.7] Implicit Service Checking",
             u"""為了保護app的安全， 在開始啟動service時總是使用explicit intent 而且不要對你的service使用 intent filters . 使用 implicit intent去啟動service 是一個安全的保障因為你不能確切的知道service會對intent回應什麼,而且使用者不能在service開啟時看見.
-相關文獻:http://developer.android.com/guide/components/intents-filters.html#Types""" + "||" +  u"""To protect the security of the app, always use explicit intent when starting the service and don't use intent filters on your service. Using implicit intent to start the service is a security measure because you don't know exactly what the service will respond to the intent and the user can't see it when the service is opened.
+相關文獻:http://developer.android.com/guide/components/intents-filters.html#Types""" + "|" +  u"""To protect the security of the app, always use explicit intent when starting the service and don't use intent filters on your service. Using implicit intent to start the service is a security measure because you don't know exactly what the service will respond to the intent and the user can't see it when the service is opened.
 Related documents:http://developer.android.com/guide/components/intents-filters.html#Types""" ,
             ["Implicit_Intent"])
 
@@ -4518,7 +4539,7 @@ Related documents:http://developer.android.com/guide/components/intents-filters.
 這唯一的解決方法就是使用者要升級到 Android > 4.0 無法自行解決(但是你可以使用"SQLCipher"或其他涵式庫加密你的資料庫和日誌).
 Proof-Of-Concept 參考:
 (1) http://blog.watchfire.com/files/androidsqlitejournal.pdf
- """+ "||" + """This app is using Android SQLite databases.
+ """+ "|" + """This app is using Android SQLite databases.
 Prior to Android 4.0, Android had the risk of SQLite Journal Information Disclosure.
 The only solution to this is for users to upgrade to Android > 4.0. There is no way to fix this on your own (but you can encrypt your databases and journals using "SQLCipher" or other implicit libraries).
 Proof-Of-Concept reference:
@@ -4527,7 +4548,7 @@ Proof-Of-Concept reference:
             writer.startWriter(
                 "DB_SQLITE_JOURNAL", LEVEL_NOTICE,
                 u"[AS-lab052][OWASP-V2.1][MAST-4.2.7][工-4.1.5.1.1][CVE-2011-3901]Android SQLite 資料庫漏洞檢查",
-                u"這個app在使用Android SQLite databases 但是他沒有遭受 SQLite Journal Information Disclosure 的危險." + "||" +
+                u"這個app在使用Android SQLite databases 但是他沒有遭受 SQLite Journal Information Disclosure 的危險." + "|" +
                 u"This app is using Android SQLite databases but he is not at risk of SQLite Journal Information Disclosure.",
                 ["Database"], "CVE-2011-3901")
 
@@ -4538,7 +4559,7 @@ Proof-Of-Concept reference:
         writer.startWriter(
             "DB_SQLCIPHER", LEVEL_NOTICE,
             u"[AS-lab053][OWASP-V2.1][MAST-4.2.7][工-4.1.2.3.6][M2] Android SQLite 資料庫加密 (SQLCipher)",
-            u"這個app在使用SQLCipher(http://sqlcipher.net/) 來加密或解密資料庫." + "||" + u"This app is using SQLCipher(http://sqlcipher.net/) to encrypt or decrypt the database.",
+            u"這個app在使用SQLCipher(http://sqlcipher.net/) 來加密或解密資料庫." + "|" + u"This app is using SQLCipher(http://sqlcipher.net/) to encrypt or decrypt the database.",
             ["Database"])
 
         # Don't do the exclusion checking on this one because it's not needed
@@ -4583,7 +4604,7 @@ Proof-Of-Concept reference:
          writer.startWriter(
             "DB_SEE", LEVEL_NOTICE,
             u"[AS-lab054][OWASP-V2.1][MAST-4.2.7][工-4.1.2.3.6][M2] Android SQLite 資料庫加密 (SQLite Encryption Extension (SEE))",
-            u"這個app在使用SQLite Encryption Extension (SEE) on Android (http://www.sqlite.org/android) 來加密或解密資料庫." + "||" + u"This app is using SQLite Encryption Extension (SEE) on Android (http://www.sqlite.org/android) to encrypt or decrypt the database.",
+            u"這個app在使用SQLite Encryption Extension (SEE) on Android (http://www.sqlite.org/android) 來加密或解密資料庫." + "|" + u"This app is using SQLite Encryption Extension (SEE) on Android (http://www.sqlite.org/android) to encrypt or decrypt the database.",
             ["Database"])
 
     # ------------------------------------------------------------------------
@@ -4599,7 +4620,7 @@ Proof-Of-Concept reference:
         if total_findings > 0:
             writer.startWriter("HACKER_DB_KEY", LEVEL_NOTICE,
                                u"[AS-lab055][MAST-4.2.7] 金鑰用來加密 Android SQLite 資料庫",
-                               u"發現在使用對稱金鑰(PRAGMA key) 來加密 SQLite 資料庫. \n相關的程式碼:" + "||" + u"Found using PRAGMA key to encrypt SQLite database. \n related code:",
+                               u"發現在使用對稱金鑰(PRAGMA key) 來加密 SQLite 資料庫. \n相關的程式碼:" + "|" + u"Found using PRAGMA key to encrypt SQLite database. \n related code:",
                                ["Database", "Hacker"])
             
             # output PRAGMA key string result
@@ -4624,12 +4645,12 @@ Proof-Of-Concept reference:
             u"App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。" u"\n\n"
             u"本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
-            + "||" +
+            u" "
+            + "|" +
             u"When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow." u"\n\n"
             u"This check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, root detection is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/",
+            u" ",
             [u"Resilience", u"Root"])
         _write_detail(u"No root detection found in app code")
 
@@ -4653,7 +4674,7 @@ Proof-Of-Concept reference:
             u"常被間諜軟體用於裝置指紋與用戶追蹤。建議改用可重置的 "
             u"Firebase Installation ID / App Set ID / UUID。"
             u" Ref: https://developer.android.com/identity/user-data-ids"
-            + "||" +
+            + "|" +
             u"This app reads hardware / subscriber identifiers via TelephonyManager: "
             u"getDeviceId()/getImei() -> IMEI, getMeid() -> MEID, "
             u"getSubscriberId() -> IMSI (SIM subscriber id; tracks the same user even after device reset), "
@@ -4690,7 +4711,7 @@ Proof-Of-Concept reference:
             u"不適合當作可靠或可重置的識別碼。建議改用可重置的 "
             u"Firebase Installation ID / App Set ID / UUID。"
             u" Ref: https://developer.android.com/identity/user-data-ids"
-            + "||" +
+            + "|" +
             u"This app reads Settings.Secure.ANDROID_ID. ANDROID_ID is a "
             u"device-scoped identifier commonly used for device fingerprinting "
             u"and user tracking. It only changes on a factory reset and some "
@@ -4738,7 +4759,7 @@ Proof-Of-Concept reference:
         writer.startWriter(
             "SENSITIVE_SMS", LEVEL_WARNING,
             u"[AS-lab059][OWASP-V5.5] 傳送SMS訊息的code",
-            u"這app有傳送SMS訊息的code (sendDataMessage, sendMultipartTextMessage or sendTextMessage):" + "||" + u"This app has the code to send SMS messages (sendDataMessage, sendMultipartTextMessage or sendTextMessage):"
+            u"這app有傳送SMS訊息的code (sendDataMessage, sendMultipartTextMessage or sendTextMessage):" + "|" + u"This app has the code to send SMS messages (sendDataMessage, sendMultipartTextMessage or sendTextMessage):"
         )
         writer.show_Paths(d, path_sms_sending)
     
@@ -4777,8 +4798,8 @@ Proof-Of-Concept reference:
             u"注意: 雜湊函式 (MessageDigest) 不是加密,已獨立為 lab_079 處理。"
             u"本次未涵蓋 (留待後續): hardcoded IV 偵測 / key size 強度檢查 / "
             u"PBKDF2 iteration count / KeyGenParameterSpec 配置稽核。"
-            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/"
-            + "||" +
+            u" "
+            + "|" +
             u"Parses Cipher.getInstance(transformation) string arguments "
             u"(algorithm/mode/padding) and classifies by cryptographic strength. "
             u"CRITICAL: ECB mode (any algorithm) / DES / RC4 / RC2 / Blowfish; "
@@ -4787,7 +4808,7 @@ Proof-Of-Concept reference:
             u"Note: hash functions (MessageDigest) are NOT encryption and are covered in lab_079. "
             u"Not yet covered (future work): hardcoded IV detection / key size enforcement / "
             u"PBKDF2 iteration count / KeyGenParameterSpec audit."
-            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/",
+            u" ",
             ["Crypto", "Cipher"])
 
         def _fmt_cipher(f):
@@ -4842,15 +4863,15 @@ Proof-Of-Concept reference:
             u"INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 系列 (NIST 推薦)。"
             u"本次未涵蓋 (留待後續): 用途分類 (password hash vs file checksum vs cache key) / "
             u"HMAC 演算法強度 / 迭代雜湊偵測 (PBKDF2)。"
-            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/"
-            + "||" +
+            u" "
+            + "|" +
             u"Parses MessageDigest.getInstance(algorithm) string arguments and identifies broken "
             u"or collision-prone hashes. Hashing is NOT encryption: no key, one-way, fixed-length output. "
             u"CRITICAL: MD5 / MD2 / MD4 / SHA-1 (broken or collision-prone); "
             u"INFO: SHA-256 / SHA-384 / SHA-512 / SHA-3 family (NIST recommended). "
             u"Not yet covered (future work): usage classification (password hash vs file checksum vs "
             u"cache key) / HMAC algorithm strength / iterated hashing detection (PBKDF2)."
-            u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-CRYPTO-1/",
+            u" ",
             ["Crypto", "Hash"])
 
         # Only output CRITICAL findings — keep report compact for table display
@@ -4889,7 +4910,7 @@ Proof-Of-Concept reference:
             u"WARNING: 可能敏感關鍵字 (token / account / auth / credential / otp)。"
             u"單純剪貼簿寫入但無敏感關鍵字 (如複製訂單編號、分享連結) 不報以避免噪音。"
             u" Ref: https://developer.android.com/privacy-and-security/risks/secure-clipboard-handling"
-            + "||" +
+            + "|" +
             u"Any app (and some IMEs) can read the global system clipboard, so copying secrets "
             u"(passwords, PINs, card numbers, tokens) into it exposes them to other apps. This check "
             u"uses a same-method co-occurrence heuristic: a clipboard write API "
@@ -4936,13 +4957,13 @@ Proof-Of-Concept reference:
             u"本檢查解析 res/layout 及其限定詞目錄（layout-land、layout-v21 等）下的 layout XML，找出 EditText / AutoCompleteTextView 系列欄位，檢查 android:inputType（型別限制，所有欄位皆檢查）與 android:maxLength（長度限制，僅檢查敏感／密碼類欄位，因一般欄位如搜尋欄、備註欄不設長度上限屬正常用法）。" u"\n\n"
             u"報告僅列出 WARNING（敏感／密碼類欄位缺少型別或長度限制）；一般輸入欄位缺少型別限制屬低風險，仍會偵測並保留於檢測結果，但不列入報告。" u"\n\n"
             u"限制：僅檢查 layout XML 的宣告；以程式碼實作的驗證（InputFilter）與程式化建立的介面（Jetpack Compose、WebView 表單）皆掃不到，建議對命中項目人工複查。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
-            + "||" +
+            u" | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType"
+            + "|" +
             u"When user input has no declared type or length constraint, an attacker can supply unexpected characters or an overly long string, enabling SQL injection, command injection, path traversal, or backend processing failures; a password field with no length cap allows input long enough to exhaust hashing resources." u"\n\n"
             u"This check parses the layout XML under res/layout and its qualifier directories (layout-land, layout-v21, etc.), locates EditText / AutoCompleteTextView family fields, and verifies android:inputType (type constraint, checked on every field) and android:maxLength (length constraint, checked on sensitive / password fields only, since ordinary fields such as search or comment boxes legitimately have no length cap)." u"\n\n"
             u"Only WARNING findings (sensitive / password field missing a type or length constraint) are listed; an ordinary input field missing a type constraint is low risk and is still detected and kept in the result data, but omitted from the report." u"\n\n"
             u"Limitation: only the layout XML declarations are inspected; validation implemented in code (InputFilter) and programmatically built UI (Jetpack Compose, WebView forms) are not covered, so manual review of flagged items is recommended." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-CODE-4/ | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType",
+            u" | https://developer.android.com/reference/android/widget/TextView#attr_android:inputType",
             [u"InputValidation", u"Injection"])
 
         # Detail 一律用英文並先 encode 成 UTF-8: vector_details 為中英文版報告共用,
@@ -4979,12 +5000,12 @@ Proof-Of-Concept reference:
             u"App 未偵測執行環境是否為模擬器時，攻擊者可在模擬器上大量自動化操作（如偽造多台裝置登入、盜轉帳戶），或更容易分析、竄改 App。" u"\n\n"
             u"本檢查判斷 App 是否實作模擬器偵測，或改用具同等防護能力的系統 API 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少模擬器偵測。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/"
-            + "||" +
+            u" "
+            + "|" +
             u"When the app does not detect whether it is running on an emulator, attackers can run large-scale automated operations on emulators (e.g. spoofing many devices to log in and transfer funds) and can analyze or tamper with the app more easily." u"\n\n"
             u"This check determines whether the app implements emulator detection, or relies on a platform API or protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, emulator detection is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0053/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0049/",
+            u" ",
             [u"Resilience", u"Emulator"])
         _write_detail(u"No emulator detection found in app code")
 
@@ -4996,12 +5017,12 @@ Proof-Of-Concept reference:
             u"App 未偵測裝置是否開啟 USB 偵錯（ADB）時，攻擊者或惡意程式可透過 ADB 安裝工具、動態注入並操控 App；已有網銀木馬會自行開啟無線偵錯取得 ADB 權限。" u"\n\n"
             u"本檢查判斷 App 是否實作 USB 或無線偵錯偵測，或改用具同等防護能力的防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 USB 偵錯偵測。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認偵測機制實際是否生效，建議搭配動態測試。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
-            + "||" +
+            u" | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED"
+            + "|" +
             u"When the app does not detect whether USB debugging (ADB) is enabled, attackers or malware can use ADB to install tools, inject code and control the app; banking trojans have been observed enabling wireless debugging themselves to gain ADB access." u"\n\n"
             u"This check determines whether the app implements USB or wireless debugging detection, or relies on a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, USB debugging detection is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the detection actually works at runtime; dynamic testing is recommended." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASWE/MASVS-RESILIENCE/MASWE-0064/ | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED",
+            u" | https://developer.android.com/reference/android/provider/Settings.Global#ADB_ENABLED",
             [u"Resilience", u"Debug"])
         _write_detail(u"No USB or wireless debugging detection found in app code")
 
@@ -5020,13 +5041,13 @@ Proof-Of-Concept reference:
             u"判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。" u"\n\n"
             u"修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。" u"\n\n"
             u"限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
-            + "||" +
+            u" | https://developer.android.com/build/shrink-code"
+            + "|" +
             u"The app code is not obfuscated, so decompiled code is easy to read and protections are easy to find and bypass." u"\n\n"
             u"Fails when: in the app's own packages (the manifest package and the package of the launcher activity), excluding compiler-generated code and names that must be kept such as JNI, the ratios of short names like a, b, aa for classes, methods and fields are all below 30%. When these packages have fewer than 10 classes, code moved into short packages such as o or a.b (DexGuard, R8 repackaging) counts as obfuscated; otherwise (e.g. packed apps) the result is Not evaluated." u"\n\n"
             u"Fix: enable R8/ProGuard for release builds (minifyEnabled true) and remove -dontobfuscate." u"\n\n"
             u"Limitation: only name obfuscation is checked; string encryption and control-flow obfuscation are not; when the app's own packages are visible, code moved to other packages is not counted; criterion (2), whether the code can be deobfuscated, needs manual testing." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code",
+            u" | https://developer.android.com/build/shrink-code",
             [u"Resilience", u"Obfuscation"])
         _write_detail(u"Scanned %d classes in %s; short names: classes %d%%, methods %d%%, fields %d%% (threshold %d%%)" % (
             result_lab084.get('scanned_app_classes', 0),
@@ -5057,7 +5078,7 @@ Proof-Of-Concept reference:
             u"修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 displayItems、totalPrice 與 allowedPaymentMethods。" u"\n\n"
             u"限制：只看 Google Pay 請求欄位有沒有出現，不看值；支付 SDK、金流網址、電子支付 App 只認內建清單，自建交易畫面看 Activity 名稱、信用卡安全碼欄位與內建的交易詞組，金融 App 只看套件名與 App 名稱；混淆、加殼不在檢測範圍；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。" u"\n\n"
             u"參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
-            + "||" +
+            + "|" +
             u"The app does not show the item name, amount and payment method before a transaction, so users may pay without knowing the details." u"\n\n"
             u"Fails when: a Google Pay request built in the app (code, or JSON in res and assets) lacks the amount (totalPrice) or payment method (allowedPaymentMethods), or a Samsung Pay payment sheet built in the app (CustomSheet) has no amount (AmountBoxControl). Google Play and other app store in-app purchases (Huawei, Samsung, Amazon) pass, and so does NFC payment that requires device unlock (requireDeviceUnlock, the user authorizes on site). Requests without the item name (Google Pay displayItems, Samsung Pay addItem, which may be shown on the app's checkout screen), requests whose content is not found, third-party payment SDKs (including Google Pay inside an SDK), web checkout (ECPay, NewebPay, LINE Pay and similar payment URLs), payment handed to e-wallet apps (JKOPay, PX Pay Plus, Easy Wallet, LINE Pay, icash Pay, iPASS MONEY, Taiwan Pay), credit card input screens (CVV fields), transaction-only screen text (payment, transfer, point redemption, top-up, tickets, stock orders and similar), NFC payment without device unlock, custom transaction screens and financial apps whose screens are not found are reported as Not evaluated. Other channels are still checked when in-app purchases exist. Transaction resources follow the MAS definition: money, points and serial codes, tickets and stocks." u"\n\n"
             u"Fix: show the item name, amount and payment method before paying; fill displayItems, totalPrice and allowedPaymentMethods in Google Pay requests." u"\n\n"
@@ -5097,13 +5118,13 @@ Proof-Of-Concept reference:
             u"判定：從 APK 辨識函式庫名稱與版本，包括 Java 函式庫（META-INF/*.version、Google 函式庫的 .properties、pom.properties；沒有版本檔的常見函式庫如 Gson、OkHttp、Jackson、BouncyCastle 從程式碼的類別辨識並讀取版本字串，其他函式庫用類別名稱到 Maven Central 反查，版本另讀函式庫的 BuildConfig.VERSION_NAME）、網頁函式庫（assets 與 React Native bundle 裡的 JavaScript，依 Retire.js 規則與內嵌的 package.json；Cordova 框架讀 cordova.js 的版本）、React Native 框架（ReactNativeVersion）、.NET 組件（版本資源）、Flutter 套件（libapp.so 裡的套件名稱），以及原生函式庫 .so 與 Unity 引擎的版本字串（沒有版本字串的 .so 用匯出的函式名稱或檔名對到 NVD 產品）；Java、網頁、.NET、Flutter 套件查 OSV，原生函式庫與 Unity 查 NVD，有 CVE 編號且 CVSS v3.0 分數 ≥ 7 即不符合（只有 v3.1 分數的，以相同評分項目用 v3.0 公式重算；分數取自 GitHub 審核的漏洞資料，分數最高的前 5 個再以 NVD 確認）；libwebp 另以符號判斷是否未修補 CVE-2023-4863。有引用函式庫但讀不到版本，且該函式庫有 CVSS ≥ 7 的漏洞版本時，列為 Not evaluated，列出受影響的版本，需人工排查；加殼看不到程式碼、網頁程式碼被加密，或混淆把 class 搬到短套件而認不出函式庫時，列為 Not evaluated，並請開發者提供未加殼、未混淆的 APK；.NET 組件被壓縮、查詢失敗、CVE 沒有 CVSS v3 分數，或完全辨識不到函式庫版本，也列為 Not evaluated。" u"\n\n"
             u"修正：把列出的函式庫更新到細節中建議的版本（更新後該函式庫列出的漏洞全部修補）；加殼或混淆造成 Not evaluated 時，請提供未加殼、未混淆的 APK。" u"\n\n"
             u"限制：沒有版本資訊的 Java 函式庫依 Maven Central 反查，只採用 groupId 與套件名稱一致的結果，服務沒回應的套件不列入判定；網頁函式庫只認 Retire.js 規則涵蓋的函式庫與內嵌 package.json；Flutter 套件編譯後沒有版本，只能列出受影響版本；App 自己寫的 .so 與 NVD 查不到的產品不列入判定。" u"\n\n"
-            u"參考: https://osv.dev/ | https://nvd.nist.gov/ | https://mas.owasp.org/MASVS/controls/MASVS-CODE-3/"
-            + "||" +
+            u"參考: https://osv.dev/ | https://nvd.nist.gov/ "
+            + "|" +
             u"The app uses libraries with known vulnerabilities that attackers can exploit with public methods." u"\n\n"
             u"Fails when: a library identified in the APK has a CVE with a CVSS v3.0 score >= 7 (CVEs scored only in v3.1 are recalculated with the v3.0 formula from the same metrics; scores come from GitHub-reviewed advisories and the five highest are confirmed with NVD), checked with OSV for Java, web, .NET and Flutter packages and with NVD for native libraries and Unity. Libraries are identified from Java libraries (META-INF/*.version, Google library .properties, pom.properties; common libraries without version files, such as Gson, OkHttp, Jackson and BouncyCastle, from their classes and version strings in the code, and other libraries by looking up their class names on Maven Central, with versions also read from the library's BuildConfig.VERSION_NAME), web libraries (JavaScript in assets and React Native bundles, using Retire.js rules and embedded package.json; the Cordova framework from cordova.js), the React Native framework (ReactNativeVersion), .NET assemblies (version resources), Flutter packages (package names in libapp.so), and version strings in native .so files and the Unity engine (.so files without version strings are matched to NVD products by exported function names or file names); libwebp is also checked by symbols for unpatched CVE-2023-4863. A library that is used but whose version cannot be read, and that has versions with CVSS >= 7 vulnerabilities, is reported as Not evaluated with the affected versions for manual review; packed apps whose code is not visible, apps whose web code is encrypted, and apps whose obfuscation moved classes into short packages so libraries cannot be identified, are reported as Not evaluated, and the developer is asked for an unpacked, unobfuscated APK; compressed .NET assemblies, lookup failures, CVEs without a CVSS v3 score, or no identifiable library version are also reported as Not evaluated." u"\n\n"
             u"Fix: update each listed library to the version given in the details, which fixes all listed CVEs of that library; when packing or obfuscation causes Not evaluated, provide an unpacked, unobfuscated APK." u"\n\n"
             u"Limitation: Java libraries without version information are identified through Maven Central, using only results whose groupId matches the package name, and packages the service does not answer for are not judged; web libraries only from Retire.js rules and embedded package.json; Flutter packages have no version after compiling, so only the affected versions are listed; the app's own .so files and products not found in NVD are not judged." u"\n\n"
-            u"Ref: https://osv.dev/ | https://nvd.nist.gov/ | https://mas.owasp.org/MASVS/controls/MASVS-CODE-3/",
+            u"Ref: https://osv.dev/ | https://nvd.nist.gov/ ",
             [u"KnownVulnerability", u"ReferencedLibrary"])
         groups, order = {}, []  # 依分數高低 (server 已排序), Python 2 的 dict 沒有順序
         for f in result_lab016.get('findings', []):
@@ -5139,13 +5160,13 @@ Proof-Of-Concept reference:
             u"判定：App 把敏感資料寫進 SharedPreferences、DataStore、SQLite 或檔案（名稱含密碼、token、電話、帳號等，訊息、筆記、通訊錄、行事曆資料表，或資料來自定位、通訊錄、裝置 ID、密碼輸入框），且整個 App 找不到任何同意或告知機制，即不符合。沒有儲存敏感資料視為符合。有讀寫同意狀態、同意畫面或同意管理 SDK 的，因靜態無法確認同意在儲存之前、涵蓋所有存的資料，列為 Not evaluated，並列出 Google Play 資料安全性的比對結果；只有隱私權政策連結、文字或條款畫面，無法確認儲存前有取得同意，列為 Not evaluated；名稱像敏感資料但存的是數字、存的是使用者輸入的文字、加密後的資料、轉成 JSON 的物件，或寫檔、資料表的內容看不出用途，或看不到 App 程式碼的，也列為 Not evaluated。" u"\n\n"
             u"修正：第一次儲存敏感資料前顯示聲明並取得同意，記錄同意狀態，未同意不儲存。" u"\n\n"
             u"限制：不看聲明內容；商店說明文字與未上架 App 的調查表需人工確認；存的內容只認名稱、資料表名稱、輸入框文字、加密資料與 JSON 物件；SharedPreferences 只看 key 名稱。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
-            + "||" +
+            u" | https://developer.android.com/training/data-storage"
+            + "|" +
             u"The app stores sensitive data on the device without first telling users and getting their consent." u"\n\n"
             u"Fails when: the app writes sensitive data to SharedPreferences, DataStore, SQLite or files (names such as password, token, phone, account, message, note, contact or calendar tables, or data from location, contacts, device IDs or password fields) and no consent or notice mechanism is found anywhere in the app. Apps that store no sensitive data pass. A stored consent state, a consent screen or a consent management SDK is reported as Not evaluated with the Google Play Data safety comparison, since static analysis cannot confirm that consent comes before storing and covers all stored data; only a privacy policy link, text or terms screen cannot confirm that consent is obtained before storing and is reported as Not evaluated, as are names that look sensitive but hold numbers, stored user-typed text, encrypted data, serialized objects, or file and table content that cannot be identified, and apps whose code is not visible." u"\n\n"
             u"Fix: show a notice and get consent before sensitive data is first stored, record the consent, and do not store without it." u"\n\n"
             u"Limitation: does not check the notice wording; the store description and the survey form for unpublished apps need manual review; stored content is recognized only by key and table names, input text, encrypted data and serialized objects; SharedPreferences values are judged by key name only." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage",
+            u" | https://developer.android.com/training/data-storage",
             [u"Privacy", u"Storage"])
         _write_lines([_storage_line(s) for s in result_lab086.get('storage', [])])
     elif isinstance(result_lab086, dict) and result_lab086.get('verdict') == 'NOT_EVALUATED' \
@@ -5175,13 +5196,13 @@ Proof-Of-Concept reference:
             u"判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（標準規定未聲明的資料無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。" u"\n\n"
             u"修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。" u"\n\n"
             u"限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；基準(2) 拒絕後確實沒有儲存需動態檢測。" u"\n\n"
-            u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
-            + "||" +
+            u" | https://developer.android.com/training/data-storage"
+            + "|" +
             u"The app stores sensitive data but users cannot refuse it." u"\n\n"
             u"Fails when: for the sensitive data storage found by AS-lab086, the call path of the write has no read of an option such as \"remember account\", \"save password\" or \"auto login\" (SharedPreferences, DataStore or an on-screen checkbox), or the option is read but not used to decide whether to store; it also fails when AS-lab086 fails, since users cannot refuse undeclared data (as the standard states). Cases where AS-lab086 is Not evaluated (declaration not confirmed), options checked elsewhere, options whose key cannot be identified, paths decided only by settings with unrecognized names, storage done after a dialog button, and storage whose writing code is not located (Room tables, DataStore keys) are reported as Not evaluated." u"\n\n"
             u"Fix: offer options such as \"remember account\" or \"save password\", check them before writing, and when turned off do not store and delete what was stored." u"\n\n"
             u"Limitation: only settings named like remember or save plus a credential word (remember_password, save_account), auto login, biometric or app lock count as options; only 4 levels of callers are traced; criterion (2), that nothing is stored after refusal, needs dynamic testing." u"\n\n"
-            u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage",
+            u" | https://developer.android.com/training/data-storage",
             [u"Privacy", u"Storage"])
         if result_lab087.get('reason', '').startswith('4.1.2.3.1'):
             _write_detail(u"AS-lab086 (4.1.2.3.1) not met: the stored data is not declared, so users cannot refuse it")
@@ -5207,7 +5228,7 @@ Proof-Of-Concept reference:
         writer.startWriter(
             "SHARED_USER_ID", LEVEL_NOTICE,
             u"[AS-lab061][MAST-4.2.2] AndroidManifest sharedUserId 檢查",
-            u"這app使用 \"android.uid.system\" sharedUserId, 他需要\"system(uid=1000)\" 這個權限. 他必須被製造者或google的keystore簽名才能成功安裝在使用者的手機." + "||" + u"This app uses \"android.uid.system\" sharedUserId, which requires the permission \"system(uid=1000)\". It must be signed by the manufacturer or google keystore to be successfully installed on the user's phone.",
+            u"這app使用 \"android.uid.system\" sharedUserId, 他需要\"system(uid=1000)\" 這個權限. 他必須被製造者或google的keystore簽名才能成功安裝在使用者的手機." + "|" + u"This app uses \"android.uid.system\" sharedUserId, which requires the permission \"system(uid=1000)\". It must be signed by the manufacturer or google keystore to be successfully installed on the user's phone.",
             ["System"])
 
     #-----------------------------------------------------------------------------------
@@ -5216,7 +5237,7 @@ Proof-Of-Concept reference:
         writer.startWriter(
             "MASTER_KEY_SYSTEM_APP", LEVEL_CRITICAL,
             u"[AS-lab062][OWASP-V7.1][MAST-4.2.6][工-4.1.5.1.2][CVE-2013-4787] 使用Master Key漏洞去取得管理者權限",
-            u"這app是一個惡意軟體, 他需要透過Master Key漏洞得到\"system(uid=1000)\" , 導致手機被取得管理者權限." + "||" + u"This app is a malware, he needs to get \"system(uid=1000)\" through the Master Key vulnerability, resulting in the phone being granted administrator privileges."
+            u"這app是一個惡意軟體, 他需要透過Master Key漏洞得到\"system(uid=1000)\" , 導致手機被取得管理者權限." + "|" + u"This app is a malware, he needs to get \"system(uid=1000)\" through the Master Key vulnerability, resulting in the phone being granted administrator privileges."
         )
 
     # ------------------------------------------------------------------------
@@ -5235,7 +5256,7 @@ Proof-Of-Concept reference:
             u"""偵測到 File.delete() 與敏感關鍵字 (password/token/secret 等) 出現在同一個 method 內。
 任何你所刪除的都可能被使用者或攻擊者恢復, 特別是root過的device.
 請確認沒有使用"file.delete()"去刪除必要的資料, 建議改用覆寫後再刪除等安全清除方式。
-請看這個影片: https://www.youtube.com/watch?v=tGw1fxUD-uY""" + "||" + \
+請看這個影片: https://www.youtube.com/watch?v=tGw1fxUD-uY""" + "|" + \
 u"""Detected File.delete() co-located with a sensitive keyword (password/token/secret, etc.) in the same method.
 Anything you delete can be recovered by users or attackers, especially rooted devices.
 Please make sure you do not use "file.delete()" to delete the necessary data; consider securely
@@ -5260,7 +5281,7 @@ See this video: https://www.youtube.com/watch?v=tGw1fxUD-uY""",
             u"本檢查判斷 App 是否呼叫 getInstallerPackageName / getInstallSourceInfo 確認安裝來源，或改用具同等防護能力的 Play Integrity、Google Play Licensing (LVL) 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少安裝來源檢查。" u"\n\n"
             u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
             u"參考: https://developer.android.com/reference/android/content/pm/PackageManager#getInstallSourceInfo(java.lang.String) | https://developer.android.com/google/play/integrity"
-            + "||" +
+            + "|" +
             u"When the app does not check its installation source, a repackaged copy can be distributed through third-party stores or websites and still run normally, making it hard for users to tell it from the genuine app." u"\n\n"
             u"This check determines whether the app calls getInstallerPackageName / getInstallSourceInfo to verify its installation source, or relies on Play Integrity, Google Play Licensing (LVL) or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, the installation source check is considered missing." u"\n\n"
             u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
@@ -5287,7 +5308,7 @@ See this video: https://www.youtube.com/watch?v=tGw1fxUD-uY""",
             u"setWebContentsDebuggingEnabled(true) -> 遠端 Chrome DevTools 除錯,release 版必須關閉。"
             u"靜態分析無法判斷 release/debug build,故均標 WARNING 供人工確認。"
             u" Ref: https://developer.android.com/reference/android/webkit/WebSettings"
-            + "||" +
+            + "|" +
             u"Checks dangerous WebView settings not covered by lab_034 (zero overlap): "
             u"setAllowFileAccess(true) -> WebView can load file:// URLs (different API from "
             u"setAllowFileAccessFromFileURLs in lab_034); "
@@ -5319,7 +5340,7 @@ ADB Backup的安全例子:
 2.http://blog.c22.cc/advisories/cve-2013-5112-evernote-android-insecure-storage-of-pin-data-bypass-of-pin-protection/
 3.http://nelenkov.blogspot.co.uk/2012/06/unpacking-android-backups.html
 Reference: http://developer.android.com/guide/topics/manifest/application-element.html#allowbackup
-"""+ "||" +u"""ADB Backup is allowed for this app (default: ENABLED). ADB Backup is a great tool for backing up data and. If the app is open, people can use it to copy your private files (Prerequisite: 1. unlock the screen 2. enter developer mode). Private data may include lifetime access token, user name or password, etc.
+"""+ "|" +u"""ADB Backup is allowed for this app (default: ENABLED). ADB Backup is a great tool for backing up data and. If the app is open, people can use it to copy your private files (Prerequisite: 1. unlock the screen 2. enter developer mode). Private data may include lifetime access token, user name or password, etc.
 ADB Backup security example:
 1. http://www.securityfocus.com/archive/1/530288/30/0/threaded
 2. http://blog.c22.cc/advisories/cve-2013-5112-evernote-android-insecure-storage-of-pin-data-bypass-of-pin-protection/
@@ -5401,7 +5422,7 @@ Reference: http://developer.android.com/guide/topics/manifest/application-elemen
 請不要嘗試製造一個"X509Certificate" 並覆蓋 "checkClientTrusted", "checkServerTrusted" 和 "getAcceptedIssuers" 會沒有任何作用.
 我們強烈建議你使用現存的 API 別嘗試自行製造X509Certificate class.
 請修改或是移除有弱點的程式:
-""" + "||" + log_partial_prefix_msg_en + """This is a serious threat that could allow an attacker to use a man-in-the-middle attack without your knowledge.
+""" + "|" + log_partial_prefix_msg_en + """This is a serious threat that could allow an attacker to use a man-in-the-middle attack without your knowledge.
 If you are sending sensitive information such as user accounts or passwords, it is possible that this could be compromised.
 References:
 (1)OWASP Mobile Top 10 doc: https://owasp.org/www-project-mobile-top-10/2016-risks/m3-insecure-communication
@@ -5562,7 +5583,7 @@ Please modify or remove any weaknesses in the program:""", ["SSL_Security"])
 參考: 
 (1) https://android-developers.googleblog.com/2019/10/one-biometric-api-over-all-android.html
 (2) https://developer.android.com/training/sign-in/biometric-auth
-""" + "||" + log_partial_prefix_msg_en + """
+""" + "|" + log_partial_prefix_msg_en + """
 User identity authentication is a method to ensure the user's identity. Through user identity authentication, the user's identity can be ensured, and the user's information can not be accessed by others.
 There are many methods for user identification, such as passwords, biometrics, fingerprints, face recognition, and so on.
 In Android, you can use the Biometric API to implement biometrics, but be aware that if it is not implemented correctly, there will be security issues.
@@ -5583,7 +5604,7 @@ refer to:
         writer.startWriter(
             "USER_Identification", "INFO",
             u"[AS-lab068][OWASP-V4.7,4.10,5.5][M4] 是否正確實作使用者生物辨識身分鑑別 (Biometric API)",
-            u"未偵測到使用 Biometric API" + "||" + "No Biometric API used", ["user_Identification"])
+            u"未偵測到使用 Biometric API" + "|" + "No Biometric API used", ["user_Identification"])
     
 
     #----------------------------------------------------------------
@@ -5602,7 +5623,7 @@ refer to:
         writer.startWriter(
             "OVERLAY_ATTACK_PREVENTION", LEVEL_WARNING,
             u"[AS-lab069][MAS V4.0 4.1.5.1.3] Overlay Attack (Tapjacking) 防護檢測",
-            u"此 app 未偵測到設定 filterTouchesWhenObscured=\"true\"，可能存在 Overlay Attack (Tapjacking) 風險。建議在敏感 UI 元件中設定此屬性。\n 參考: https://developer.android.com/privacy-and-security/risks/tapjacking?hl=zh-tw#risk_full_occlusion " + "||" + \
+            u"此 app 未偵測到設定 filterTouchesWhenObscured=\"true\"，可能存在 Overlay Attack (Tapjacking) 風險。建議在敏感 UI 元件中設定此屬性。\n 參考: https://developer.android.com/privacy-and-security/risks/tapjacking?hl=zh-tw#risk_full_occlusion " + "|" + \
             u"This app does not have filterTouchesWhenObscured=\"true\" set. It may be vulnerable to Overlay Attack (Tapjacking). Consider setting this attribute on sensitive UI elements.\n refer to: https://developer.android.com/privacy-and-security/risks/tapjacking#risk_full_occlusion",
             ["Overlay", "Tapjacking", "Security"])
         writer.write(u"filterTouchesWhenObscured=\"true\" not found ! ")
@@ -5628,7 +5649,7 @@ refer to:
                 u"App 宣告了 dangerous permission（" + perms_str + u"），但靜態掃描未發現任何 Runtime Permission Request 呼叫（requestPermissions / registerForActivityResult）。"
                 u"使用者無法行使拒絕權利，違反 4.1.2.1.2。\n"
                 u"建議實作 Android Runtime Permission 機制，並正確處理使用者拒絕的情境。\n"
-                u"參考: https://developer.android.com/training/permissions/requesting" + "||" +
+                u"參考: https://developer.android.com/training/permissions/requesting" + "|" +
                 u"App declares dangerous permission(s) (" + perms_str + u") but no Runtime Permission Request call was found (requestPermissions / registerForActivityResult). "
                 u"Users cannot exercise the right to refuse, violating 4.1.2.1.2.\n"
                 u"Implement Android Runtime Permission mechanism and handle the denied scenario properly.\n"
@@ -5642,7 +5663,7 @@ refer to:
                 u"[AS-lab070][MAS V4.0 4.1.2.1.2] 使用者拒絕蒐集敏感性資料之權利 — 未確認拒絕情境處理",
                 u"App 已實作 Runtime Permission Request，但靜態掃描未在 onRequestPermissionsResult() 中發現明確的拒絕（DENIED）分支處理邏輯。"
                 u"建議確認拒絕後 App 能合理降級運作，而非強制要求或 crash。需搭配動態測試驗證。\n"
-                u"Declared dangerous permissions: " + perms_str + "||" +
+                u"Declared dangerous permissions: " + perms_str + "|" +
                 u"App implements Runtime Permission Request, but no explicit denied-branch logic was detected in onRequestPermissionsResult(). "
                 u"Verify the app degrades gracefully after denial — dynamic testing required.\n"
                 u"Declared dangerous permissions: " + perms_str,
@@ -5664,7 +5685,7 @@ refer to:
                 u"[AS-lab071][4.1.2.3.16][MSTG-STORAGE-3] 系統日誌敏感資料洩漏檢查",
                 u"偵測到 App 使用 Log.d() 或 Log.v() 輸出除錯資訊，Release 版本不應保留這些呼叫。"
                 u" Ref: https://developer.android.com/privacy-and-security/risks/log-info-disclosure"
-                + "||" +
+                + "|" +
                 u"Debug log calls (Log.d / Log.v) detected. These should be removed before release."
                 u" Ref: https://developer.android.com/privacy-and-security/risks/log-info-disclosure",
                 ["Log", "Privacy"])
@@ -5685,11 +5706,11 @@ refer to:
                 "LAB_072_KEYBOARD_CACHE", LEVEL_WARNING,
                 u"[AS-lab072][4.1.2.3.11][MSTG-STORAGE-5] 鍵盤快取保護檢查",
                 u"偵測到敏感輸入欄位未設定 inputType 鍵盤快取保護，鍵盤可能會學習並快取使用者輸入的敏感資料（密碼、PIN、CVV 等）。"
-                u" Ref: https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0006/"
-                 + "||" +
+                u" "
+                 + "|" +
                 u"Sensitive input fields detected without keyboard cache protection (inputType). "
                 u"The keyboard IME may cache user input including passwords, PINs, and CVV numbers."
-                u" Ref: https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0006/",
+                u" ",
                 ["Privacy", "Storage"])
             for item in findings_072:
                 writer.write(u"  [{}] {} | hint='{}' id='{}' | {}".format(
@@ -5720,13 +5741,13 @@ refer to:
                 u"[AS-lab073][4.1.2.3.14][MASVS-STORAGE-2] 備份資料敏感性資料保護檢查",
                 u"偵測到 App 可能將敏感資料納入備份。android:allowBackup 為 true 或未設定，"
                 u"且程式碼中存在敏感儲存 API 呼叫或未設定備份排除規則。"
-                u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
-                u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0262/"
-                + "||" +
+                u" "
+                u" "
+                + "|" +
                 u"App may include sensitive data in backups. android:allowBackup is true or not set, "
                 u"and sensitive storage API calls were found or no backup exclusion rules are configured."
-                u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
-                u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0262/",
+                u" "
+                u" ",
                 ["Backup", "Privacy"])
 
             writer.write(u"[Manifest] allowBackup={}  fullBackupContent={}  dataExtractionRules={}  hasExclusionRules={}".format(
@@ -5759,13 +5780,13 @@ refer to:
                 u"[AS-lab074][4.1.2.3.8][MASVS-STORAGE-2] 程式碼中含有硬編碼敏感資料",
                 u"在 App 的 smali bytecode 或 XML 資源檔中偵測到疑似硬編碼的敏感字串（API Key、密碼、Token 等）。"
                 u"敏感資料不應直接寫在程式碼或資源檔中，應使用安全的金鑰管理機制。"
-                u" Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+                u" "
                 u" | https://developer.android.com/privacy-and-security/risks/hardcoded-cryptographic-secrets"
-                + "||" +
+                + "|" +
                 u"Hardcoded sensitive data (API keys, passwords, tokens) detected in bytecode or XML resources. "
                 u"Sensitive values must not be stored in source code or resource files. "
                 u"Use a secure key management solution instead. "
-                u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-2/"
+                u""
                 u" | https://developer.android.com/privacy-and-security/risks/hardcoded-cryptographic-secrets",
                 ["Hardcoded", "Privacy"])
 
@@ -5800,7 +5821,7 @@ refer to:
             u"(2) 第三方加密函式庫（如 Tink、EncryptedSharedPreferences）可能已內部使用 AndroidKeyStore，"
             u"從 smali 層不易辨識，可能產生誤判。(3) 建議搭配動態分析確認金鑰實際儲存位置及保護強度。"
             u" Ref: https://developer.android.com/training/articles/keystore"
-            u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0051/"
+            u" "
         )
         DISCLAIMER_EN = (
             u"[!] Static analysis limitations: (1) Only KeyStore.getInstance() arguments are verified; "
@@ -5809,14 +5830,14 @@ refer to:
             u"but are hard to identify at smali level, which may produce false positives. "
             u"(3) Dynamic analysis is recommended to confirm actual key storage and protection strength."
             u" Ref: https://developer.android.com/training/articles/keystore"
-            u" | https://mas.owasp.org/MASTG/tests/android/MASVS-STORAGE/MASTG-TEST-0051/"
+            u" "
         )
 
         if no_keystore_075:
             title_075 = (
                 u"未偵測到任何 KeyStore API 呼叫，請人工確認敏感金鑰儲存方式。"
                 + DISCLAIMER_ZH
-                + u"||"
+                + u"|"
                 + u"No KeyStore API call detected; manual review recommended for sensitive key storage. "
                 + DISCLAIMER_EN
             )
@@ -5826,7 +5847,7 @@ refer to:
                 u"未使用 Android 系統憑證儲存設施(AndroidKeyStore)，"
                 u"金鑰可能以不安全方式儲存 (provider: %s)。" % providers
                 + DISCLAIMER_ZH
-                + u"||"
+                + u"|"
                 + u"Sensitive key not stored in AndroidKeyStore; insecure provider(s) detected: %s. " % providers
                 + DISCLAIMER_EN
             )
@@ -5835,7 +5856,7 @@ refer to:
             title_075 = (
                 u"部分金鑰未使用 AndroidKeyStore，混用不安全的憑證儲存方式 (provider: %s)。" % providers
                 + DISCLAIMER_ZH
-                + u"||"
+                + u"|"
                 + u"Mixed KeyStore usage detected; some keys use insecure provider(s): %s. " % providers
                 + DISCLAIMER_EN
             )
@@ -5872,13 +5893,13 @@ refer to:
             u"判定：只看 AndroidManifest。對外開放（沒有設 exported=\"false\"）的 activity / activity-alias，intent-filter 含 action.VIEW + category.BROWSABLE + scheme，符合任一項即不符合：(1) scheme 是 http，明文傳輸可被竄改（HIGH）；(2) http / https 沒設 android:autoVerify=\"true\"，其他 App 可宣告相同 host 攔截（MEDIUM）；(3) 自訂 scheme，無法做網域驗證，任何 App 都能註冊相同 scheme 攔截，有沒有 host 都一樣（MEDIUM）。mailto、tel、file、content、market 等多個 App 共用的系統 scheme 不算。" u"\n\n"
             u"修正：敏感流程改用 https App Links 並設 android:autoVerify=\"true\"，在網站放 assetlinks.json；不需要對外的 Activity 設 android:exported=\"false\"；不要在 Deep Link 參數放 token、密碼等敏感資料。" u"\n\n"
             u"限制：不判斷連結是否帶敏感資料、接收端有沒有驗證參數，需動態測試複驗；看不到 assetlinks.json 是否正確部署；參數流入 WebView、SQL 等危險操作由 AS-lab077 檢查。" u"\n\n"
-            u"參考: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks"
-            + "||" +
+            u"參考: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks  | https://developer.android.com/training/app-links/verify-android-applinks"
+            + "|" +
             u"Deep links are a public entry point: other apps, browsers or malicious links can open them with URI parameters. When misconfigured, another app can intercept links meant for this app (e.g. parameters in login or payment links), or the link can be tampered with in transit." u"\n\n"
             u"Fails when: only the AndroidManifest is checked. An activity / activity-alias reachable from outside (not exported=\"false\") whose intent-filter has action.VIEW + category.BROWSABLE + a scheme fails if any of these holds: (1) the scheme is http, plaintext that can be tampered with (HIGH); (2) http / https without android:autoVerify=\"true\", so other apps can declare the same host and intercept it (MEDIUM); (3) a custom scheme, which cannot be domain-verified, so any app can register the same scheme and intercept it, with or without a host (MEDIUM). Public schemes shared by many apps (mailto, tel, file, content, market, etc.) are not counted." u"\n\n"
             u"Fix: use https App Links with android:autoVerify=\"true\" for sensitive flows and publish assetlinks.json on the website; set android:exported=\"false\" on activities that need no external access; do not put tokens, passwords or other sensitive data in deep link parameters." u"\n\n"
             u"Limitation: whether a link carries sensitive data and whether the receiver validates parameters are not judged and need dynamic testing; correct deployment of assetlinks.json cannot be seen; parameters flowing into WebView, SQL or other dangerous operations are checked by AS-lab077." u"\n\n"
-            u"Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks | https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-1/ | https://developer.android.com/training/app-links/verify-android-applinks",
+            u"Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks  | https://developer.android.com/training/app-links/verify-android-applinks",
             ["DeepLink", "IntentFilter"]
         )
 
@@ -5903,7 +5924,7 @@ refer to:
             u"代表 Deep Link 帶入的 URI 參數可能未經驗證即流向敏感操作。"
             u"本檢查為「同 method 啟發式」,無 taint 追蹤,可能誤報,需人工確認資料流。"
             u" Ref: https://developer.android.com/privacy-and-security/risks/unsafe-use-of-deeplinks?hl=zh-tw"
-            + "||" +
+            + "|" +
             u"In a deep link Activity method, a deep link source (getData / getQueryParameter / getPath etc.) "
             u"is detected together with a dangerous sink (WebView.loadUrl / Intent.parseUri / File / SQL / Runtime.exec). "
             u"A URI parameter from a deep link may flow unsanitized into a sensitive operation. "
@@ -5936,7 +5957,7 @@ refer to:
             u"經典案例: Google Play Core CVE-2020-8913。"
             u"修補建議: 解壓前以 destDir.getCanonicalPath() 比對 outputFile.getCanonicalPath().startsWith(...)。"
             u" Ref: https://developer.android.com/privacy-and-security/risks/zip-path-traversal"
-            + "||" +
+            + "|" +
             u"App extracts ZIP entries using ZipEntry.getName() and constructs new File(...) without validating "
             u"the resolved path against the target directory (no getCanonicalPath() check or \"..\" string check "
             u"detected in the same method). A malicious ZIP can use ../ sequences to write files outside the app "
