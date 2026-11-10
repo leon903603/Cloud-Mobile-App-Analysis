@@ -700,10 +700,14 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         """
         風險: 畫面可被截圖 / 錄影 / 顯示在最近使用畫面, 敏感資料外洩。
         檢測: App 自己的程式碼呼叫 Window.addFlags(flags) / setFlags(flags, mask) 且傳入的常數含
-              FLAG_SECURE (0x2000) 位元, 或呼叫 SurfaceView.setSecure(true) -> 視為有做。
+              FLAG_SECURE (0x2000) 位元, 或呼叫 SurfaceView.setSecure(true)。
               追蹤的是「實際傳入的參數暫存器」最近一次被設定的值, 避免附近無關的常數 (-1、8192 緩衝區大小) 造成誤判。
-        結果: 都沒有 -> WARNING (缺少防護)。
-        限制: flag 經由變數 / 欄位 / 跨 method 傳入、或寫在 Flutter / RN 等框架層的設定看不到。
+              再往上追呼叫路徑, 看涵蓋哪些 Activity (第三方 SDK 的畫面和 Dialog 不算)。
+        結果: 所有 Activity 都確定有設 -> PASS;
+              完全沒防護、看得到的 Activity 確定沒設、只有警示或只有切換畫面遮蔽 -> WARNING;
+              有條件才設、只有 SurfaceView.setSecure (只保護該元件)、值要執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在 dex 裡、有警示加切換畫面遮蔽、
+              看不到 App 程式碼 (如加殼) -> NOT_EVALUATED。
+        限制: 寫在 Flutter / RN 等框架層的設定看不到; 不顯示畫面的 Activity 也會算一頁。
         """
         FLAG_SECURE = 0x2000
         # 第一個運算元是「讀取」而不是「寫入」的指令, 往回找時要跳過
@@ -718,9 +722,9 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                 return ["v%d" % i for i in range(int(m.group(1)), int(m.group(2)) + 1)]
             return re.findall(r"v\d+", head)
 
-        def reg_value(instructions, index, reg):
+        def reg_value(instructions, index, reg, window=30):
             """往回找最近一次寫入 reg 的指令: 常數回傳數值, 其他 (變數 / 欄位 / 運算結果) 回傳 None"""
-            for ins in reversed(instructions[max(0, index - 30):index]):
+            for ins in reversed(instructions[max(0, index - window):index]):
                 name = ins.get_name()
                 if name.startswith(NOT_WRITING):
                     continue
@@ -756,15 +760,81 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                 return mask is None or bool(mask & FLAG_SECURE)
             return True
 
+        def may_set_flag_secure(ref):
+            """往回找整個 method: 值算不出來、或常數可能設定 FLAG_SECURE (setFlags 的 mask 確定不含就不可能設定)"""
+            regs = arg_registers(ref["instructions"][ref["index"]].get_output())
+            if len(regs) < 2:
+                return False
+            value = lambda k: reg_value(ref["instructions"], ref["index"], regs[k], ref["index"])
+            flags = value(1)
+            if ref["api"].endswith("setSecure"):
+                return flags is None or flags == 1
+            if flags is not None and not flags & FLAG_SECURE:
+                return False
+            if ref["api"].endswith("setFlags") and len(regs) > 2:
+                mask = value(2)
+                return mask is None or bool(mask & FLAG_SECURE)
+            return True
+
+        def is_conditional(ref):
+            """呼叫前有分支 (window 的 null 檢查不算) -> 可能不會執行"""
+            instructions = ref["instructions"]
+            for i, ins in enumerate(instructions[:ref["index"]]):
+                name = ins.get_name()
+                if "switch" in name:
+                    return True
+                if not name.startswith("if-"):
+                    continue
+                # getWindow() 的結果緊接著做 null 檢查才放行, 不能只比暫存器編號 (同一個暫存器可能先放別的值)
+                reg = ins.get_output().split(",")[0]
+                is_window_check = (name in ("if-eqz", "if-nez") and i >= 2
+                                   and instructions[i - 1].get_name().startswith("move-result-object")
+                                   and instructions[i - 1].get_output().strip() == reg
+                                   and "->getWindow()" in instructions[i - 2].get_output())
+                if not is_window_check:
+                    return True
+            return False
+
+        def clears_flag_secure(ref):
+            regs = arg_registers(ref["instructions"][ref["index"]].get_output())
+            if len(regs) < 2:
+                return False
+            flags = reg_value(ref["instructions"], ref["index"], regs[1], ref["index"])
+            return flags is None or bool(flags & FLAG_SECURE)
+
+        def disables_recents_screenshot(ref):
+            regs = arg_registers(ref["instructions"][ref["index"]].get_output())
+            return len(regs) >= 2 and reg_value(ref["instructions"], ref["index"], regs[1], ref["index"]) in (None, 0)
+
+        def on_dialog(ref):
+            """Dialog 的 Window 不算頁面"""
+            if "Dialog" in ref["class"]:
+                return True
+            for ins in reversed(ref["instructions"][:ref["index"]]):
+                out = ins.get_output()
+                if "->getWindow()" in out:
+                    return "Dialog" in out
+            return False
+
         keep = app_class_filter(a)
-        refs = find_app_references(dx, keep, [
+        refs = [r for r in find_app_references(dx, keep, [
             "Landroid/view/Window;->setFlags",
             "Landroid/view/Window;->addFlags",
             "Landroid/view/SurfaceView;->setSecure",
-        ])
-        refs = [r for r in refs if sets_flag_secure(r)]
+        ]) if not on_dialog(r)]
+        # SurfaceView.setSecure 只保護該元件, 不代表整頁有保護 -> 只能算可能涵蓋 (NOT_EVALUATED)
+        secure = [r for r in refs if not r["api"].endswith("setSecure") and sets_flag_secure(r)]
+        unknown = [r for r in refs if r not in secure and may_set_flag_secure(r)]
+        unknown += [r for r in find_app_references(dx, keep, ["Landroid/view/Window;->clearFlags"]) if clears_flag_secure(r)]
+        recents = [r for r in find_app_references(dx, keep, [";->setRecentsScreenshotEnabled"]) if disables_recents_screenshot(r)]
+        warnings = find_app_references(dx, keep, [";->registerScreenCaptureCallback"])
+        warnings += [r for r in find_app_references(dx, keep, [";->registerContentObserver"])
+                     if any("MediaStore$Images$Media;->EXTERNAL_CONTENT_URI" in i.get_output() for i in r["instructions"])
+                     and ("screenshot" in r["class"].lower() or "capture" in r["class"].lower())]   # 相簿等也會監聽媒體庫, 不算警示
+        verdict, reason, review, pages = screen_capture_verdict(a, dx, keep, secure, is_conditional, unknown, recents, warnings)
         return protection_result("lab_027", "Screen capture prevention (FLAG_SECURE) implementation",
-                                 strip_instructions(refs), [], keep)
+                                 strip_instructions(secure) if verdict == "PASS" else [], [], keep,
+                                 reason=reason, review=review, verdict=verdict, extra={"pages": pages})
 
 
     @app.route('/androguard/lab_28', methods=['GET'])
@@ -1697,9 +1767,12 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         """
         風險: App 沒偵測 root, 攻擊者可在 root 裝置上 hook、讀取私有資料、竄改執行流程。
         檢測: App 自己的程式碼有 su 路徑 / 字串 "su"、root 管理 App 套件名稱、test-keys 等特徵字串,
-              或 App 自己有呼叫 RootBeer / Play Integrity / SafetyNet / 已知 RASP SDK -> 視為有做 (只打包沒呼叫不算)。
+              或 App 自己有呼叫 RootBeer / Play Integrity / SafetyNet / 已知 RASP SDK -> 有偵測 (只打包沒呼叫不算)。
               (File.exists() 幾乎每個 App 都有, 單獨出現不算)
-        結果: 都沒有 -> WARNING (缺少防護)。
+        結果: 都沒有 -> WARNING (缺少防護);
+              有偵測 -> NOT_EVALUATED: MAS 4.1.5.5.1 還要求偵測到後警告或關閉 App、限制非約定轉帳, 靜態無法確認, 所以不會 PASS;
+              只有字串 "su" (也可能是網域、語言代碼) 或看不到 App 程式碼 (如加殼) -> NOT_EVALUATED, 列出位置。
+              libsu 是用 root 執行指令的函式庫, 不是偵測 root, 不算。
         限制: 字串加密、寫在 .so、動態組字串的偵測邏輯看不到。
         """
         ROOT_BINARY_PATHS = [
@@ -1732,13 +1805,27 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
                          if k in s), None)
 
         keep = app_class_filter(a)
-        code_evidence = find_app_const_strings(dx, match, keep)
+        strings = [e for e in find_app_const_strings(dx, match, keep)
+                   if not e["class"].startswith("Lcom/topjohnwu/superuser/")]
+        code_evidence = [e for e in strings if e["indicator"] != "su"]
+        review = [e for e in strings if e["indicator"] == "su"]
         api_evidence = find_app_sdk_calls(dx, keep, [
             ("Lcom/scottyab/rootbeer/",    "RootBeer Library"),
             ("Lcom/scottyab/rootchecker/", "RootChecker Library"),
         ] + PLAY_INTEGRITY_PREFIXES + RASP_SDK_PREFIXES)
+        if code_evidence or api_evidence:
+            reason = "detection_found"
+            found = {}   # 同一個 method 檢查多個特徵, 合併成一筆
+            for where, note in ([("%s.%s" % (e["class"], e["method"]), e["indicator"]) for e in code_evidence]
+                                + [(e["caller"], e["library"]) for e in api_evidence]):
+                found.setdefault(where, []).append(note)
+            review = [{"where": w, "note": ", ".join(sorted(set(notes)))} for w, notes in found.items()]
+        else:
+            reason = "code_not_visible" if app_code_hidden(a, dx) else ("su_string_only" if review else None)
+            review = [{"where": "%s.%s" % (e["class"], e["method"]), "note": e["indicator"]} for e in review]
         return protection_result("lab_056", "Root detection implementation check",
-                                 code_evidence, api_evidence, keep)
+                                 code_evidence, api_evidence, keep, reason=reason, review=review,
+                                 verdict="NOT_EVALUATED" if reason else "WARNING")
 
     @app.route('/androguard/lab_069', methods=['GET'])
     def detect_lab_069():
@@ -6949,21 +7036,141 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
 
     # ---- 回傳格式 ----
 
-    def protection_result(lab_id, description, code_evidence, api_evidence, keep):
-        """「缺少防護」類檢測的統一回傳: 有證據 -> PASS, 沒有 -> WARNING (加殼由 lab_042 判斷, 這裡不處理)
-        使用: lab_026, lab_027, lab_056, lab_064"""
+    def app_code_hidden(a, dx):
+        """App 自己的套件幾乎沒有 class, 也沒有被搬到短套件 -> 看不到 App 程式碼 (多半是加殼); 門檻同 lab_084
+        使用: lab_027, lab_056"""
+        prefixes = app_own_prefixes(a)
+        classes = [name for name, ca in dx.classes.items() if not ca.is_external()]   # 外部引用不是 APK 裡看得到的程式碼
+        own = sum(1 for c in classes if c.startswith(prefixes)) if prefixes else 0
+        moved = sum(1 for c in classes if is_repackaged_class(c))
+        return own < OBF_MIN_CLASSES and moved < OBF_REPACKAGED_MIN
+
+    # 視窗有效的 Activity 生命週期: 頁面顯示前會執行 (onPause 離開時才設, 頁面顯示中沒有保護, 不算)
+    # 使用: lab_027 (透過 flag_secure_coverage)
+    SCREEN_LIFECYCLE_METHODS = {"attachBaseContext", "onCreate", "onPostCreate", "onStart", "onResume", "onAttachedToWindow"}
+    SCREEN_CALLBACK_METHODS = {"onActivityPreCreated", "onActivityCreated", "onActivityStarted", "onActivityResumed"}
+
+    def app_pages(a, dx, keep):
+        """App 自己的 Activity (第三方 SDK 的畫面不算), 回傳 (程式碼看得到的, Manifest 有宣告但不在 dex 裡的)
+        使用: lab_027 (透過 screen_capture_verdict)"""
+        package, prefixes = a.get_package() or "", app_own_prefixes(a)
+        pages, not_visible = [], []
+        for name in a.get_activities():
+            class_name = "L" + resolve_activity_name(package, name).replace(".", "/") + ";"
+            # 自己的套件優先 (org.* 這類前綴也會被通用過濾排除, 頁面算少就可能誤判 PASS)
+            if not (class_name.startswith(prefixes) if prefixes else keep(class_name)):
+                continue
+            ca = dx.classes.get(class_name)
+            (pages if ca and not ca.is_external() else not_visible).append(class_name)
+        return pages, not_visible
+
+    def class_chain(dx, class_name):
+        """class 自己和 APK 內看得到的父類別
+        使用: lab_027 (透過 screen_capture_verdict)"""
+        chain = []
+        while class_name not in chain:
+            ca = dx.classes.get(class_name)
+            if not ca or ca.is_external():
+                break
+            chain.append(class_name)
+            class_name = str(ca.get_vm_class().get_superclassname())
+        return chain
+
+    def flag_secure_coverage(dx, ref, page_classes, depth=4):
+        """從設定 FLAG_SECURE 的呼叫往上追, 回傳 (經過的頁面生命週期所在 class, 是否由 ActivityLifecycleCallbacks 套用到所有頁面,
+        是否有路徑追不到頁面; 例如 Fragment 或按鈕事件, 可能還涵蓋其他頁面)
+        使用: lab_027 (透過 screen_capture_verdict)"""
+        ca = dx.classes.get(ref["class"])
+        level = [m for m in ca.get_methods() if m.name == ref["method"] and not m.is_external()] if ca else []
+        seen, classes, is_global, open_end = set(), set(), False, not level
+        for _ in range(depth + 1):
+            callers = []
+            for m in level:
+                if m in seen:
+                    continue
+                seen.add(m)
+                owner = str(m.class_name)
+                if m.name in SCREEN_LIFECYCLE_METHODS and owner in page_classes:
+                    classes.add(owner)
+                elif m.name in SCREEN_CALLBACK_METHODS:
+                    is_global = True
+                else:
+                    from_methods = [caller for _c, caller, _o in m.get_xref_from()]
+                    open_end = open_end or not from_methods
+                    callers += from_methods
+            level = callers
+        return classes, is_global, open_end or any(m not in seen for m in level)
+
+    def screen_capture_verdict(a, dx, keep, secure, is_conditional, unknown, recents, warnings):
+        """依 MAS 4.1.2.3.9 判定 lab_027, 回傳 (verdict, reason, review, pages); 規則見 detect_lab_027
+        使用: lab_027"""
+        pages, not_visible = app_pages(a, dx, keep)
+        result_pages = {"total": len(pages), "covered": [], "without_flag": [], "not_visible": not_visible}
+        if app_code_hidden(a, dx):
+            return "NOT_EVALUATED", "code_not_visible", [], result_pages
+        chains = {page: class_chain(dx, page) for page in pages}
+        page_classes = {c for chain in chains.values() for c in chain}
+        covered_classes, maybe_classes = set(), set()
+        is_global, maybe_all = False, False
+        uncertain, untraced = [], []
+        for ref, certain in [(r, not is_conditional(r)) for r in secure] + [(r, False) for r in unknown]:
+            classes, applies_to_all, open_end = flag_secure_coverage(dx, ref, page_classes)
+            if certain:
+                covered_classes |= classes
+                is_global = is_global or applies_to_all
+            else:
+                maybe_classes |= classes
+                maybe_all = maybe_all or applies_to_all
+            if not certain or not (classes or applies_to_all):
+                uncertain.append(ref)
+            elif open_end:
+                untraced.append(ref)
+            maybe_all = maybe_all or open_end
+        covered = [p for p in pages if is_global or covered_classes & set(chains[p])]
+        result_pages["covered"] = covered
+        if pages and len(covered) == len(pages) and not uncertain and not not_visible:
+            return "PASS", None, [], result_pages
+        if secure or unknown:
+            # 其他呼叫都不可能涵蓋、也沒有警示加切換畫面遮蔽的頁面, 才算確定沒設
+            missing = [] if maybe_all or (recents and warnings) else [
+                p for p in pages if p not in covered and not maybe_classes & set(chains[p])]
+            if missing:
+                result_pages["without_flag"] = missing
+                return "WARNING", "page_without_flag", [], result_pages
+            review = [{"where": "%s.%s" % (r["class"], r["method"]),
+                       "note": "SurfaceView.setSecure protects only that view" if r["api"].endswith("setSecure") else "may not apply to every page"}
+                      for r in uncertain + untraced]
+            review += [{"where": p, "note": "not in the code"} for p in not_visible]
+            review += [{"where": p, "note": "FLAG_SECURE set"} for p in covered]
+            return "NOT_EVALUATED", "partial", review, result_pages
+        if recents and warnings:
+            review = [{"where": "%s.%s" % (r["class"], r["method"]), "note": r["api"].split("->")[-1]} for r in warnings + recents]
+            return "NOT_EVALUATED", "warning_and_recents", review, result_pages
+        if not_visible and not pages:
+            return "NOT_EVALUATED", "partial", [{"where": p, "note": "not in the code"} for p in not_visible], result_pages
+        return "WARNING", "recents_only" if recents else ("warning_only" if warnings else None), [], result_pages
+
+    def protection_result(lab_id, description, code_evidence, api_evidence, keep, reason=None, review=None,
+                          verdict=None, extra=None):
+        """「缺少防護」類檢測的統一回傳: 有證據 -> PASS, 沒有 -> WARNING;
+        沒有證據但端點給了 reason (靜態無法確定) -> NOT_EVALUATED, review 列出要人工確認的位置;
+        verdict 有給就照用 (lab_027, lab_056 自己判定; lab_056 有證據也是 NOT_EVALUATED)
+        使用: lab_026, lab_027, lab_056, lab_064 (reason / review / verdict 只有 lab_027, lab_056 用; extra 只有 lab_027 用)"""
         implemented = bool(code_evidence or api_evidence)
-        return jsonify({
-            "verdict":       "PASS" if implemented else "WARNING",
-            "has_finding":   not implemented,   # True = 缺少防護
+        verdict = verdict or ("PASS" if implemented else ("NOT_EVALUATED" if reason else "WARNING"))
+        return jsonify(dict(extra or {}, **{
+            "verdict":       verdict,
+            "has_finding":   verdict == "WARNING",   # True = 缺少防護
             "implemented":   implemented,
+            "reason":        None if verdict == "PASS" else reason,
+            "review":        (review or []) if verdict == "NOT_EVALUATED" else [],
             "code_evidence": code_evidence,
             "api_evidence":  api_evidence,
             "scanned_app_classes": count_app_classes(dx, keep),
             "count":         len(code_evidence) + len(api_evidence),
             "lab_id":        lab_id,
             "description":   description,
-        }), 200
+        })), 200
 
     def share_check_result(lab_id, description, channels, dx, keep):
         """lab_039 / 040 的回傳: 每個管道的 problem 由端點填 (None = 沒問題)

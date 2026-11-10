@@ -855,7 +855,7 @@ class Writer:
                         }
                     )
         # 無法判定的檢測項 (server 回 NOT_EVALUATED): 報告顯示 Not evaluated (isDetected = None), 不算通過也不算不符合
-        # 由 writer.review_required 傳入 (目前 AS-lab016 / 039 / 040 / 041 / 084 / 085 / 086 / 087); 已寫入 (Failed) 的不覆蓋
+        # 由 writer.review_required 傳入 (目前 AS-lab016 / 027 / 039 / 040 / 041 / 056 / 084 / 085 / 086 / 087); 已寫入 (Failed) 的不覆蓋
         for review_lab, review_details in getattr(self, 'review_required', {}).items():
             for report in (report_dict_zhtw, report_dict_en):
                 if report["mast_report"].get(review_lab, {}).get("isDetected"):
@@ -2899,6 +2899,13 @@ Please modify the following code:"""
     def _write_detail(line):
         writer.write(line.encode('utf-8'))
 
+    # 無法判定的檢測項 (server 回 NOT_EVALUATED): 報告顯示 Not evaluated
+    writer.review_required = {}
+
+    def _review_required(lab_tag, reason, lines):
+        shown = lines if len(lines) <= 5 else lines[:4] + [u"... and %d more" % (len(lines) - 4)]
+        writer.review_required[lab_tag] = u"\n".join([u"Manual review required: " + reason] + shown)
+
     # [lab_026] - App signature integrity check (anti-tampering)
     # 缺失告警: 沒找到防護機制才寫入 (Failed); 有做就不寫入 (Passed)
     result_lab026 = get_androguard('/lab_026')
@@ -2926,17 +2933,40 @@ Please modify the following code:"""
         writer.startWriter(
             "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_NOTICE,
             u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][MASVS-PLATFORM-3][M6] 防止螢幕擷取的設定",
-            u"App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。" u"\n\n"
-            u"本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。" u"\n\n"
-            u"限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。" u"\n\n"
+            u"App 未設定 FLAG_SECURE 時，畫面可能被其他 App 或系統自動擷取，也會顯示在「最近使用的應用程式」縮圖中，畫面內容可能外洩。" u"\n\n"
+            u"判定：App 自己的所有 Activity 都確定設定 FLAG_SECURE（常數、無條件、未被清除）才符合。完全沒有防護、看得到的 Activity 確定未設定，或只有截圖警示／只有 setRecentsScreenshotEnabled（基準 (1)(2) 缺一），即不符合。有條件才設定、只有 SurfaceView.setSecure（只保護該元件）、值執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在程式碼中、有警示加切換畫面遮蔽，或看不到 App 程式碼，且沒有確定未設定的頁面時，列為 Not evaluated，細節會列出位置。第三方 SDK 的畫面和 Dialog 不納入。" u"\n\n"
+            u"修正：在共用的 BaseActivity 或 ActivityLifecycleCallbacks 設定 FLAG_SECURE，讓所有頁面都受保護。" u"\n\n"
+            u"限制：不顯示畫面的 Activity 也會算一頁；Flutter / React Native 框架層的設定看不到。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
             + "||" +
-            u"When the app does not set FLAG_SECURE, its screens can be captured by screenshots or screen recording, or shown in the Recents thumbnail, which may leak sensitive content such as account, transaction or personal data." u"\n\n"
-            u"This check determines whether the app calls Window.setFlags / addFlags with FLAG_SECURE, or calls SurfaceView.setSecure; if neither is found, screen capture prevention is considered missing." u"\n\n"
-            u"Limitation: flags passed through variables, fields or other methods, and settings made at the framework layer (Flutter / React Native), may not be recognized by static analysis; dynamic testing (actually trying to capture sensitive screens) is recommended." u"\n\n"
+            u"Without FLAG_SECURE, screens may be captured automatically by other apps or the system and appear in the Recents thumbnail, which may leak screen content." u"\n\n"
+            u"Passes only when every Activity of the app certainly sets FLAG_SECURE (constant, unconditional, not cleared). Fails when there is no protection, a visible Activity certainly lacks it, or only a capture warning or only setRecentsScreenshotEnabled exists (criterion (1) or (2) has no evidence). Conditional or runtime-only values, SurfaceView.setSecure alone (it protects only that view), calls not traceable to pages, Activities missing from the code, a warning plus app switcher masking, and apps whose code is not visible are reported as Not evaluated with locations when no page certainly lacks it. Third-party SDK screens and dialogs are not counted." u"\n\n"
+            u"Fix: set FLAG_SECURE in a shared BaseActivity or ActivityLifecycleCallbacks so every page is protected." u"\n\n"
+            u"Limitation: Activities that show no screen also count as pages; Flutter / React Native settings are not visible." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE",
             [u"Hacker"])
-        _write_detail(u"No FLAG_SECURE / SurfaceView.setSecure usage found in app code")
+        _reason_lab027 = result_lab027.get('reason')
+        if _reason_lab027 == 'page_without_flag':
+            _missing_lab027 = result_lab027.get('pages', {}).get('without_flag', [])
+            _write_detail(u"%d of %d pages have no FLAG_SECURE:" % (len(_missing_lab027), result_lab027.get('pages', {}).get('total', 0)))
+            for _page in _missing_lab027[:10]:
+                _write_detail(_page)
+            if len(_missing_lab027) > 10:
+                _write_detail(u"... and %d more" % (len(_missing_lab027) - 10))
+        elif _reason_lab027 == 'recents_only':
+            _write_detail(u"Only setRecentsScreenshotEnabled found in app code; nothing warns about or masks other screen capture")
+        elif _reason_lab027 == 'warning_only':
+            _write_detail(u"Only a screen capture warning found in app code; the app switcher screen is not masked")
+        else:
+            _write_detail(u"No FLAG_SECURE / SurfaceView.setSecure usage found in app code")
+    elif isinstance(result_lab027, dict) and result_lab027.get('verdict') == 'NOT_EVALUATED':
+        _lines_lab027 = [u"%s (%s)" % (r.get('where', ''), r.get('note', '')) for r in result_lab027.get('review', [])]
+        if result_lab027.get('reason') == 'code_not_visible':
+            _review_required('AS-lab027', u"the app's own code is not visible (the app may be packed), so whether it blocks screen capture cannot be checked.", [])
+        elif result_lab027.get('reason') == 'warning_and_recents':
+            _review_required('AS-lab027', u"the app has a capture warning and masks the app switcher screen; check that the warning really appears.", _lines_lab027)
+        else:
+            _review_required('AS-lab027', u"FLAG_SECURE may not cover every page (pages found: %d); check these places and the remaining pages." % result_lab027.get('pages', {}).get('total', 0), _lines_lab027)
 
     # ------------------------------------------------------------------------
     # [lab_028] - Runtime exec checking:
@@ -3716,8 +3746,6 @@ Vulnerable Codes:""", ["SSL_Security"])
     # ------------------------------------------------------------------------
     # [AS-lab039] 4.1.2.5.1 分享聲明 / [AS-lab040] 4.1.2.5.2 拒絕分享 / [AS-lab041] 4.1.1.1.2 發布說明
     # WARNING -> 寫入 (Failed); NOT_EVALUATED -> 報告顯示 Not evaluated (由 Writer 處理); PASS -> 不寫入
-    writer.review_required = {}
-
     def _share_line(c):
         ev = c.get('evidence', {})
         notes = [c.get('problem') or u""]
@@ -3743,10 +3771,6 @@ Vulnerable Codes:""", ["SSL_Security"])
             _write_detail(line)
         if len(lines) > 10:
             _write_detail(u"... and %d more" % (len(lines) - 9))
-
-    def _review_required(lab_tag, reason, lines):
-        shown = lines if len(lines) <= 5 else lines[:4] + [u"... and %d more" % (len(lines) - 4)]
-        writer.review_required[lab_tag] = u"\n".join([u"Manual review required: " + reason] + shown)
 
     result_lab039 = get_androguard('/lab_039')
     if isinstance(result_lab039, dict) and result_lab039.get('verdict') == 'WARNING':
@@ -4622,16 +4646,24 @@ Proof-Of-Concept reference:
             "COMMAND_MAYBE_SYSTEM", LEVEL_NOTICE,
             u"[AS-lab056][MAS-4.1.5.5.1][MASVS-RESILIENCE-1][M7] Root Detection 實作檢查",
             u"App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。" u"\n\n"
-            u"本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。" u"\n\n"
-            u"限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。" u"\n\n"
+            u"判定：App 自己的程式碼找不到 root 偵測（su 執行檔路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統特徵），也沒有呼叫 RootBeer、Play Integrity / SafetyNet 或防護 SDK（只打包不算），即不符合。有找到偵測時，因無法確認偵測到 root 後是否警告使用者或關閉 App，以及是否限制非約定轉帳，列為 Not evaluated 並列出位置；只有字串 su 或看不到 App 程式碼，也列為 Not evaluated。" u"\n\n"
+            u"限制：字串加密、寫在 .so 或 Flutter / React Native 框架層的偵測看不到。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
             + "||" +
             u"When the app does not detect whether the device is rooted, attackers can use tools such as Frida or Xposed on a rooted device to hook the app, read its private data or tamper with its execution flow." u"\n\n"
-            u"This check determines whether the app implements root detection (su binary name and paths, root manager package names such as Magisk, system property indicators such as test-keys), or relies on RootBeer, Play Integrity / SafetyNet or a protection SDK that provides equivalent protection (the app's own code must call it; merely bundling it does not count); if neither is found, root detection is considered missing." u"\n\n"
-            u"Limitation: static analysis cannot cover every possible implementation, nor confirm that the mechanism actually works at runtime; dynamic testing is recommended." u"\n\n"
+            u"Fails when the app's own code has no root detection (su binary paths, root manager package names such as Magisk, system indicators such as test-keys) and calls no RootBeer, Play Integrity / SafetyNet or protection SDK (bundling alone does not count). When detection is found, whether the app warns the user or closes after detecting root, and whether non-designated transfers are restricted, cannot be confirmed, so it is reported as Not evaluated with locations; a lone \"su\" string or app code that is not visible is also Not evaluated." u"\n\n"
+            u"Limitation: detection hidden by string encryption, in .so files or in the Flutter / React Native layer is not visible." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/",
             [u"Resilience", u"Root"])
         _write_detail(u"No root detection found in app code")
+    elif isinstance(result_lab056, dict) and result_lab056.get('verdict') == 'NOT_EVALUATED':
+        _lines_lab056 = [u"%s (%s)" % (r.get('where', ''), r.get('note', '')) for r in result_lab056.get('review', [])]
+        if result_lab056.get('reason') == 'code_not_visible':
+            _review_required('AS-lab056', u"the app's own code is not visible (the app may be packed), so whether it detects root cannot be checked.", [])
+        elif result_lab056.get('reason') == 'detection_found':
+            _review_required('AS-lab056', u"root detection found in app code; whether the app warns the user or closes after detecting root, and whether transfers are restricted, cannot be confirmed. Detection found at:", _lines_lab056)
+        else:
+            _review_required('AS-lab056', u"the only evidence is the string \"su\", which may not be about root; check whether these places detect root.", _lines_lab056)
 
     # ------------------------------------------------------------------------
     # [lab_057] - Sensitive device / subscriber identifier reads (migrated to androguard_server)

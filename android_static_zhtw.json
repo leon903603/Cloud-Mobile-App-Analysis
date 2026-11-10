@@ -267,7 +267,7 @@
         "owasp_mobile": "M6",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未設定 FLAG_SECURE 時，畫面可被截圖、螢幕錄影，或顯示在「最近使用的應用程式」縮圖中，帳號、交易、個資等敏感畫面內容可能因此外洩。\n\n本檢查判斷 App 是否呼叫 Window.setFlags / addFlags 設定 FLAG_SECURE，或呼叫 SurfaceView.setSecure；皆未發現即判定缺少防止螢幕擷取的設定。\n\n限制：flag 以變數、欄位或跨 method 傳入，以及在 Flutter / React Native 等框架層設定者，靜態分析可能無法辨識，建議搭配動態測試（實際嘗試截圖敏感畫面）。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+        "desc": "App 未設定 FLAG_SECURE 時，畫面可能被其他 App 或系統自動擷取，也會顯示在「最近使用的應用程式」縮圖中，畫面內容可能外洩。\n\n判定：App 自己的所有 Activity 都確定設定 FLAG_SECURE（常數、無條件、未被清除）才符合。完全沒有防護、看得到的 Activity 確定未設定，或只有截圖警示／只有 setRecentsScreenshotEnabled（基準 (1)(2) 缺一），即不符合。有條件才設定、只有 SurfaceView.setSecure（只保護該元件）、值執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在程式碼中、有警示加切換畫面遮蔽，或看不到 App 程式碼，且沒有確定未設定的頁面時，列為 Not evaluated，細節會列出位置。第三方 SDK 的畫面和 Dialog 不納入。\n\n修正：在共用的 BaseActivity 或 ActivityLifecycleCallbacks 設定 FLAG_SECURE，讓所有頁面都受保護。\n\n限制：不顯示畫面的 Activity 也會算一頁；Flutter / React Native 框架層的設定看不到。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime指令檢查",
@@ -557,7 +557,7 @@
         "owasp_mobile": "M7",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n本檢查判斷 App 是否實作 root 偵測（su 執行檔名稱與路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統屬性特徵），或改用具同等防護能力的 RootBeer、Play Integrity / SafetyNet 與防護 SDK（App 自己的程式碼須有呼叫，只打包不算）；皆未發現即判定缺少 root 偵測。\n\n限制：靜態分析無法涵蓋所有實作方式，亦無法確認機制實際是否生效，建議搭配動態測試。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
+        "desc": "App 未偵測裝置是否已 root 時，攻擊者可在 root 裝置上使用 Frida、Xposed 等工具 hook App、讀取私有目錄資料或竄改執行流程。\n\n判定：App 自己的程式碼找不到 root 偵測（su 執行檔路徑、Magisk 等 root 管理 App 套件名稱、test-keys 等系統特徵），也沒有呼叫 RootBeer、Play Integrity / SafetyNet 或防護 SDK（只打包不算），即不符合。有找到偵測時，因無法確認偵測到 root 後是否警告使用者或關閉 App，以及是否限制非約定轉帳，列為 Not evaluated 並列出位置；只有字串 su 或看不到 App 程式碼，也列為 Not evaluated。\n\n限制：字串加密、寫在 .so 或 Flutter / React Native 框架層的偵測看不到。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-1/ | https://mas.owasp.org/MASTG/tests/android/MASVS-RESILIENCE/MASTG-TEST-0045/"
     },
     "AS-lab057": {
         "title": "讀取裝置/用戶敏感識別碼 (IMEI / IMSI / 門號)",
