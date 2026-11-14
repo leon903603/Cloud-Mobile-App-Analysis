@@ -2016,7 +2016,7 @@ def __analyze(writer, args):
         writer.startWriter(
             "LAB_001_CLEARTEXT_TRAFFIC", level_001,
             u"[AS-lab001][MAS-4.1.2.4.1][MASVS-NETWORK-1][CWE-319] SSL Connection / Cleartext Traffic 檢查",
-            u"偵測到 App 可能透過 cleartext (HTTP) 進行網路傳輸,違反 MAS-4.1.2.4.1。"
+            u"偵測到 App 可能透過 cleartext (HTTP) 進行網路傳輸。"
             u"本檢查分三層: (1) AndroidManifest 的 android:usesCleartextTraffic 設定;"
             u"(2) res/xml network_security_config 的 base-config / domain-config;"
             u"(3) Smali bytecode 的 source -> sink 同 method 配對(http URL 字串 + WebView.loadUrl / "
@@ -2025,7 +2025,7 @@ def __analyze(writer, args):
             u"INFO: manifest 已禁止 cleartext 但 code 仍含 http URL。"
             u" Ref: https://developer.android.com/training/articles/security-config"
             + "||" +
-            u"App may transmit data over cleartext HTTP, violating MAS-4.1.2.4.1. Three layers checked: "
+            u"App may transmit data over cleartext HTTP. Three layers checked: "
             u"(1) AndroidManifest android:usesCleartextTraffic, (2) res/xml network_security_config "
             u"(base-config / domain-config), (3) smali source->sink pairing of http URL strings with "
             u"network sinks (WebView.loadUrl / HttpURLConnection / OkHttp / Volley). "
@@ -2934,13 +2934,13 @@ Please modify the following code:"""
             "HACKER_PREVENT_SCREENSHOT_CHECK", LEVEL_NOTICE,
             u"[AS-lab027][OWASP-V2.7][MAST-4.2.3][工4.1.2.3.9][MASVS-PLATFORM-3][M6] 防止螢幕擷取的設定",
             u"App 未設定 FLAG_SECURE 時，畫面可能被其他 App 或系統自動擷取，也會顯示在「最近使用的應用程式」縮圖中，畫面內容可能外洩。" u"\n\n"
-            u"判定：App 自己的所有 Activity 都確定設定 FLAG_SECURE（常數、無條件、未被清除）才符合。完全沒有防護、看得到的 Activity 確定未設定，或只有截圖警示／只有 setRecentsScreenshotEnabled（基準 (1)(2) 缺一），即不符合。有條件才設定、只有 SurfaceView.setSecure（只保護該元件）、值執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在程式碼中、有警示加切換畫面遮蔽，或看不到 App 程式碼，且沒有確定未設定的頁面時，列為 Not evaluated，細節會列出位置。第三方 SDK 的畫面和 Dialog 不納入。" u"\n\n"
+            u"判定：App 自己的所有 Activity 都確定設定 FLAG_SECURE（常數、無條件、未被清除）才符合。完全沒有防護、看得到的 Activity 確定未設定，或只有截圖警示／只有 setRecentsScreenshotEnabled（擷取防護與背景縮圖遮蔽缺一），即不符合。有條件才設定、只有 SurfaceView.setSecure（只保護該元件）、值執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在程式碼中、有警示加切換畫面遮蔽，或看不到 App 程式碼，且沒有確定未設定的頁面時，列為 Not evaluated，細節會列出位置。第三方 SDK 的畫面和 Dialog 不納入。" u"\n\n"
             u"修正：在共用的 BaseActivity 或 ActivityLifecycleCallbacks 設定 FLAG_SECURE，讓所有頁面都受保護。" u"\n\n"
             u"限制：不顯示畫面的 Activity 也會算一頁；Flutter / React Native 框架層的設定看不到。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
             + "||" +
             u"Without FLAG_SECURE, screens may be captured automatically by other apps or the system and appear in the Recents thumbnail, which may leak screen content." u"\n\n"
-            u"Passes only when every Activity of the app certainly sets FLAG_SECURE (constant, unconditional, not cleared). Fails when there is no protection, a visible Activity certainly lacks it, or only a capture warning or only setRecentsScreenshotEnabled exists (criterion (1) or (2) has no evidence). Conditional or runtime-only values, SurfaceView.setSecure alone (it protects only that view), calls not traceable to pages, Activities missing from the code, a warning plus app switcher masking, and apps whose code is not visible are reported as Not evaluated with locations when no page certainly lacks it. Third-party SDK screens and dialogs are not counted." u"\n\n"
+            u"Passes only when every Activity of the app certainly sets FLAG_SECURE (constant, unconditional, not cleared). Fails when there is no protection, a visible Activity certainly lacks it, or only a capture warning or only setRecentsScreenshotEnabled exists (capture protection or Recents thumbnail hiding has no evidence). Conditional or runtime-only values, SurfaceView.setSecure alone (it protects only that view), calls not traceable to pages, Activities missing from the code, a warning plus app switcher masking, and apps whose code is not visible are reported as Not evaluated with locations when no page certainly lacks it. Third-party SDK screens and dialogs are not counted." u"\n\n"
             u"Fix: set FLAG_SECURE in a shared BaseActivity or ActivityLifecycleCallbacks so every page is protected." u"\n\n"
             u"Limitation: Activities that show no screen also count as pages; Flutter / React Native settings are not visible." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE",
@@ -3430,7 +3430,6 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n" + \
             u"2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n" + \
             u"[參考資料]\n" + \
-            u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
             u"- https://developer.android.com/training/articles/security-config\n" + \
             u" || " + \
             u"[Static Analysis Limitations]\n" + \
@@ -3446,7 +3445,6 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"1. Use Network Security Config (Android 7.0+): Create network_security_config.xml in res/xml/ and configure <pin-set>\n" + \
             u"2. Code-based implementation: Such as OkHttp's CertificatePinner or custom TrustManager\n\n" + \
             u"[References]\n" + \
-            u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
             u"- https://developer.android.com/training/articles/security-config",
             ["CertificatePinning", "NetworkSecurity", "MITM-Risk", "StaticAnalysis"])
   
@@ -5051,13 +5049,13 @@ Proof-Of-Concept reference:
             u"App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。" u"\n\n"
             u"判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。" u"\n\n"
             u"修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。" u"\n\n"
-            u"限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。" u"\n\n"
+            u"限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；能否反混淆需人工檢測。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
             + "||" +
             u"The app code is not obfuscated, so decompiled code is easy to read and protections are easy to find and bypass." u"\n\n"
             u"Fails when: in the app's own packages (the manifest package and the package of the launcher activity), excluding compiler-generated code and names that must be kept such as JNI, the ratios of short names like a, b, aa for classes, methods and fields are all below 30%. When these packages have fewer than 10 classes, code moved into short packages such as o or a.b (DexGuard, R8 repackaging) counts as obfuscated; otherwise (e.g. packed apps) the result is Not evaluated." u"\n\n"
             u"Fix: enable R8/ProGuard for release builds (minifyEnabled true) and remove -dontobfuscate." u"\n\n"
-            u"Limitation: only name obfuscation is checked; string encryption and control-flow obfuscation are not; when the app's own packages are visible, code moved to other packages is not counted; criterion (2), whether the code can be deobfuscated, needs manual testing." u"\n\n"
+            u"Limitation: only name obfuscation is checked; string encryption and control-flow obfuscation are not; when the app's own packages are visible, code moved to other packages is not counted; whether the code can be deobfuscated needs manual testing." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code",
             [u"Resilience", u"Obfuscation"])
         _write_detail(u"Scanned %d classes in %s; short names: classes %d%%, methods %d%%, fields %d%% (threshold %d%%)" % (
@@ -5085,13 +5083,13 @@ Proof-Of-Concept reference:
             "TRANSACTION_NOTICE_MISSING", LEVEL_WARNING,
             u"[AS-lab085][MAS-4.1.3.1.1] 交易資源使用聲明檢查",
             u"交易前沒有告知商品名稱、金額與付款方式，使用者可能在不清楚的情況下付款。" u"\n\n"
-            u"判定：App 用 Google Pay 付款，自己組的付款請求（程式碼，或 res、assets 裡的 JSON）缺少金額（totalPrice）或交易方式（allowedPaymentMethods），或用 Samsung Pay 付款、自己組的付款畫面（CustomSheet）沒有金額（AmountBoxControl），即不符合。Google Play 與其他應用商店（華為、Samsung、Amazon）的內購由商店畫面顯示交易資訊，視為符合；NFC 感應支付設定要求解鎖（requireDeviceUnlock，使用者在現場解鎖授權交易），視為符合。請求沒有商品名稱（Google Pay 的 displayItems、Samsung Pay 的 addItem，可能已顯示在 App 結帳頁）、找不到請求內容、第三方支付 SDK（含 SDK 內部呼叫的 Google Pay）、網頁金流（綠界、藍新、LINE Pay 等付款網址）、跳到電子支付 App 付款（街口、全支付、悠遊付、LINE Pay、icash Pay、iPASS MONEY、台灣Pay）、信用卡輸入畫面（CVV 欄位）、交易專用的介面文字（付款、轉帳、點數兌換、儲值、購票、證券下單等）、未要求解鎖的 NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。有內購時，其他交易方式也會一併檢查。交易資源依 MAS 定義包含實體貨幣、點數與序號、票券與股票。" u"\n\n"
+            u"判定：App 用 Google Pay 付款，自己組的付款請求（程式碼，或 res、assets 裡的 JSON）缺少金額（totalPrice）或交易方式（allowedPaymentMethods），或用 Samsung Pay 付款、自己組的付款畫面（CustomSheet）沒有金額（AmountBoxControl），即不符合。Google Play 與其他應用商店（華為、Samsung、Amazon）的內購由商店畫面顯示交易資訊，視為符合；NFC 感應支付設定要求解鎖（requireDeviceUnlock，使用者在現場解鎖授權交易），視為符合。請求沒有商品名稱（Google Pay 的 displayItems、Samsung Pay 的 addItem，可能已顯示在 App 結帳頁）、找不到請求內容、第三方支付 SDK（含 SDK 內部呼叫的 Google Pay）、網頁金流（第三方金流付款網址）、跳到電子支付 App 付款、信用卡輸入畫面（CVV 欄位）、交易專用的介面文字（付款、轉帳、點數兌換、儲值、購票、證券下單等）、未要求解鎖的 NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。有內購時，其他交易方式也會一併檢查。交易資源包含實體貨幣、點數與序號、票券與股票。" u"\n\n"
             u"修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 displayItems、totalPrice 與 allowedPaymentMethods。" u"\n\n"
             u"限制：只看 Google Pay 請求欄位有沒有出現，不看值；支付 SDK、金流網址、電子支付 App 只認內建清單，自建交易畫面看 Activity 名稱、信用卡安全碼欄位與內建的交易詞組，金融 App 只看套件名與 App 名稱；混淆、加殼不在檢測範圍；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。" u"\n\n"
             u"參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
             + "||" +
             u"The app does not show the item name, amount and payment method before a transaction, so users may pay without knowing the details." u"\n\n"
-            u"Fails when: a Google Pay request built in the app (code, or JSON in res and assets) lacks the amount (totalPrice) or payment method (allowedPaymentMethods), or a Samsung Pay payment sheet built in the app (CustomSheet) has no amount (AmountBoxControl). Google Play and other app store in-app purchases (Huawei, Samsung, Amazon) pass, and so does NFC payment that requires device unlock (requireDeviceUnlock, the user authorizes on site). Requests without the item name (Google Pay displayItems, Samsung Pay addItem, which may be shown on the app's checkout screen), requests whose content is not found, third-party payment SDKs (including Google Pay inside an SDK), web checkout (ECPay, NewebPay, LINE Pay and similar payment URLs), payment handed to e-wallet apps (JKOPay, PX Pay Plus, Easy Wallet, LINE Pay, icash Pay, iPASS MONEY, Taiwan Pay), credit card input screens (CVV fields), transaction-only screen text (payment, transfer, point redemption, top-up, tickets, stock orders and similar), NFC payment without device unlock, custom transaction screens and financial apps whose screens are not found are reported as Not evaluated. Other channels are still checked when in-app purchases exist. Transaction resources follow the MAS definition: money, points and serial codes, tickets and stocks." u"\n\n"
+            u"Fails when: a Google Pay request built in the app (code, or JSON in res and assets) lacks the amount (totalPrice) or payment method (allowedPaymentMethods), or a Samsung Pay payment sheet built in the app (CustomSheet) has no amount (AmountBoxControl). Google Play and other app store in-app purchases (Huawei, Samsung, Amazon) pass, and so does NFC payment that requires device unlock (requireDeviceUnlock, the user authorizes on site). Requests without the item name (Google Pay displayItems, Samsung Pay addItem, which may be shown on the app's checkout screen), requests whose content is not found, third-party payment SDKs (including Google Pay inside an SDK), web checkout (third-party payment gateway URLs), payment handed to e-wallet apps, credit card input screens (CVV fields), transaction-only screen text (payment, transfer, point redemption, top-up, tickets, stock orders and similar), NFC payment without device unlock, custom transaction screens and financial apps whose screens are not found are reported as Not evaluated. Other channels are still checked when in-app purchases exist. Transaction resources include money, points and serial codes, tickets and stocks." u"\n\n"
             u"Fix: show the item name, amount and payment method before paying; fill displayItems, totalPrice and allowedPaymentMethods in Google Pay requests." u"\n\n"
             u"Limitation: only the presence of Google Pay request fields is checked, not their values; SDKs, payment URLs, e-wallet apps, screens and financial apps are found by built-in lists, names, card security code fields and built-in transaction phrases; obfuscated and packed apps are out of scope; receive-only apps and the forex, futures and crypto exception need manual judgment." u"\n\n"
             u"Ref: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate",
@@ -5204,19 +5202,19 @@ Proof-Of-Concept reference:
             "STORAGE_REFUSAL_MISSING", LEVEL_WARNING,
             u"[AS-lab087][MAS-4.1.2.3.2][MASVS-PRIVACY-4][M6] 拒絕敏感性資料儲存檢查",
             u"App 儲存敏感資料，使用者卻無法拒絕。" u"\n\n"
-            u"判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（標準規定未聲明的資料無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。" u"\n\n"
+            u"判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（未聲明的資料使用者無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。" u"\n\n"
             u"修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。" u"\n\n"
-            u"限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；基準(2) 拒絕後確實沒有儲存需動態檢測。" u"\n\n"
+            u"限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；拒絕後是否確實沒有儲存，靜態無法確認。" u"\n\n"
             u"參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
             + "||" +
             u"The app stores sensitive data but users cannot refuse it." u"\n\n"
-            u"Fails when: for the sensitive data storage found by AS-lab086, the call path of the write has no read of an option such as \"remember account\", \"save password\" or \"auto login\" (SharedPreferences, DataStore or an on-screen checkbox), or the option is read but not used to decide whether to store; it also fails when AS-lab086 fails, since users cannot refuse undeclared data (as the standard states). Cases where AS-lab086 is Not evaluated (declaration not confirmed), options checked elsewhere, options whose key cannot be identified, paths decided only by settings with unrecognized names, storage done after a dialog button, and storage whose writing code is not located (Room tables, DataStore keys) are reported as Not evaluated." u"\n\n"
+            u"Fails when: for the sensitive data storage found by AS-lab086, the call path of the write has no read of an option such as \"remember account\", \"save password\" or \"auto login\" (SharedPreferences, DataStore or an on-screen checkbox), or the option is read but not used to decide whether to store; it also fails when AS-lab086 fails, since users cannot refuse undeclared data. Cases where AS-lab086 is Not evaluated (declaration not confirmed), options checked elsewhere, options whose key cannot be identified, paths decided only by settings with unrecognized names, storage done after a dialog button, and storage whose writing code is not located (Room tables, DataStore keys) are reported as Not evaluated." u"\n\n"
             u"Fix: offer options such as \"remember account\" or \"save password\", check them before writing, and when turned off do not store and delete what was stored." u"\n\n"
-            u"Limitation: only settings named like remember or save plus a credential word (remember_password, save_account), auto login, biometric or app lock count as options; only 4 levels of callers are traced; criterion (2), that nothing is stored after refusal, needs dynamic testing." u"\n\n"
+            u"Limitation: only settings named like remember or save plus a credential word (remember_password, save_account), auto login, biometric or app lock count as options; only 4 levels of callers are traced; whether nothing is stored after refusal cannot be confirmed statically." u"\n\n"
             u"Ref: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage",
             [u"Privacy", u"Storage"])
-        if result_lab087.get('reason', '').startswith('4.1.2.3.1'):
-            _write_detail(u"AS-lab086 (4.1.2.3.1) not met: the stored data is not declared, so users cannot refuse it")
+        if result_lab087.get('reason', '').startswith('lab086 not met'):
+            _write_detail(u"AS-lab086 not met: the stored data is not declared, so users cannot refuse it")
         _write_lines([_storage_line(s) for s in result_lab087.get('findings', [])])
     elif isinstance(result_lab087, dict) and result_lab087.get('verdict') == 'NOT_EVALUATED' \
             and result_lab087.get('reason', '').startswith('app code not visible'):
@@ -5590,7 +5588,7 @@ Please modify or remove any weaknesses in the program:""", ["SSL_Security"])
 使用者身分鑑別是一種確保使用者身分的方法，透過使用者身分鑑別，可以確保使用者的身分，並且確保使用者的資料不會被其他人存取。
 使用者身分鑑別的方法有很多種，例如：密碼、生物識別、指紋、人臉辨識等等。
 在 Android 中，可以使用 Biometric API 來實作生物識別，但是要注意，如果沒有正確實作，則會有安全性的問題。
-依據工業局 4.1.2.3.1 項目，請確認在使用交易資源前，是否有正確實作生物辨識身分鑑別
+請確認在使用交易資源前，是否有正確實作生物辨識身分鑑別
 參考: 
 (1) https://android-developers.googleblog.com/2019/10/one-biometric-api-over-all-android.html
 (2) https://developer.android.com/training/sign-in/biometric-auth
@@ -5598,7 +5596,7 @@ Please modify or remove any weaknesses in the program:""", ["SSL_Security"])
 User identity authentication is a method to ensure the user's identity. Through user identity authentication, the user's identity can be ensured, and the user's information can not be accessed by others.
 There are many methods for user identification, such as passwords, biometrics, fingerprints, face recognition, and so on.
 In Android, you can use the Biometric API to implement biometrics, but be aware that if it is not implemented correctly, there will be security issues.
-According to 4.1.2.3.1, please confirm whether the biometric identification is correctly performed before using the transaction resources
+Please confirm whether the biometric identification is correctly performed before using the transaction resources
 refer to: 
 (1) https://android-developers.googleblog.com/2019/10/one-biometric-api-over-all-android.html
 (2) https://developer.android.com/training/sign-in/biometric-auth
@@ -5658,11 +5656,11 @@ refer to:
                 "SENSITIVE_DATA_REFUSAL_MECHANISM", LEVEL_CRITICAL,
                 u"[AS-lab070][MAS V4.0 4.1.2.1.2] 使用者拒絕蒐集敏感性資料之權利 — Runtime Permission 機制未實作",
                 u"App 宣告了 dangerous permission（" + perms_str + u"），但靜態掃描未發現任何 Runtime Permission Request 呼叫（requestPermissions / registerForActivityResult）。"
-                u"使用者無法行使拒絕權利，違反 4.1.2.1.2。\n"
+                u"使用者無法行使拒絕權利。\n"
                 u"建議實作 Android Runtime Permission 機制，並正確處理使用者拒絕的情境。\n"
                 u"參考: https://developer.android.com/training/permissions/requesting" + "||" +
                 u"App declares dangerous permission(s) (" + perms_str + u") but no Runtime Permission Request call was found (requestPermissions / registerForActivityResult). "
-                u"Users cannot exercise the right to refuse, violating 4.1.2.1.2.\n"
+                u"Users cannot exercise the right to refuse.\n"
                 u"Implement Android Runtime Permission mechanism and handle the denied scenario properly.\n"
                 u"Refer to: https://developer.android.com/training/permissions/requesting",
                 ["Permission", "Privacy", "RuntimePermission"])

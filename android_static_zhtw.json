@@ -267,7 +267,7 @@
         "owasp_mobile": "M6",
         "level": "NOTICE",
         "cve": "",
-        "desc": "App 未設定 FLAG_SECURE 時，畫面可能被其他 App 或系統自動擷取，也會顯示在「最近使用的應用程式」縮圖中，畫面內容可能外洩。\n\n判定：App 自己的所有 Activity 都確定設定 FLAG_SECURE（常數、無條件、未被清除）才符合。完全沒有防護、看得到的 Activity 確定未設定，或只有截圖警示／只有 setRecentsScreenshotEnabled（基準 (1)(2) 缺一），即不符合。有條件才設定、只有 SurfaceView.setSecure（只保護該元件）、值執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在程式碼中、有警示加切換畫面遮蔽，或看不到 App 程式碼，且沒有確定未設定的頁面時，列為 Not evaluated，細節會列出位置。第三方 SDK 的畫面和 Dialog 不納入。\n\n修正：在共用的 BaseActivity 或 ActivityLifecycleCallbacks 設定 FLAG_SECURE，讓所有頁面都受保護。\n\n限制：不顯示畫面的 Activity 也會算一頁；Flutter / React Native 框架層的設定看不到。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
+        "desc": "App 未設定 FLAG_SECURE 時，畫面可能被其他 App 或系統自動擷取，也會顯示在「最近使用的應用程式」縮圖中，畫面內容可能外洩。\n\n判定：App 自己的所有 Activity 都確定設定 FLAG_SECURE（常數、無條件、未被清除）才符合。完全沒有防護、看得到的 Activity 確定未設定，或只有截圖警示／只有 setRecentsScreenshotEnabled（擷取防護與背景縮圖遮蔽缺一），即不符合。有條件才設定、只有 SurfaceView.setSecure（只保護該元件）、值執行時才知道、追不到涵蓋哪些頁面、有 Activity 不在程式碼中、有警示加切換畫面遮蔽，或看不到 App 程式碼，且沒有確定未設定的頁面時，列為 Not evaluated，細節會列出位置。第三方 SDK 的畫面和 Dialog 不納入。\n\n修正：在共用的 BaseActivity 或 ActivityLifecycleCallbacks 設定 FLAG_SECURE，讓所有頁面都受保護。\n\n限制：不顯示畫面的 Activity 也會算一頁；Flutter / React Native 框架層的設定看不到。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-3/ | https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE"
     },
     "AS-lab028": {
         "title": "Runtime指令檢查",
@@ -347,7 +347,7 @@
         "owasp_mobile": "M3",
         "level": "WARNING",
         "cve": "",
-        "desc": "此 app 未實作 Certificate Pinning (憑證固定)。缺少憑證固定可能使應用程式容易受到中間人攻擊 (Man-in-the-Middle Attack)，攻擊者可能攔截或竄改應用程式與伺服器之間的通訊。\n\n建議實作方式：\n1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n參考資料:\n- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n- https://developer.android.com/training/articles/security-config"
+        "desc": "此 app 未實作 Certificate Pinning (憑證固定)。缺少憑證固定可能使應用程式容易受到中間人攻擊 (Man-in-the-Middle Attack)，攻擊者可能攔截或竄改應用程式與伺服器之間的通訊。\n\n建議實作方式：\n1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n參考資料:\n- https://developer.android.com/training/articles/security-config"
     },
     "AS-lab036": {
         "title": "Intent Redirection 意圖重定向漏洞偵測",
@@ -667,7 +667,7 @@
         "owasp_mobile": "M4",
         "level": "CRITICAL",
         "cve": "",
-        "desc": "使用者身分鑑別是一種確保使用者身分的方法，透過使用者身分鑑別，可以確保使用者的身分，並且確保使用者的資料不會被其他人存取。使用者身分鑑別的方法有很多種，例如：密碼、生物識別、指紋、人臉辨識等等。\n在 Android 中，可以使用 Biometric API 來實作生物識別，但是要注意，如果沒有正確實作，則會有安全性的問題。\n依據工業局 4.1.2.3.1 項目，請確認在使用交易資源前，是否有正確實作生物辨識身分鑑別\n參考: \n(1) https: //android-developers.googleblog.com/2019/10/one-biometric-api-over-all-android.html\n(2) https: //developer.android.com/training/sign-in/biometric-auth"
+        "desc": "使用者身分鑑別是一種確保使用者身分的方法，透過使用者身分鑑別，可以確保使用者的身分，並且確保使用者的資料不會被其他人存取。使用者身分鑑別的方法有很多種，例如：密碼、生物識別、指紋、人臉辨識等等。\n在 Android 中，可以使用 Biometric API 來實作生物識別，但是要注意，如果沒有正確實作，則會有安全性的問題。\n請確認在使用交易資源前，是否有正確實作生物辨識身分鑑別\n參考: \n(1) https: //android-developers.googleblog.com/2019/10/one-biometric-api-over-all-android.html\n(2) https: //developer.android.com/training/sign-in/biometric-auth"
     },
     "AS-lab069": {
         "title": "Overlay Attack (Tapjacking) 覆蓋攻擊防護檢測",
@@ -687,7 +687,7 @@
         "owasp_mobile": "M8",
         "level": "CRITICAL",
         "cve": "",
-        "desc": "依據行動應用 App 基本資安檢測基準 V4.0 第 4.1.2.1.2 項，行動應用程式必須提供使用者拒絕蒐集敏感性資料之權利。\n\n在 Android 平台上，存取相機、位置、通訊錄、麥克風等敏感資料皆需取得 Runtime Permission（執行時期權限）。App 不僅要主動向使用者請求授權，更必須正確處理使用者「拒絕」的情境，確保拒絕後 App 能合理降級運作，而非強制要求或 crash。\n\n靜態分析驗證項目（本 lab 範圍）：\n1. AndroidManifest.xml 是否宣告了 dangerous permission\n2. 是否呼叫 requestPermissions() 或 registerForActivityResult() 等 Runtime Permission Request API\n3. onRequestPermissionsResult() 中是否存在處理拒絕情境的分支邏輯\n4. 是否呼叫 shouldShowRequestPermissionRationale() 向使用者說明權限用途\n\n注意：靜態分析僅能驗證機制是否存在，拒絕後實際行為（是否 crash、是否重複要求、功能是否合理降級）需搭配動態測試確認。\n\n參考：\n(1) https://developer.android.com/training/permissions/requesting\n(2) https://developer.android.com/training/permissions/usage-notes"
+        "desc": "行動應用程式必須提供使用者拒絕蒐集敏感性資料之權利。\n\n在 Android 平台上，存取相機、位置、通訊錄、麥克風等敏感資料皆需取得 Runtime Permission（執行時期權限）。App 不僅要主動向使用者請求授權，更必須正確處理使用者「拒絕」的情境，確保拒絕後 App 能合理降級運作，而非強制要求或 crash。\n\n靜態分析驗證項目（本 lab 範圍）：\n1. AndroidManifest.xml 是否宣告了 dangerous permission\n2. 是否呼叫 requestPermissions() 或 registerForActivityResult() 等 Runtime Permission Request API\n3. onRequestPermissionsResult() 中是否存在處理拒絕情境的分支邏輯\n4. 是否呼叫 shouldShowRequestPermissionRationale() 向使用者說明權限用途\n\n注意：靜態分析僅能驗證機制是否存在，拒絕後實際行為（是否 crash、是否重複要求、功能是否合理降級）需搭配動態測試確認。\n\n參考：\n(1) https://developer.android.com/training/permissions/requesting\n(2) https://developer.android.com/training/permissions/usage-notes"
     },
     "AS-lab071": {
         "title": "偵測 App 程式碼中的除錯日誌呼叫 (Log.d / Log.v)",
@@ -827,7 +827,7 @@
         "owasp_mobile": "M7",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。\n\n判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。\n\n修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。\n\n限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；基準(2) 能否反混淆需人工檢測。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
+        "desc": "App 程式碼沒有混淆，反編譯後就能直接看懂邏輯，容易找出並繞過防護。\n\n判定：只看 App 自己的套件（Manifest package 與啟動畫面所在套件），排除編譯器產生及 JNI 等必須保留原名的部分，統計 class、method、field 名稱為 a、b、aa 這類短名稱的比例，全部低於 30% 即不符合。套件內的 class 少於 10 個時，若程式碼被搬到 o、a.b 這類短套件（DexGuard、R8 搬移套件）視為有混淆，否則（如加殼）列為 Not evaluated。\n\n修正：release 版開啟 R8／ProGuard（minifyEnabled true），並移除 -dontobfuscate。\n\n限制：只判斷名稱混淆，字串加密、控制流程混淆不判斷；自己的套件看得到時，搬到其他套件的程式碼不列入；能否反混淆需人工檢測。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-RESILIENCE-3/ | https://developer.android.com/build/shrink-code"
     },
     "AS-lab085": {
         "title": "交易資源使用聲明檢查",
@@ -837,7 +837,7 @@
         "owasp_mobile": "",
         "level": "WARNING",
         "cve": "",
-        "desc": "交易前沒有告知商品名稱、金額與付款方式，使用者可能在不清楚的情況下付款。\n\n判定：App 用 Google Pay 付款，自己組的付款請求（程式碼，或 res、assets 裡的 JSON）缺少金額（totalPrice）或交易方式（allowedPaymentMethods），或用 Samsung Pay 付款、自己組的付款畫面（CustomSheet）沒有金額（AmountBoxControl），即不符合。Google Play 與其他應用商店（華為、Samsung、Amazon）的內購由商店畫面顯示交易資訊，視為符合；NFC 感應支付設定要求解鎖（requireDeviceUnlock，使用者在現場解鎖授權交易），視為符合。請求沒有商品名稱（Google Pay 的 displayItems、Samsung Pay 的 addItem，可能已顯示在 App 結帳頁）、找不到請求內容、第三方支付 SDK（含 SDK 內部呼叫的 Google Pay）、網頁金流（綠界、藍新、LINE Pay 等付款網址）、跳到電子支付 App 付款（街口、全支付、悠遊付、LINE Pay、icash Pay、iPASS MONEY、台灣Pay）、信用卡輸入畫面（CVV 欄位）、交易專用的介面文字（付款、轉帳、點數兌換、儲值、購票、證券下單等）、未要求解鎖的 NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。有內購時，其他交易方式也會一併檢查。交易資源依 MAS 定義包含實體貨幣、點數與序號、票券與股票。\n\n修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 displayItems、totalPrice 與 allowedPaymentMethods。\n\n限制：只看 Google Pay 請求欄位有沒有出現，不看值；支付 SDK、金流網址、電子支付 App 只認內建清單，自建交易畫面看 Activity 名稱、信用卡安全碼欄位與內建的交易詞組，金融 App 只看套件名與 App 名稱；混淆、加殼不在檢測範圍；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。\n\n參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
+        "desc": "交易前沒有告知商品名稱、金額與付款方式，使用者可能在不清楚的情況下付款。\n\n判定：App 用 Google Pay 付款，自己組的付款請求（程式碼，或 res、assets 裡的 JSON）缺少金額（totalPrice）或交易方式（allowedPaymentMethods），或用 Samsung Pay 付款、自己組的付款畫面（CustomSheet）沒有金額（AmountBoxControl），即不符合。Google Play 與其他應用商店（華為、Samsung、Amazon）的內購由商店畫面顯示交易資訊，視為符合；NFC 感應支付設定要求解鎖（requireDeviceUnlock，使用者在現場解鎖授權交易），視為符合。請求沒有商品名稱（Google Pay 的 displayItems、Samsung Pay 的 addItem，可能已顯示在 App 結帳頁）、找不到請求內容、第三方支付 SDK（含 SDK 內部呼叫的 Google Pay）、網頁金流（第三方金流付款網址）、跳到電子支付 App 付款、信用卡輸入畫面（CVV 欄位）、交易專用的介面文字（付款、轉帳、點數兌換、儲值、購票、證券下單等）、未要求解鎖的 NFC 感應支付、自建交易畫面，或看不到交易畫面的金融 App（如銀行、證券），靜態看不到畫面內容，列為 Not evaluated。有內購時，其他交易方式也會一併檢查。交易資源包含實體貨幣、點數與序號、票券與股票。\n\n修正：付款前顯示確認畫面，列出商品名稱、金額與付款方式；Google Pay 請求填入 displayItems、totalPrice 與 allowedPaymentMethods。\n\n限制：只看 Google Pay 請求欄位有沒有出現，不看值；支付 SDK、金流網址、電子支付 App 只認內建清單，自建交易畫面看 Activity 名稱、信用卡安全碼欄位與內建的交易詞組，金融 App 只看套件名與 App 名稱；混淆、加殼不在檢測範圍；僅收款（不適用）及外匯、期貨、虛擬貨幣的事前聲明例外需人工判斷。\n\n參考: https://developers.google.com/pay/api/android/reference/request-objects#TransactionInfo | https://developer.android.com/google/play/billing/integrate"
     },
     "AS-lab086": {
         "title": "敏感性資料儲存聲明檢查",
@@ -857,6 +857,6 @@
         "owasp_mobile": "M6",
         "level": "WARNING",
         "cve": "",
-        "desc": "App 儲存敏感資料，使用者卻無法拒絕。\n\n判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（標準規定未聲明的資料無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。\n\n修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。\n\n限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；基準(2) 拒絕後確實沒有儲存需動態檢測。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
+        "desc": "App 儲存敏感資料，使用者卻無法拒絕。\n\n判定：AS-lab086 找到的敏感資料儲存，從寫入的位置往上追呼叫路徑，沒有讀取「記住帳號」「儲存密碼」「自動登入」這類開關（SharedPreferences、DataStore 或畫面上的勾選框），或讀了卻沒有用來決定要不要儲存，即不符合；AS-lab086 不符合時此項也不符合（未聲明的資料使用者無法拒絕）。AS-lab086 無法評估（聲明無法確認）、開關的值傳到其他地方才判斷、開關名稱看不出來、只有名稱認不出用途的設定拿來判斷、對話框按下按鈕後才儲存，或找不到寫入位置（Room 資料表、DataStore key）的，列為 Not evaluated。\n\n修正：提供「記住帳號／儲存密碼」等選項，寫入前先讀取選項，使用者關閉時不儲存並刪除已存的資料。\n\n限制：開關只認名稱是「記住／儲存＋帳密類」（如 remember_password、save_account）或自動登入、生物辨識、密碼鎖的設定；只追 4 層呼叫；拒絕後是否確實沒有儲存，靜態無法確認。\n\n參考: https://mas.owasp.org/MASVS/controls/MASVS-PRIVACY-4/ | https://developer.android.com/training/data-storage"
     }
 }

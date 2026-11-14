@@ -214,7 +214,8 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             with open(file_path, "r") as f:
                 content = json.load(f)
 
-            return jsonify(content), 200
+            # 存檔一律是 MAS 版; 卸標版只在回傳時處理 (MAS_REPORT, 見共用函式「報告輸出」)
+            return jsonify(content if MAS_REPORT else white_label_report(content)), 200
 
         except Exception as e:
             import traceback
@@ -2036,7 +2037,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
             "has_finding": verdict in ["FAIL", "WARNING"],
             "lab_id": "lab_070",
             "verdict": verdict,
-            "description": "Runtime permission refusal right detection (MAS V4.0 4.1.2.1.2)",
+            "description": "Runtime permission refusal right detection",
             "dangerous_permissions": declared_dangerous,
             "has_runtime_request": has_runtime_request,
             "has_denied_handling": has_denied_handling,
@@ -4388,7 +4389,7 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         review = [i for i in items if i["problem"] and i.get("unverified")] \
             + [dict(s, problem=s["reason"]) for s in storage_items(r["review"])]
         if r["verdict_086"] == "WARNING":
-            verdict, reason = "WARNING", "4.1.2.3.1 not met: " + r["reason"]
+            verdict, reason = "WARNING", "lab086 not met: " + r["reason"]
             findings = [dict(s, problem="stored without notice, so users cannot refuse it")
                         for s in storage_items(r["storage"])]
         elif findings:
@@ -8399,6 +8400,34 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
         return {'verdict': verdict, 'has_finding': bool(findings), 'findings': findings, 'review': review,
                 'components': components, 'unidentified': unidentified, 'maven_unresolved': maven_unresolved,
                 'threshold': LIB_CVSS_THRESHOLD}
+
+    # ---- 報告輸出 ----
+
+    # MAS_REPORT=1 -> MAS 版 (合作公司); 0 或未設定 -> 卸標版 (平台對外)
+    # 使用: get_json
+    MAS_REPORT = os.environ.get("MAS_REPORT", "0").strip() == "1"
+    MAS_FIELDS = ("mas", "mast", "real_mstg")
+    MAS_URL = r'https?://mas\.owasp\.org/[\w/.#?=&%-]*'
+    MAS_URL_PATTERNS = [re.compile(p) for p in (
+        r'\n[ \t]*-[ \t]*' + MAS_URL,                       # 條列: 「\n- mas 連結」
+        r'[ \t]*[|-][ \t]*' + MAS_URL,                       # 「其他連結 | mas 連結」「- mas 連結」
+        MAS_URL + r'[ \t]*\|[ \t]*',                         # 「mas 連結 | 其他連結」
+        r'\s*(?:Ref|參考)[ \t]*[:：][ \t]*' + MAS_URL,       # 參考只有 mas 連結 -> 整段拿掉
+        r'[ \t]*' + MAS_URL,
+    )]
+
+    def white_label_report(obj):
+        """卸標版報告: 清空 mas / mast / real_mstg, 拿掉 mas.owasp.org 連結 (保留其他連結); 回傳新物件
+        使用: get_json"""
+        if isinstance(obj, dict):
+            return {k: ("" if k in MAS_FIELDS and isinstance(v, str) else white_label_report(v))
+                    for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [white_label_report(v) for v in obj]
+        if isinstance(obj, str) and "mas.owasp.org" in obj:
+            for pattern in MAS_URL_PATTERNS:
+                obj = pattern.sub("", obj)
+        return obj
 
     app.run(host='0.0.0.0', port=port)
 if __name__ == "__main__":
