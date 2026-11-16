@@ -8404,29 +8404,19 @@ def run_androguard_server(port: int, initial_apk_path: str = None):
     # ---- 報告輸出 ----
 
     # MAS_REPORT=1 -> MAS 版 (合作公司); 0 或未設定 -> 卸標版 (平台對外)
+    # 卸標只拿掉台灣基準 (mas / mast); OWASP 的 MASVS、MASTG 與 mas.owasp.org 連結保留
     # 使用: get_json
     MAS_REPORT = os.environ.get("MAS_REPORT", "0").strip() == "1"
-    MAS_FIELDS = ("mas", "mast", "real_mstg")
-    MAS_URL = r'https?://mas\.owasp\.org/[\w/.#?=&%-]*'
-    MAS_URL_PATTERNS = [re.compile(p) for p in (
-        r'\n[ \t]*-[ \t]*' + MAS_URL,                       # 條列: 「\n- mas 連結」
-        r'[ \t]*[|-][ \t]*' + MAS_URL,                       # 「其他連結 | mas 連結」「- mas 連結」
-        MAS_URL + r'[ \t]*\|[ \t]*',                         # 「mas 連結 | 其他連結」
-        r'\s*(?:Ref|參考)[ \t]*[:：][ \t]*' + MAS_URL,       # 參考只有 mas 連結 -> 整段拿掉
-        r'[ \t]*' + MAS_URL,
-    )]
+    MAS_FIELDS = ("mas", "mast")
 
     def white_label_report(obj):
-        """卸標版報告: 清空 mas / mast / real_mstg, 拿掉 mas.owasp.org 連結 (保留其他連結); 回傳新物件
+        """卸標版報告: 清空 mas / mast (台灣基準條文), 其他欄位不動; 回傳新物件
         使用: get_json"""
         if isinstance(obj, dict):
             return {k: ("" if k in MAS_FIELDS and isinstance(v, str) else white_label_report(v))
                     for k, v in obj.items()}
         if isinstance(obj, list):
             return [white_label_report(v) for v in obj]
-        if isinstance(obj, str) and "mas.owasp.org" in obj:
-            for pattern in MAS_URL_PATTERNS:
-                obj = pattern.sub("", obj)
         return obj
 
     app.run(host='0.0.0.0', port=port)

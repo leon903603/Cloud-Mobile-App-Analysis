@@ -347,7 +347,7 @@
         "owasp_mobile": "M3",
         "level": "WARNING",
         "cve": "",
-        "desc": "This app does not implement Certificate Pinning. The absence of certificate pinning may make the application vulnerable to Man-in-the-Middle (MITM) attacks, where attackers can intercept or tamper with communications between the app and server.\n\nRecommended implementations:\n1. Use Network Security Config (Android 7.0+): Create network_security_config.xml in res/xml/ and configure <pin-set>\n2. Code-based implementation: Such as OkHttp's CertificatePinner or custom TrustManager\n\nReferences:\n- https://developer.android.com/training/articles/security-config"
+        "desc": "This app does not implement Certificate Pinning. The absence of certificate pinning may make the application vulnerable to Man-in-the-Middle (MITM) attacks, where attackers can intercept or tamper with communications between the app and server.\n\nRecommended implementations:\n1. Use Network Security Config (Android 7.0+): Create network_security_config.xml in res/xml/ and configure <pin-set>\n2. Code-based implementation: Such as OkHttp's CertificatePinner or custom TrustManager\n\nReferences:\n- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n- https://developer.android.com/training/articles/security-config"
     },
     "AS-lab036": {
         "title": "Intent Redirection Vulnerability Detection",

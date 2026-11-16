@@ -347,7 +347,7 @@
         "owasp_mobile": "M3",
         "level": "WARNING",
         "cve": "",
-        "desc": "此 app 未實作 Certificate Pinning (憑證固定)。缺少憑證固定可能使應用程式容易受到中間人攻擊 (Man-in-the-Middle Attack)，攻擊者可能攔截或竄改應用程式與伺服器之間的通訊。\n\n建議實作方式：\n1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n參考資料:\n- https://developer.android.com/training/articles/security-config"
+        "desc": "此 app 未實作 Certificate Pinning (憑證固定)。缺少憑證固定可能使應用程式容易受到中間人攻擊 (Man-in-the-Middle Attack)，攻擊者可能攔截或竄改應用程式與伺服器之間的通訊。\n\n建議實作方式：\n1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n參考資料:\n- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n- https://developer.android.com/training/articles/security-config"
     },
     "AS-lab036": {
         "title": "Intent Redirection 意圖重定向漏洞偵測",

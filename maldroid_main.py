@@ -3430,6 +3430,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"1. 使用 Network Security Config (Android 7.0+): 在 res/xml/ 目錄下建立 network_security_config.xml 並設定 <pin-set>\n" + \
             u"2. 使用程式碼實作: 如 OkHttp 的 CertificatePinner 或自訂 TrustManager\n\n" + \
             u"[參考資料]\n" + \
+            u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
             u"- https://developer.android.com/training/articles/security-config\n" + \
             u" || " + \
             u"[Static Analysis Limitations]\n" + \
@@ -3445,6 +3446,7 @@ Vulnerable Codes:""", ["SSL_Security"])
             u"1. Use Network Security Config (Android 7.0+): Create network_security_config.xml in res/xml/ and configure <pin-set>\n" + \
             u"2. Code-based implementation: Such as OkHttp's CertificatePinner or custom TrustManager\n\n" + \
             u"[References]\n" + \
+            u"- OWASP Mobile Security Testing Guide (MSTG-NETWORK-4)\n" + \
             u"- https://developer.android.com/training/articles/security-config",
             ["CertificatePinning", "NetworkSecurity", "MITM-Risk", "StaticAnalysis"])
   
