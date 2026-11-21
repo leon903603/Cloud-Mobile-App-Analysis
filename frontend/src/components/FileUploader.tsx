@@ -617,7 +617,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
                     name="member_sandbox_secret_field"
                     autoComplete="new-password"
                     placeholder="Password"
-                    style={{ WebkitTextSecurity: "disc" } as any}
+                    className="text-security-disc"
                     value={appPassword}
                     onChange={(e) => setAppPassword(e.target.value)}
                     data-lpignore="true"

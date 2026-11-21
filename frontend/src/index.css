@@ -80,4 +80,8 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
+
+  .text-security-disc {
+    -webkit-text-security: disc;
+  }
 }

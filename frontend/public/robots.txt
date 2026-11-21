@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /api/
+Disallow: /upload/
+Disallow: /guest/
+Allow: /
+Sitemap: https://cmaa.solitesterror.com/sitemap.xml

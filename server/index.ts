@@ -80,7 +80,18 @@ const verifyToken = async (req: AuthRequest, res: Response, next: NextFunction) 
 };
 
 const app = express();
+app.disable("x-powered-by");
 app.set("trust proxy", true);
+
+// Defense-in-depth HTTP security headers (ADR 0002 & Pentest Remediation)
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  next();
+});
 // Allow configured client origin and local development origins
 const configuredOrigin = process.env.CLIENT_URL;
 const allowedOrigins = [

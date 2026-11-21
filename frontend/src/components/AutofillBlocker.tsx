@@ -8,14 +8,7 @@ import React from "react";
 export const AutofillBlocker: React.FC = () => {
   return (
     <div
-      style={{
-        position: "absolute",
-        top: -9999,
-        left: -9999,
-        width: 1,
-        height: 1,
-        overflow: "hidden",
-      }}
+      className="sr-only absolute -top-[9999px] -left-[9999px] w-px h-px overflow-hidden"
       aria-hidden="true"
     >
       <input

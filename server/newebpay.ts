@@ -622,6 +622,10 @@ router.get("/orders/:orderNo/receipt", (req, res) => {
   });
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+  );
   return res.send(html);
 });
 

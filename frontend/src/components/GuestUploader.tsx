@@ -1142,8 +1142,7 @@ const GuestUploader: React.FC<GuestUploaderProps> = ({ onSwitchToAuth }) => {
                         type="text"
                         name="sandbox_test_secret_field"
                         placeholder="Password (optional)"
-                        className="h-8 pl-8 text-xs bg-background"
-                        style={{ WebkitTextSecurity: "disc" } as any}
+                        className="h-8 pl-8 text-xs bg-background text-security-disc"
                         value={appPassword}
                         onChange={(e) => setAppPassword(e.target.value)}
                         autoComplete="new-password"
