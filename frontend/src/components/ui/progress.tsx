@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils"
 const Progress = React.forwardRef<
   React.ElementRef<typeof ProgressPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> & { barColor?: string }
->(({ className, value, barColor = "rgba(100,108,255,1)",...props }, ref) => {
-  const safeValue = value != null ? value : 0
+>(({ className, value, barColor = "rgba(100,108,255,1)", ...props }, ref) => {
+  const safeValue = Math.max(0, Math.min(100, value != null ? value : 0))
 
   return (
     <ProgressPrimitive.Root
@@ -18,10 +18,21 @@ const Progress = React.forwardRef<
       )}
       {...props}
     >
-      <ProgressPrimitive.Indicator
-        className="absolute left-0 top-0 h-full transition-all"
-        style={{ width: `${safeValue}%`, backgroundColor: barColor }}
-      />
+      <ProgressPrimitive.Indicator className="absolute left-0 top-0 h-full w-full">
+        <svg
+          className="h-full w-full transition-all duration-300"
+          preserveAspectRatio="none"
+          viewBox="0 0 100 100"
+        >
+          <rect
+            x="0"
+            y="0"
+            width={safeValue}
+            height="100"
+            fill={barColor}
+          />
+        </svg>
+      </ProgressPrimitive.Indicator>
     </ProgressPrimitive.Root>
   )
 })

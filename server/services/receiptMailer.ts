@@ -15,6 +15,7 @@ export interface ReceiptRenderPayload {
   isWeb?: boolean; // True when rendered on the web receipt endpoint, false for email
   buyerName?: string; // User-specified company or institution name for reimbursement
   receiptIssuedAt?: string; // ISO timestamp when official receipt was issued
+  nonce?: string; // Cryptographic nonce for CSP strict compliance without unsafe-inline
 }
 
 /** Backward compatibility alias */
@@ -167,7 +168,7 @@ export function generateReceiptHtml(payload: ReceiptRenderPayload): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OFFICIAL RECEIPT - ${safeOrderNo}</title>
-  <style>
+  <style${payload.nonce ? ` nonce="${payload.nonce}"` : ""}>
     /* Reset and Typography */
     body {
       margin: 0;
@@ -177,6 +178,11 @@ export function generateReceiptHtml(payload: ReceiptRenderPayload): string {
       color: #1a1a1a;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+    }
+
+    .copy-email-btn.copied {
+      border-color: #10b981 !important;
+      color: #059669 !important;
     }
 
     .receipt-wrapper {
@@ -435,7 +441,7 @@ export function generateReceiptHtml(payload: ReceiptRenderPayload): string {
     payload.isWeb
       ? `<div class="print-actions no-print">
           <div class="web-view-notice">Official Electronic Receipt</div>
-          <button class="print-btn" onclick="window.print()">🖨 Print Official Receipt (PDF / A4)</button>
+          <button type="button" id="receipt-print-btn" class="print-btn">🖨 Print Official Receipt (PDF / A4)</button>
         </div>`
       : ""
   }
@@ -519,7 +525,7 @@ export function generateReceiptHtml(payload: ReceiptRenderPayload): string {
                 <div class="contact-info">
                   <strong>Suprema Technologies LTD</strong><br>
                   Email: <span>suprematechnologiesltd@solitesterror.com</span>
-                  <button type="button" class="copy-email-btn no-print" onclick="copyReceiptEmail(this)" title="Copy email address">Copy</button><br>
+                  <button type="button" id="receipt-copy-email-btn" class="copy-email-btn no-print" title="Copy email address">Copy</button><br>
                   Website: <a href="https://cmaa.solitesterror.com" target="_blank">https://cmaa.solitesterror.com</a>
                 </div>
               </td>
@@ -549,27 +555,36 @@ export function generateReceiptHtml(payload: ReceiptRenderPayload): string {
 
   ${
     payload.isWeb
-      ? `<script>
-    function copyReceiptEmail(btn) {
-      var email = "suprematechnologiesltd@solitesterror.com";
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(email).then(function() {
-          var orig = btn.innerText;
-          btn.innerText = "Copied!";
-          btn.style.borderColor = "#10b981";
-          btn.style.color = "#059669";
-          setTimeout(function() {
-            btn.innerText = orig;
-            btn.style.borderColor = "";
-            btn.style.color = "";
-          }, 2000);
-        }).catch(function() {
-          window.prompt("Contact email:", email);
+      ? `<script${payload.nonce ? ` nonce="${payload.nonce}"` : ""}>
+    document.addEventListener("DOMContentLoaded", function() {
+      var printBtn = document.getElementById("receipt-print-btn");
+      if (printBtn) {
+        printBtn.addEventListener("click", function() {
+          window.print();
         });
-      } else {
-        window.prompt("Contact email:", email);
       }
-    }
+      var copyBtn = document.getElementById("receipt-copy-email-btn");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", function() {
+          var email = "suprematechnologiesltd@solitesterror.com";
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(email).then(function() {
+              var orig = copyBtn.innerText;
+              copyBtn.innerText = "Copied!";
+              copyBtn.classList.add("copied");
+              setTimeout(function() {
+                copyBtn.innerText = orig;
+                copyBtn.classList.remove("copied");
+              }, 2000);
+            }).catch(function() {
+              window.prompt("Contact email:", email);
+            });
+          } else {
+            window.prompt("Contact email:", email);
+          }
+        });
+      }
+    });
   </script>`
       : ""
   }

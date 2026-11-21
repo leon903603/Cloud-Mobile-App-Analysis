@@ -606,6 +606,7 @@ router.get("/orders/:orderNo/receipt", (req, res) => {
       .send("Unauthorized: Invalid receipt verification signature");
   }
 
+  const nonce = crypto.randomBytes(16).toString("base64");
   const html = generateReceiptHtml({
     orderNo: order.orderNo,
     recipientEmail: order.receiptEmail || "",
@@ -619,12 +620,13 @@ router.get("/orders/:orderNo/receipt", (req, res) => {
     isWeb: true,
     buyerName: order.buyerName || undefined,
     receiptIssuedAt: order.receiptIssuedAt || undefined,
+    nonce,
   });
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' data:;`
   );
   return res.send(html);
 });

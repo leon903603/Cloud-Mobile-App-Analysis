@@ -36,9 +36,18 @@ import { CreditBank } from "./services/creditBank";
 import { ArtifactVault } from "./services/artifactVault";
 
 if (getApps().length === 0) {
-  initializeApp({
-    credential: cert(serviceAccount as ServiceAccount),
-  });
+  try {
+    initializeApp({
+      credential: cert(serviceAccount as ServiceAccount),
+    });
+  } catch (err) {
+    // If mock service account is present or in test mode, initialize project without crashing
+    if (process.env.NODE_ENV === "test" || process.env.TEST_MODE === "true" || serviceAccount.project_id === "mock-cmaa-local") {
+      initializeApp({ projectId: (serviceAccount as any)?.project_id || "mock-cmaa-local" });
+    } else {
+      throw err;
+    }
+  }
 }
 
 // Firestore instance for non-credit operations
